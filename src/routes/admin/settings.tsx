@@ -850,7 +850,7 @@ function CopyStoreUrlButton({ url }: { url: string }) {
 // ─── Plans Section Component ─────────────────────────────────────
 function PlansSection() {
   const [currentPlan] = useState("start");
-  const [pdvEnabled, setPdvEnabled] = useState(false);
+  const [pdvToggles, setPdvToggles] = useState<Record<string, boolean>>({ start: false, pro: false, full: false });
 
   const PDV_PRICE = 50;
 
@@ -919,7 +919,10 @@ function PlansSection() {
 
   const currentPlanData = plans.find(p => p.id === currentPlan);
   const basePrice = currentPlanData?.price || 0;
-  const totalPrice = basePrice + (pdvEnabled ? PDV_PRICE : 0);
+  const currentPdv = pdvToggles[currentPlan] || false;
+  const totalPrice = basePrice + (currentPdv ? PDV_PRICE : 0);
+
+  const formatPrice = (val: number) => val.toFixed(2).replace(".", ",");
 
   return (
     <div className="space-y-6">
@@ -929,123 +932,128 @@ function PlansSection() {
           <div className="flex items-start justify-between">
             <div>
               <div className="text-sm text-muted-foreground mb-1">Plano atual</div>
-              <div className="text-2xl font-bold">{plans.find(p => p.id === currentPlan)?.name}</div>
+              <div className="text-2xl font-bold">{currentPlanData?.name}</div>
               <div className="text-sm text-muted-foreground mt-1">
-                {pdvEnabled ? (
+                {currentPdv ? (
                   <div className="space-y-0.5">
-                    <div className="line-through">R$ {basePrice.toFixed(2).replace(".", ",")}/mês</div>
+                    <div className="line-through">R$ {formatPrice(basePrice)}/mês</div>
                     <div className="text-primary font-semibold">
-                      R$ {totalPrice.toFixed(2).replace(".", ",")}/mês (com PDV)
+                      R$ {formatPrice(totalPrice)}/mês (com PDV)
                     </div>
                   </div>
                 ) : (
-                  `R$ ${basePrice.toFixed(2).replace(".", ",")}/mês`
+                  `R$ ${formatPrice(basePrice)}/mês`
                 )}
               </div>
+              <div className="text-xs text-muted-foreground mt-1">Validade: 30 dias</div>
             </div>
             <Badge className="rounded-full bg-primary text-primary-foreground">Ativo</Badge>
           </div>
         </CardContent>
       </Card>
 
-      {/* PDV Addon */}
-      <Card className="rounded-2xl border-border/50 shadow-soft">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Building2 className="w-4 h-4" />
-            Módulo PDV
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <div className="text-sm font-medium">Ativar PDV</div>
-              <div className="text-xs text-muted-foreground">
-                Sistema de ponto de venda para vendas presenciais
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                + R$ {PDV_PRICE.toFixed(2).replace(".", ",")}/mês (adicional)
-              </div>
-            </div>
-            <Switch 
-              checked={pdvEnabled}
-              onCheckedChange={setPdvEnabled}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Plan Cards */}
       <div className="grid gap-4">
-        {plans.map((plan) => (
-          <Card 
-            key={plan.id}
-            className={`rounded-2xl border-2 shadow-soft transition-all ${
-              currentPlan === plan.id ? plan.color : "border-border hover:border-border/80"
-            }`}
-          >
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xl font-bold">{plan.name}</span>
-                    {plan.badge && (
-                      <Badge className="rounded-full text-[10px] px-2">
-                        {plan.badge}
-                      </Badge>
+        {plans.map((plan) => {
+          const pdvOn = pdvToggles[plan.id] || false;
+          const planTotal = plan.price + (pdvOn ? PDV_PRICE : 0);
+
+          return (
+            <Card 
+              key={plan.id}
+              className={`rounded-2xl border-2 shadow-soft transition-all ${
+                currentPlan === plan.id ? plan.color : "border-border hover:border-border/80"
+              }`}
+            >
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl font-bold">{plan.name}</span>
+                      {plan.badge && (
+                        <Badge className="rounded-full text-[10px] px-2">
+                          {plan.badge}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-0.5">
+                      {plan.description}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold">
+                      {plan.price === 0 ? "Gratuito" : `R$ ${formatPrice(planTotal)}`}
+                    </div>
+                    {plan.price > 0 && (
+                      <div className="text-xs text-muted-foreground">
+                        /mês {pdvOn && <span className="text-primary">(com PDV)</span>}
+                      </div>
+                    )}
+                    {plan.price > 0 && (
+                      <div className="text-xs text-muted-foreground">30 dias</div>
                     )}
                   </div>
-                  <div className="text-sm text-muted-foreground mt-0.5">
-                    {plan.description}
-                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-2xl font-bold">
-                    {plan.price === 0 ? "Gratuito" : `R$ ${plan.price.toFixed(2).replace(".", ",")}`}
-                  </div>
-                  {plan.price > 0 && <div className="text-xs text-muted-foreground">/mês</div>}
+
+                <div className="grid sm:grid-cols-2 gap-2 mb-4">
+                  {plan.features.map((feature, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-sm">
+                      {feature.included ? (
+                        <Check className="w-4 h-4 text-primary" />
+                      ) : (
+                        <span className="w-4 h-4 rounded-full border border-muted-foreground/30" />
+                      )}
+                      <span className={feature.included ? "" : "text-muted-foreground"}>
+                        {feature.text}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              </div>
 
-              <div className="grid sm:grid-cols-2 gap-2 mb-4">
-                {plan.features.map((feature, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-sm">
-                    {feature.included ? (
-                      <Check className="w-4 h-4 text-primary" />
-                    ) : (
-                      <span className="w-4 h-4 rounded-full border border-muted-foreground/30" />
-                    )}
-                    <span className={feature.included ? "" : "text-muted-foreground"}>
-                      {feature.text}
-                    </span>
+                {/* PDV Toggle per plan */}
+                {plan.price > 0 && (
+                  <div className="flex items-center justify-between py-3 px-4 rounded-xl bg-secondary/50 mb-4">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-muted-foreground" />
+                      <div>
+                        <div className="text-sm font-medium">Adicionar PDV</div>
+                        <div className="text-xs text-muted-foreground">+ R$ {formatPrice(PDV_PRICE)}/mês</div>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={pdvOn}
+                      onCheckedChange={(checked) =>
+                        setPdvToggles(prev => ({ ...prev, [plan.id]: checked }))
+                      }
+                    />
                   </div>
-                ))}
-              </div>
+                )}
 
-              {currentPlan === plan.id ? (
-                <Button disabled className="w-full h-10 rounded-xl">
-                  Plano atual
-                </Button>
-              ) : (
-                <Button 
-                  variant={plan.id === "pro" ? "default" : "outline"}
-                  className={`w-full h-10 rounded-xl font-medium ${
-                    plan.id === "pro" ? "bg-gradient-primary shadow-glow" : ""
-                  }`}
-                >
-                  {currentPlan && plans.findIndex(p => p.id === currentPlan) < plans.findIndex(p => p.id === plan.id) 
-                    ? "Fazer upgrade" 
-                    : "Fazer downgrade"}
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+                {currentPlan === plan.id ? (
+                  <Button disabled className="w-full h-10 rounded-xl">
+                    Plano atual
+                  </Button>
+                ) : (
+                  <Button 
+                    variant={plan.id === "pro" ? "default" : "outline"}
+                    className={`w-full h-10 rounded-xl font-medium ${
+                      plan.id === "pro" ? "bg-gradient-primary shadow-glow" : ""
+                    }`}
+                  >
+                    {currentPlan && plans.findIndex(p => p.id === currentPlan) < plans.findIndex(p => p.id === plan.id) 
+                      ? "Fazer upgrade" 
+                      : "Fazer downgrade"}
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        Você pode alterar seu plano a qualquer momento. A cobrança será ajustada proporcionalmente.
+        Todos os planos possuem validade de 30 dias. O PDV é um adicional de R$ {formatPrice(PDV_PRICE)}/mês e não está incluso em nenhum plano.
       </p>
     </div>
   );
