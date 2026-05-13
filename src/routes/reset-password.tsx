@@ -136,8 +136,8 @@ function ResetPasswordPage() {
           <span className="text-xl font-bold tracking-tight">ARMAZIX</span>
         </div>
 
-        <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
-          <Lock className="w-7 h-7 text-primary" />
+        <div className="w-20 h-20 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center mb-4 overflow-visible">
+          <Lock className="w-10 h-10 text-primary" />
         </div>
 
         <h1 className="text-2xl font-bold text-center">Redefinir senha</h1>
