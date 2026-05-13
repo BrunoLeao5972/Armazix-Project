@@ -9,6 +9,7 @@ import {
   Flame,
   Sparkles,
   Tag,
+  Package,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,39 +22,16 @@ export const Route = createFileRoute("/store/")({
   }),
 });
 
-const BANNERS = [
-  { id: 1, title: "Frete grátis", subtitle: "Em pedidos acima de R$ 50", color: "from-primary/90 to-emerald-600", emoji: "🚚" },
-  { id: 2, title: "20% OFF", subtitle: "Primeira compra com o cupom NOVO20", color: "from-violet-600 to-purple-700", emoji: "🎉" },
-  { id: 3, title: "Entrega rápida", subtitle: "Receba em até 40 minutos", color: "from-amber-500 to-orange-600", emoji: "⚡" },
-];
-
-const CATEGORIES = [
-  { id: 1, name: "Lanches", emoji: "🍔", color: "bg-amber-500/15" },
-  { id: 2, name: "Bebidas", emoji: "🥤", color: "bg-blue-500/15" },
-  { id: 3, name: "Mercado", emoji: "🛒", color: "bg-primary/15" },
-  { id: 4, name: "Açougue", emoji: "🥩", color: "bg-red-500/15" },
-  { id: 5, name: "Padaria", emoji: "🍞", color: "bg-amber-400/15" },
-  { id: 6, name: "Hortifruti", emoji: "🥬", color: "bg-green-500/15" },
-  { id: 7, name: "Cosméticos", emoji: "💄", color: "bg-pink-500/15" },
-  { id: 8, name: "Eletrônicos", emoji: "📱", color: "bg-violet-500/15" },
-];
-
-const PRODUCTS = [
-  { id: 1, name: "Arroz Tio João 5kg", desc: "Tipo 1 premium", price: 32.90, oldPrice: 39.90, image: "🍚", rating: 4.8, reviews: 234, badge: "Mais vendido", category: "Mercado", stock: 50 },
-  { id: 2, name: "Feijão Carioca 1kg", desc: "Seleção especial", price: 8.90, oldPrice: null, image: "🫘", rating: 4.6, reviews: 128, badge: null, category: "Mercado", stock: 35 },
-  { id: 3, name: "Café Pilão 500g", desc: "Extra forte moído", price: 18.90, oldPrice: 22.90, image: "☕", rating: 4.9, reviews: 412, badge: "Oferta", category: "Mercado", stock: 28 },
-  { id: 4, name: "Leite Integral 1L", desc: "Integral UHT", price: 6.49, oldPrice: null, image: "🥛", rating: 4.5, reviews: 89, badge: null, category: "Bebidas", stock: 60 },
-  { id: 5, name: "Pão Francês Kg", desc: "Fresquinho todo dia", price: 12.90, oldPrice: null, image: "🥖", rating: 4.7, reviews: 156, badge: "Fresquinho", category: "Padaria", stock: 20 },
-  { id: 6, name: "Hambúrguer Artesanal", desc: "180g angus premium", price: 28.90, oldPrice: 34.90, image: "🍔", rating: 4.9, reviews: 320, badge: "🔥 Top", category: "Lanches", stock: 15 },
-  { id: 7, name: "Açaí 500ml", desc: "Puro sem mistura", price: 22.90, oldPrice: null, image: "🫐", rating: 4.8, reviews: 198, badge: null, category: "Bebidas", stock: 25 },
-  { id: 8, name: "Bife de Alcatra Kg", desc: "Corte premium", price: 59.90, oldPrice: 69.90, image: "🥩", rating: 4.7, reviews: 87, badge: "Oferta", category: "Açougue", stock: 12 },
-];
+const BANNERS: { id: number; title: string; subtitle: string; color: string; emoji: string }[] = [];
+const CATEGORIES: { id: number; name: string; emoji: string; color: string }[] = [];
+const PRODUCTS: { id: number; name: string; desc: string; price: number; oldPrice: number | null; image: string; rating: number; reviews: number; badge: string | null; category: string; stock: number }[] = [];
 
 function StoreHome() {
   const [bannerIdx, setBannerIdx] = useState(0);
   const { addToCart, toggleFavorite, favorites } = useStore();
 
   useEffect(() => {
+    if (BANNERS.length === 0) return;
     const t = setInterval(() => setBannerIdx((i) => (i + 1) % BANNERS.length), 4000);
     return () => clearInterval(t);
   }, []);
@@ -61,6 +39,7 @@ function StoreHome() {
   return (
     <div className="space-y-6 pb-4 animate-in fade-in duration-300">
       {/* Banner Slider */}
+      {BANNERS.length > 0 && (
       <div className="px-4 pt-4">
         <div className="relative overflow-hidden rounded-3xl h-40 sm:h-48">
           <AnimatePresence mode="wait">
@@ -93,6 +72,7 @@ function StoreHome() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Info Bar */}
       <div className="px-4 flex gap-2 overflow-x-auto no-scrollbar">
@@ -111,6 +91,7 @@ function StoreHome() {
       </div>
 
       {/* Categories */}
+      {CATEGORIES.length > 0 && (
       <div className="px-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-bold">Categorias</h2>
@@ -135,8 +116,10 @@ function StoreHome() {
           ))}
         </div>
       </div>
+      )}
 
       {/* Promo Section */}
+      {PRODUCTS.some((p) => p.oldPrice) && (
       <div className="px-4">
         <div className="flex items-center gap-2 mb-3">
           <Flame className="w-5 h-5 text-orange-500" />
@@ -156,8 +139,10 @@ function StoreHome() {
           ))}
         </div>
       </div>
+      )}
 
       {/* Featured Products */}
+      {PRODUCTS.filter((p) => p.badge?.includes("Top") || p.reviews > 200).length > 0 && (
       <div className="px-4">
         <div className="flex items-center gap-2 mb-3">
           <Sparkles className="w-5 h-5 text-primary" />
@@ -175,8 +160,10 @@ function StoreHome() {
           ))}
         </div>
       </div>
+      )}
 
       {/* All Products */}
+      {PRODUCTS.length > 0 ? (
       <div className="px-4">
         <div className="flex items-center gap-2 mb-3">
           <Tag className="w-5 h-5 text-primary" />
@@ -194,6 +181,13 @@ function StoreHome() {
           ))}
         </div>
       </div>
+      ) : (
+      <div className="px-4 py-16 text-center">
+        <Package className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
+        <h2 className="text-lg font-bold">Nenhum produto ainda</h2>
+        <p className="text-sm text-muted-foreground mt-1">Os produtos aparecerão aqui assim que forem cadastrados.</p>
+      </div>
+      )}
     </div>
   );
 }

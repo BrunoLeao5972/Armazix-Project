@@ -340,7 +340,6 @@ export const reviewsRelations = relations(reviews, ({ one }) => ({
 
 // ─── STORE USERS (merchant access) ──────────────────────────────
 export const storeUsers = pgTable("store_users", {
-  id: uuid("id").defaultRandom().primaryKey(),
   storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   role: varchar("role", { length: 20 }).notNull().default("owner"), // owner | admin | cashier
@@ -393,4 +392,23 @@ export const sessions = pgTable("sessions", {
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, { fields: [sessions.userId], references: [users.id] }),
+}));
+
+// ─── VERIFICATION CODES ─────────────────────────────────────────
+export const verificationCodes = pgTable("verification_codes", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  code: varchar("code", { length: 6 }).notNull(),
+  type: varchar("type", { length: 20 }).notNull(), // "email_verification" | "password_reset"
+  usedAt: timestamp("used_at"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("verification_codes_user_idx").on(t.userId),
+  index("verification_codes_code_idx").on(t.code),
+  index("verification_codes_type_idx").on(t.type),
+]);
+
+export const verificationCodesRelations = relations(verificationCodes, ({ one }) => ({
+  user: one(users, { fields: [verificationCodes.userId], references: [users.id] }),
 }));

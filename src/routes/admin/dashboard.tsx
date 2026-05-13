@@ -24,33 +24,9 @@ export const Route = createFileRoute("/admin/dashboard")({
   }),
 });
 
-const revenueData = [
-  { name: "Seg", valor: 1200 },
-  { name: "Ter", valor: 1800 },
-  { name: "Qua", valor: 1400 },
-  { name: "Qui", valor: 2200 },
-  { name: "Sex", valor: 2800 },
-  { name: "Sáb", valor: 3200 },
-  { name: "Dom", valor: 1900 },
-];
-
-const ordersData = [
-  { name: "Seg", pedidos: 18 },
-  { name: "Ter", pedidos: 25 },
-  { name: "Qua", pedidos: 20 },
-  { name: "Qui", pedidos: 32 },
-  { name: "Sex", pedidos: 38 },
-  { name: "Sáb", pedidos: 45 },
-  { name: "Dom", pedidos: 28 },
-];
-
-const recentOrders = [
-  { id: "#3208", customer: "Maria Silva", total: "R$ 189,90", status: "novo", time: "2 min" },
-  { id: "#3207", customer: "João Santos", total: "R$ 342,50", status: "preparando", time: "15 min" },
-  { id: "#3206", customer: "Ana Costa", total: "R$ 78,00", status: "saiu_entrega", time: "32 min" },
-  { id: "#3205", customer: "Pedro Lima", total: "R$ 456,00", status: "concluido", time: "1h" },
-  { id: "#3204", customer: "Lucia Ferreira", total: "R$ 124,90", status: "concluido", time: "2h" },
-];
+const revenueData: { name: string; valor: number }[] = [];
+const ordersData: { name: string; pedidos: number }[] = [];
+const recentOrders: { id: string; customer: string; total: string; status: string; time: string }[] = [];
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   novo: { label: "Novo", color: "bg-blue-500/15 text-blue-600" },
@@ -67,55 +43,18 @@ function DashboardPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Visão geral da sua loja hoje
+          Dados da sua loja
         </p>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <KpiCard
-          title="Vendas do dia"
-          value="R$ 4.280"
-          change="+12%"
-          up
-          icon={DollarSign}
-        />
-        <KpiCard
-          title="Faturamento"
-          value="R$ 28.450"
-          change="+8%"
-          up
-          icon={TrendingUp}
-        />
-        <KpiCard
-          title="Pedidos"
-          value="47"
-          change="+5%"
-          up
-          icon={ShoppingCart}
-        />
-        <KpiCard
-          title="Ticket médio"
-          value="R$ 91,06"
-          change="-2%"
-          up={false}
-          icon={Package}
-        />
-        <KpiCard
-          title="Produtos vendidos"
-          value="128"
-          change="+15%"
-          up
-          icon={Package}
-        />
-        <KpiCard
-          title="Estoque baixo"
-          value="8"
-          change=""
-          up={false}
-          icon={AlertTriangle}
-          alert
-        />
+        <KpiCard title="Vendas do dia" value="R$ 0" change="" up icon={DollarSign} />
+        <KpiCard title="Faturamento" value="R$ 0" change="" up icon={TrendingUp} />
+        <KpiCard title="Pedidos" value="0" change="" up icon={ShoppingCart} />
+        <KpiCard title="Ticket médio" value="R$ 0" change="" up icon={Package} />
+        <KpiCard title="Produtos vendidos" value="0" change="" up icon={Package} />
+        <KpiCard title="Estoque baixo" value="0" change="" up={false} icon={AlertTriangle} alert />
       </div>
 
       {/* Charts */}
@@ -162,6 +101,7 @@ function DashboardPage() {
       </div>
 
       {/* Recent Orders */}
+      {recentOrders.length > 0 && (
       <div>
         <Card className="rounded-2xl border-border/50 shadow-soft">
           <CardHeader className="pb-3">
@@ -199,6 +139,7 @@ function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      )}
     </div>
   );
 }

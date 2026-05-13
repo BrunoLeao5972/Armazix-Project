@@ -33,14 +33,42 @@ function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setError("");
+    setNeedsVerification(false);
+
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (data.needsVerification) {
+          setNeedsVerification(true);
+          setUnverifiedEmail(data.email || email);
+        } else {
+          setError(data.error || "Erro ao fazer login");
+        }
+        return;
+      }
+
+      // Store token and redirect
+      localStorage.setItem("armazix_token", data.token);
       navigate({ to: "/admin/dashboard" });
-    }, 1200);
+    } catch {
+      setError("Erro de conexão. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -163,7 +191,7 @@ function LoginPage() {
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Senha</Label>
                 <Link
-                  to="/login"
+                  to="/forgot-password"
                   className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
                 >
                   Esqueci minha senha
@@ -200,6 +228,33 @@ function LoginPage() {
                 Lembrar meu login
               </Label>
             </div>
+
+            {error && (
+              <div className="p-3 rounded-xl bg-destructive/10 text-destructive text-sm font-medium">
+                {error}
+              </div>
+            )}
+
+            {needsVerification && (
+              <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                <div className="flex items-start gap-2.5">
+                  <Mail className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-700">Email não verificado</p>
+                    <p className="text-xs text-amber-600/80 mt-0.5">
+                      Verifique sua caixa de entrada e insira o código de verificação para ativar sua conta.
+                    </p>
+                    <Link
+                      to="/verify-email"
+                      search={{ email: unverifiedEmail }}
+                      className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                    >
+                      Verificar email <ArrowRight className="w-3 h-3" />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <Button
               type="submit"

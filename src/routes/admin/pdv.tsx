@@ -26,20 +26,7 @@ export const Route = createFileRoute("/admin/pdv")({
   }),
 });
 
-const PRODUCTS = [
-  { id: 1, name: "Arroz 5kg", price: 24.9, emoji: "🌾" },
-  { id: 2, name: "Feijão 1kg", price: 8.9, emoji: "🫘" },
-  { id: 3, name: "Açúcar 1kg", price: 5.5, emoji: "🍬" },
-  { id: 4, name: "Óleo 900ml", price: 7.8, emoji: "🫒" },
-  { id: 5, name: "Leite 1L", price: 6.2, emoji: "🥛" },
-  { id: 6, name: "Café 500g", price: 18.9, emoji: "☕" },
-  { id: 7, name: "Macarrão 500g", price: 4.5, emoji: "🍝" },
-  { id: 8, name: "Sabão 1kg", price: 12.9, emoji: "🧹" },
-  { id: 9, name: "Refrigerante 2L", price: 8.5, emoji: "🥤" },
-  { id: 10, name: "Biscoito 200g", price: 3.9, emoji: "🍪" },
-  { id: 11, name: "Farinha 1kg", price: 4.2, emoji: "🌾" },
-  { id: 12, name: "Sal 1kg", price: 3.0, emoji: "🧂" },
-];
+const PRODUCTS: { id: number; name: string; price: number; emoji: string }[] = [];
 
 interface CartItem {
   productId: number;

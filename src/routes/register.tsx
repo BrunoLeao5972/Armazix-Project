@@ -147,12 +147,38 @@ function RegisterPage() {
     if (step > 1) setStep(step - 1);
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          phone,
+          password,
+          storeName,
+          category,
+          description,
+          storeColor,
+          docType,
+          docNumber,
+          address: cep ? { street, number, complement, neighborhood, city, state, zip: cep } : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Erro ao criar conta");
+        setLoading(false);
+        return;
+      }
+      navigate({ to: "/verify-email", search: { email } });
+    } catch {
+      alert("Erro de conexão. Tente novamente.");
+    } finally {
       setLoading(false);
-      navigate({ to: "/admin/dashboard" });
-    }, 1000);
+    }
   };
 
   return (

@@ -17,16 +17,7 @@ export const Route = createFileRoute("/admin/categories")({
   }),
 });
 
-const CATEGORIES = [
-  { id: 1, name: "Grãos", products: 12, color: "#00C853" },
-  { id: 2, name: "Laticínios", products: 8, color: "#3b82f6" },
-  { id: 3, name: "Bebidas", products: 15, color: "#8b5cf6" },
-  { id: 4, name: "Limpeza", products: 10, color: "#f59e0b" },
-  { id: 5, name: "Açúcar", products: 4, color: "#ec4899" },
-  { id: 6, name: "Óleos", products: 3, color: "#06b6d4" },
-  { id: 7, name: "Massas", products: 7, color: "#f97316" },
-  { id: 8, name: "Biscoitos", products: 9, color: "#10b981" },
-];
+const CATEGORIES: { id: number; name: string; products: number; color: string }[] = [];
 
 function CategoriesPage() {
   return (

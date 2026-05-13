@@ -23,42 +23,11 @@ export const Route = createFileRoute("/admin/financial")({
   }),
 });
 
-const cashFlowData = [
-  { name: "Jan", receita: 18500, despesa: 8200 },
-  { name: "Fev", receita: 22000, despesa: 9100 },
-  { name: "Mar", receita: 19800, despesa: 8800 },
-  { name: "Abr", receita: 24500, despesa: 10200 },
-  { name: "Mai", receita: 28450, despesa: 11500 },
-  { name: "Jun", receita: 26000, despesa: 10800 },
-];
-
-const paymentMethods = [
-  { name: "PIX", value: 45, color: "#00C853" },
-  { name: "Cartão", value: 30, color: "#3b82f6" },
-  { name: "Dinheiro", value: 15, color: "#f59e0b" },
-  { name: "Boleto", value: 10, color: "#8b5cf6" },
-];
-
-const recentTransactions = [
-  { id: 1, desc: "Venda #3208 — Maria Silva", type: "receita", value: "R$ 189,90", date: "Hoje, 14:30" },
-  { id: 2, desc: "Venda #3207 — João Santos", type: "receita", value: "R$ 342,50", date: "Hoje, 13:15" },
-  { id: 3, desc: "Fornecedor — Distribuidora ABC", type: "despesa", value: "R$ 1.200,00", date: "Hoje, 10:00" },
-  { id: 4, desc: "Venda #3206 — Ana Costa", type: "receita", value: "R$ 78,00", date: "Hoje, 09:45" },
-  { id: 5, desc: "Aluguel do ponto", type: "despesa", value: "R$ 3.500,00", date: "01/Mai" },
-  { id: 6, desc: "Venda #3205 — Pedro Lima", type: "receita", value: "R$ 456,00", date: "Ontem, 18:00" },
-];
-
-const accountsPayable = [
-  { desc: "Fornecedor Café do Brasil", value: "R$ 2.400,00", due: "15/Mai", status: "pendente" },
-  { desc: "Energia elétrica", value: "R$ 380,00", due: "10/Mai", status: "vencido" },
-  { desc: "Internet fibra", value: "R$ 150,00", due: "20/Mai", status: "pendente" },
-];
-
-const accountsReceivable = [
-  { desc: "Pedido #3198 — Carlos M.", value: "R$ 245,00", due: "Vencido", status: "vencido" },
-  { desc: "Pedido #3200 — Fernanda L.", value: "R$ 189,90", due: "12/Mai", status: "pendente" },
-  { desc: "Assinatura mensal — Cliente X", value: "R$ 99,00", due: "25/Mai", status: "pendente" },
-];
+const cashFlowData: { name: string; receita: number; despesa: number }[] = [];
+const paymentMethods: { name: string; value: number; color: string }[] = [];
+const recentTransactions: { id: number; desc: string; type: string; value: string; date: string }[] = [];
+const accountsPayable: { desc: string; value: string; due: string; status: string }[] = [];
+const accountsReceivable: { desc: string; value: string; due: string; status: string }[] = [];
 
 function FinancialPage() {
   return (
@@ -84,7 +53,7 @@ function FinancialPage() {
                 <ArrowUpRight className="w-3 h-3" />+12%
               </span>
             </div>
-            <div className="text-2xl font-bold">R$ 28.450</div>
+            <div className="text-2xl font-bold">R$ 0</div>
             <div className="text-xs text-muted-foreground">Receita do mês</div>
           </CardContent>
         </Card>
@@ -98,7 +67,7 @@ function FinancialPage() {
                 <ArrowDownRight className="w-3 h-3" />+8%
               </span>
             </div>
-            <div className="text-2xl font-bold">R$ 11.500</div>
+            <div className="text-2xl font-bold">R$ 0</div>
             <div className="text-xs text-muted-foreground">Despesas do mês</div>
           </CardContent>
         </Card>
@@ -109,7 +78,7 @@ function FinancialPage() {
                 <TrendingUp className="w-4 h-4 text-primary" />
               </span>
             </div>
-            <div className="text-2xl font-bold text-gradient-primary">R$ 16.950</div>
+            <div className="text-2xl font-bold text-gradient-primary">R$ 0</div>
             <div className="text-xs text-muted-foreground">Lucro líquido</div>
           </CardContent>
         </Card>
@@ -120,7 +89,7 @@ function FinancialPage() {
                 <CreditCard className="w-4 h-4 text-purple-600" />
               </span>
             </div>
-            <div className="text-2xl font-bold">59,7%</div>
+            <div className="text-2xl font-bold">0%</div>
             <div className="text-xs text-muted-foreground">Margem de lucro</div>
           </CardContent>
         </Card>

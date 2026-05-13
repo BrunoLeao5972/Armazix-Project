@@ -20,14 +20,7 @@ export const Route = createFileRoute("/admin/customers")({
   }),
 });
 
-const CUSTOMERS = [
-  { id: 1, name: "Maria Silva", email: "maria@email.com", phone: "(11) 99999-1234", orders: 12, total: "R$ 1.890", since: "Jan 2025" },
-  { id: 2, name: "João Santos", email: "joao@email.com", phone: "(11) 98888-5678", orders: 8, total: "R$ 1.240", since: "Fev 2025" },
-  { id: 3, name: "Ana Costa", email: "ana@email.com", phone: "(11) 97777-9012", orders: 5, total: "R$ 680", since: "Mar 2025" },
-  { id: 4, name: "Pedro Lima", email: "pedro@email.com", phone: "(11) 96666-3456", orders: 15, total: "R$ 2.450", since: "Dez 2024" },
-  { id: 5, name: "Lucia Ferreira", email: "lucia@email.com", phone: "(11) 95555-7890", orders: 3, total: "R$ 320", since: "Abr 2025" },
-  { id: 6, name: "Carlos Mendes", email: "carlos@email.com", phone: "(11) 94444-1234", orders: 7, total: "R$ 980", since: "Mar 2025" },
-];
+const CUSTOMERS: { id: number; name: string; email: string; phone: string; orders: number; total: string; since: string }[] = [];
 
 function CustomersPage() {
   const [search, setSearch] = useState("");

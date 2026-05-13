@@ -10,11 +10,7 @@ export const Route = createFileRoute("/store/account")({
   }),
 });
 
-const ORDERS = [
-  { id: "3250", status: "concluido", total: "R$ 89,70", date: "Hoje, 14:30", items: 3 },
-  { id: "3198", status: "preparando", total: "R$ 45,80", date: "Hoje, 11:15", items: 2 },
-  { id: "3120", status: "concluido", total: "R$ 124,50", date: "Ontem", items: 5 },
-];
+const ORDERS: { id: string; status: string; total: string; date: string; items: number }[] = [];
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   preparando: { label: "Preparando", color: "bg-amber-500/15 text-amber-700" },

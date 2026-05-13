@@ -36,18 +36,7 @@ export const Route = createFileRoute("/admin/products")({
   }),
 });
 
-const PRODUCTS = [
-  { id: 1, name: "Arroz 5kg", category: "Grãos", price: "R$ 24,90", stock: 150, status: "active", image: "🌾" },
-  { id: 2, name: "Feijão Carioca 1kg", category: "Grãos", price: "R$ 8,90", stock: 89, status: "active", image: "🫘" },
-  { id: 3, name: "Açúcar Cristal 1kg", category: "Açúcar", price: "R$ 5,50", stock: 200, status: "active", image: "🍬" },
-  { id: 4, name: "Óleo de Soja 900ml", category: "Óleos", price: "R$ 7,80", stock: 45, status: "active", image: "🫒" },
-  { id: 5, name: "Leite Integral 1L", category: "Laticínios", price: "R$ 6,20", stock: 12, status: "low", image: "🥛" },
-  { id: 6, name: "Café Torrado 500g", category: "Bebidas", price: "R$ 18,90", stock: 67, status: "active", image: "☕" },
-  { id: 7, name: "Macarrão Espaguete 500g", category: "Massas", price: "R$ 4,50", stock: 0, status: "out", image: "🍝" },
-  { id: 8, name: "Sabão em Pó 1kg", category: "Limpeza", price: "R$ 12,90", stock: 34, status: "active", image: "🧹" },
-  { id: 9, name: "Refrigerante Cola 2L", category: "Bebidas", price: "R$ 8,50", stock: 78, status: "active", image: "🥤" },
-  { id: 10, name: "Biscoito Cream 200g", category: "Biscoitos", price: "R$ 3,90", stock: 5, status: "low", image: "🍪" },
-];
+const PRODUCTS: { id: number; name: string; category: string; price: string; stock: number; status: string; image: string }[] = [];
 
 const statusMap: Record<string, { label: string; color: string }> = {
   active: { label: "Ativo", color: "bg-primary/15 text-primary" },

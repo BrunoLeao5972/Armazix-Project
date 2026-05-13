@@ -29,68 +29,7 @@ export const Route = createFileRoute("/admin/orders")({
   }),
 });
 
-const ORDERS = [
-  {
-    id: "#3208",
-    customer: "Maria Silva",
-    items: ["Arroz 5kg", "Feijão 1kg", "Óleo 900ml"],
-    total: "R$ 41,60",
-    payment: "PIX",
-    status: "novo",
-    time: "2 min atrás",
-    address: "Rua das Flores, 123",
-  },
-  {
-    id: "#3207",
-    customer: "João Santos",
-    items: ["Café 500g", "Açúcar 1kg", "Leite 1L"],
-    total: "R$ 30,60",
-    payment: "Cartão",
-    status: "preparando",
-    time: "15 min atrás",
-    address: "Av. Brasil, 456",
-  },
-  {
-    id: "#3206",
-    customer: "Ana Costa",
-    items: ["Macarrão 500g", "Molho de tomate"],
-    total: "R$ 12,30",
-    payment: "PIX",
-    status: "saiu_entrega",
-    time: "32 min atrás",
-    address: "Rua São Paulo, 789",
-  },
-  {
-    id: "#3205",
-    customer: "Pedro Lima",
-    items: ["Cesta básica completa"],
-    total: "R$ 189,90",
-    payment: "Dinheiro",
-    status: "concluido",
-    time: "1h atrás",
-    address: "Rua Amazonas, 321",
-  },
-  {
-    id: "#3204",
-    customer: "Lucia Ferreira",
-    items: ["Refrigerante 2L", "Biscoito 200g"],
-    total: "R$ 12,40",
-    payment: "PIX",
-    status: "concluido",
-    time: "2h atrás",
-    address: "Rua Pará, 654",
-  },
-  {
-    id: "#3203",
-    customer: "Carlos Mendes",
-    items: ["Sabão em pó 1kg"],
-    total: "R$ 12,90",
-    payment: "Cartão",
-    status: "cancelado",
-    time: "3h atrás",
-    address: "Rua Bahia, 987",
-  },
-];
+const ORDERS: { id: string; customer: string; items: string[]; total: string; payment: string; status: string; time: string; address: string }[] = [];
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; color: string; bgColor: string }> = {
   novo: { label: "Novo", icon: Clock, color: "text-blue-600", bgColor: "bg-blue-500/15" },

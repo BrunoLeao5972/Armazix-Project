@@ -1,0 +1,75 @@
+import { createDb } from "@/lib/db";
+import { findUserByEmail, verifyPassword, signJWT } from "@/lib/auth";
+
+export async function loginHandler(request: Request): Promise<Response> {
+  const { email, password } = await request.json() as { email: string; password: string };
+
+  if (!email || !password) {
+    return new Response(JSON.stringify({ error: "Email e senha são obrigatórios" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+
+  const user = await findUserByEmail(db, email);
+
+  if (!user) {
+    return new Response(JSON.stringify({ error: "Email ou senha incorretos" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const valid = await verifyPassword(password, user.passwordHash);
+  if (!valid) {
+    return new Response(JSON.stringify({ error: "Email ou senha incorretos" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  if (!user.emailVerified) {
+    return new Response(JSON.stringify({
+      error: "Email não verificado",
+      needsVerification: true,
+      email: user.email,
+    }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  if (!user.active) {
+    return new Response(JSON.stringify({ error: "Conta desativada" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  // Sign JWT
+  const secret = process.env.JWT_SECRET!;
+  const token = await signJWT(
+    { userId: user.id, email: user.email, role: user.role },
+    secret,
+  );
+
+  return new Response(JSON.stringify({
+    success: true,
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    },
+  }), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "set-cookie": `armazix_token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`,
+    },
+  });
+}

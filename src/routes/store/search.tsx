@@ -12,19 +12,9 @@ export const Route = createFileRoute("/store/search")({
   }),
 });
 
-const SUGGESTIONS = ["Arroz", "Feijão", "Café", "Leite", "Açaí", "Pão"];
-const RECENT = ["Hambúrguer artesanal", "Café Pilão", "Arroz 5kg"];
-
-const ALL_PRODUCTS = [
-  { id: 1, name: "Arroz Tio João 5kg", price: 32.90, image: "🍚", rating: 4.8, category: "Mercado" },
-  { id: 2, name: "Feijão Carioca 1kg", price: 8.90, image: "🫘", rating: 4.6, category: "Mercado" },
-  { id: 3, name: "Café Pilão 500g", price: 18.90, image: "☕", rating: 4.9, category: "Mercado" },
-  { id: 4, name: "Leite Integral 1L", price: 6.49, image: "🥛", rating: 4.5, category: "Bebidas" },
-  { id: 5, name: "Pão Francês Kg", price: 12.90, image: "🥖", rating: 4.7, category: "Padaria" },
-  { id: 6, name: "Hambúrguer Artesanal", price: 28.90, image: "🍔", rating: 4.9, category: "Lanches" },
-  { id: 7, name: "Açaí 500ml", price: 22.90, image: "🫐", rating: 4.8, category: "Bebidas" },
-  { id: 8, name: "Bife de Alcatra Kg", price: 59.90, image: "🥩", rating: 4.7, category: "Açougue" },
-];
+const SUGGESTIONS: string[] = [];
+const RECENT: string[] = [];
+const ALL_PRODUCTS: { id: number; name: string; price: number; image: string; rating: number; category: string }[] = [];
 
 function SearchPage() {
   const [query, setQuery] = useState("");
