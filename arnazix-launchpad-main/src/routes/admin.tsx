@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingBag,
   LayoutDashboard,
@@ -68,7 +67,7 @@ function AdminLayout() {
     <div className="min-h-screen bg-background flex">
       {/* Desktop Sidebar */}
       <aside
-        className={`hidden lg:flex flex-col border-r border-border/50 bg-surface transition-all duration-300 ${
+        className={`hidden lg:flex flex-col border-r border-border/50 bg-surface transition-[width] duration-200 ${
           collapsed ? "w-[68px]" : "w-[240px]"
         }`}
       >
@@ -84,7 +83,7 @@ function AdminLayout() {
             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-secondary transition-colors"
           >
             <ChevronLeft
-              className={`w-4 h-4 transition-transform ${collapsed ? "rotate-180" : ""}`}
+              className={`w-4 h-4 transition-transform duration-200 ${collapsed ? "rotate-180" : ""}`}
             />
           </button>
         </div>
@@ -96,7 +95,7 @@ function AdminLayout() {
               <Link
                 key={item.href}
                 to={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   active
                     ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -112,7 +111,7 @@ function AdminLayout() {
         <div className="p-3">
           <Link
             to="/login"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
           >
             <LogOut className="w-5 h-5 shrink-0" />
             {!collapsed && <span>Sair</span>}
@@ -121,75 +120,66 @@ function AdminLayout() {
       </aside>
 
       {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/40 z-40 lg:hidden"
-              onClick={() => setMobileOpen(false)}
-            />
-            <motion.aside
-              initial={{ x: -280 }}
-              animate={{ x: 0 }}
-              exit={{ x: -280 }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed left-0 top-0 bottom-0 w-[260px] bg-surface border-r border-border/50 z-50 lg:hidden flex flex-col"
-            >
-              <div className="h-16 flex items-center justify-between px-4">
-                <Link to="/admin/dashboard" className="flex items-center gap-2.5 font-bold text-lg" onClick={() => setMobileOpen(false)}>
-                  <span className="grid place-items-center w-9 h-9 rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
-                    <ShoppingBag className="w-5 h-5" />
-                  </span>
-                  ARMAZIX
-                </Link>
-                <button onClick={() => setMobileOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-secondary">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <Separator className="opacity-50" />
-              <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto no-scrollbar">
-                {NAV_ITEMS.map((item) => {
-                  const active = pathname === item.href;
-                  return (
-                    <Link
-                      key={item.href}
-                      to={item.href}
-                      onClick={() => setMobileOpen(false)}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                        active
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                      }`}
-                    >
-                      <item.icon className={`w-5 h-5 ${active ? "text-primary" : ""}`} />
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </nav>
-              <Separator className="opacity-50" />
-              <div className="p-3">
-                <Link
-                  to="/login"
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10 transition-all"
-                >
-                  <LogOut className="w-5 h-5" />
-                  <span>Sair</span>
-                </Link>
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+      {mobileOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside
+            className="fixed left-0 top-0 bottom-0 w-[260px] bg-surface border-r border-border/50 z-50 lg:hidden flex flex-col animate-in slide-in-from-left duration-100"
+          >
+            <div className="h-16 flex items-center justify-between px-4">
+              <Link to="/admin/dashboard" className="flex items-center gap-2.5 font-bold text-lg" onClick={() => setMobileOpen(false)}>
+                <span className="grid place-items-center w-9 h-9 rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
+                  <ShoppingBag className="w-5 h-5" />
+                </span>
+                ARMAZIX
+              </Link>
+              <button onClick={() => setMobileOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-secondary">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <Separator className="opacity-50" />
+            <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto no-scrollbar">
+              {NAV_ITEMS.map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    to={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                      active
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    }`}
+                  >
+                    <item.icon className={`w-5 h-5 ${active ? "text-primary" : ""}`} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+            <Separator className="opacity-50" />
+            <div className="p-3">
+              <Link
+                to="/login"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+              >
+                <LogOut className="w-5 h-5" />
+                <span>Sair</span>
+              </Link>
+            </div>
+          </aside>
+        </>
+      )}
 
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar */}
-        <header className="h-16 border-b border-border/50 bg-surface/80 backdrop-blur-xl sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6">
+        <header className="h-16 border-b border-border/50 bg-surface sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileOpen(true)}
@@ -208,7 +198,7 @@ function AdminLayout() {
 
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="hidden sm:flex gap-1.5 rounded-full px-3 py-1 text-xs font-medium border-primary/30 text-primary">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
               Loja ativa
             </Badge>
             <Button variant="ghost" size="icon" className="rounded-xl relative">

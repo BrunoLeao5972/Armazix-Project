@@ -1,17 +1,9 @@
+import { lazy, Suspense } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import { BarChart3, TrendingUp, Users, Package, DollarSign, MoreHorizontal } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+const MonthlySalesChart = lazy(() => import("@/components/armazix/MonthlySalesChart"));
 
 export const Route = createFileRoute("/admin/reports")({
   component: ReportsPage,
@@ -39,12 +31,7 @@ const topProducts = [
 
 function ReportsPage() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
-      className="space-y-6"
-    >
+    <div className="space-y-6 animate-in fade-in duration-300">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Relatórios</h1>
         <p className="text-sm text-muted-foreground mt-1">Análises e métricas da sua loja</p>
@@ -100,28 +87,9 @@ function ReportsPage() {
         </CardHeader>
         <CardContent>
           <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={monthlyData}>
-                <defs>
-                  <linearGradient id="colorVendas" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--color-primary)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="var(--color-primary)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "var(--color-surface)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "12px",
-                    fontSize: 12,
-                  }}
-                />
-                <Area type="monotone" dataKey="vendas" stroke="var(--color-primary)" strokeWidth={2} fill="url(#colorVendas)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
+              <MonthlySalesChart />
+            </Suspense>
           </div>
         </CardContent>
       </Card>
@@ -152,6 +120,6 @@ function ReportsPage() {
           </div>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   );
 }

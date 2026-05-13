@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import { Truck, Clock, CheckCircle2, MapPin, Phone } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,11 +26,8 @@ const statusConfig: Record<string, { label: string; icon: React.ElementType; col
 
 function DeliveryPage() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
-      className="space-y-6"
+    <div
+      className="space-y-6 animate-in fade-in duration-300"
     >
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Delivery</h1>
@@ -64,11 +60,8 @@ function DeliveryPage() {
           const cfg = statusConfig[d.status];
           const Icon = cfg.icon;
           return (
-            <motion.div
+            <div
               key={d.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05, duration: 0.3 }}
             >
               <Card className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-shadow">
                 <CardContent className="p-4">
@@ -104,10 +97,10 @@ function DeliveryPage() {
                   </div>
                 </CardContent>
               </Card>
-            </motion.div>
+            </div>
           );
         })}
       </div>
-    </motion.div>
+    </div>
   );
 }

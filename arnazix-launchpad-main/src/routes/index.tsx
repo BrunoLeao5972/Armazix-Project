@@ -13,13 +13,13 @@ export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
-      { title: "ARMAZIX — Sua loja digital com a velocidade de um clique" },
+      { title: "ARMAZIX - Crie loja digital em apenas 2 minutos" },
       {
         name: "description",
         content:
           "Plataforma brasileira para organizar produtos, controlar estoque e vender pelo WhatsApp. Comece grátis em minutos.",
       },
-      { property: "og:title", content: "ARMAZIX — Sua loja digital em um clique" },
+      { property: "og:title", content: "ARMAZIX - Crie loja digital em apenas 2 minutos" },
       {
         property: "og:description",
         content:

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import {
   Plus,
   Search,
@@ -67,11 +66,8 @@ function ProductsPage() {
   );
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
-      className="space-y-6"
+    <div
+      className="space-y-6 animate-in fade-in duration-300"
     >
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -158,11 +154,8 @@ function ProductsPage() {
       {view === "grid" ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {filtered.map((product, i) => (
-            <motion.div
+            <div
               key={product.id}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.04, duration: 0.3 }}
             >
               <Card className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-shadow group overflow-hidden">
                 <div className="h-28 bg-secondary/30 flex items-center justify-center text-4xl">
@@ -182,7 +175,7 @@ function ProductsPage() {
                   </div>
                 </CardContent>
               </Card>
-            </motion.div>
+            </div>
           ))}
         </div>
       ) : (
@@ -234,6 +227,6 @@ function ProductsPage() {
           </CardContent>
         </Card>
       )}
-    </motion.div>
+    </div>
   );
 }

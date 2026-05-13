@@ -1,5 +1,5 @@
+import { lazy, Suspense } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import {
   ArrowUpCircle,
   ArrowDownCircle,
@@ -12,15 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+const StockMovementChart = lazy(() => import("@/components/armazix/StockMovementChart"));
 
 export const Route = createFileRoute("/admin/stock")({
   component: StockPage,
@@ -63,12 +55,7 @@ const typeConfig: Record<string, { label: string; icon: React.ElementType; color
 
 function StockPage() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
-      className="space-y-6"
-    >
+    <div className="space-y-6 animate-in fade-in duration-300">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Estoque</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -136,23 +123,9 @@ function StockPage() {
         </CardHeader>
         <CardContent>
           <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={movementData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "var(--color-surface)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: "12px",
-                    fontSize: 12,
-                  }}
-                />
-                <Bar dataKey="entrada" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="saida" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
+              <StockMovementChart />
+            </Suspense>
           </div>
         </CardContent>
       </Card>
@@ -223,6 +196,6 @@ function StockPage() {
           </CardContent>
         </Card>
       </div>
-    </motion.div>
+    </div>
   );
 }

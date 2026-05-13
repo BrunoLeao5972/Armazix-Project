@@ -1,5 +1,5 @@
+import { lazy, Suspense } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import {
   DollarSign,
   TrendingUp,
@@ -13,18 +13,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
+const CashFlowChart = lazy(() => import("@/components/armazix/CashFlowChart"));
+const PaymentMethodsChart = lazy(() => import("@/components/armazix/PaymentMethodsChart"));
 
 export const Route = createFileRoute("/admin/financial")({
   component: FinancialPage,
@@ -72,11 +62,8 @@ const accountsReceivable = [
 
 function FinancialPage() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
-      className="space-y-6"
+    <div
+      className="space-y-6 animate-in fade-in duration-300"
     >
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Financeiro</h1>
@@ -152,33 +139,9 @@ function FinancialPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[220px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={cashFlowData}>
-                  <defs>
-                    <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#00C853" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#00C853" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="colorDespesa" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "var(--color-surface)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "12px",
-                      fontSize: 12,
-                    }}
-                  />
-                  <Area type="monotone" dataKey="receita" stroke="#00C853" strokeWidth={2} fill="url(#colorReceita)" />
-                  <Area type="monotone" dataKey="despesa" stroke="#3b82f6" strokeWidth={2} fill="url(#colorDespesa)" />
-                </AreaChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
+                <CashFlowChart />
+              </Suspense>
             </div>
           </CardContent>
         </Card>
@@ -189,31 +152,9 @@ function FinancialPage() {
           </CardHeader>
           <CardContent>
             <div className="h-[160px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={paymentMethods}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={70}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {paymentMethods.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "var(--color-surface)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "12px",
-                      fontSize: 12,
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
+                <PaymentMethodsChart />
+              </Suspense>
             </div>
             <div className="space-y-2 mt-2">
               {paymentMethods.map((m) => (
@@ -320,6 +261,6 @@ function FinancialPage() {
           </Card>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

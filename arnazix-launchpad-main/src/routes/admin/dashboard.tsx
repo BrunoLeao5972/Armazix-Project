@@ -1,5 +1,5 @@
+import { lazy, Suspense } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import {
   TrendingUp,
   ShoppingCart,
@@ -13,17 +13,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-} from "recharts";
+
+const RevenueChart = lazy(() => import("@/components/armazix/RevenueChart"));
+const OrdersChart = lazy(() => import("@/components/armazix/OrdersChart"));
 
 export const Route = createFileRoute("/admin/dashboard")({
   component: DashboardPage,
@@ -69,27 +61,18 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 };
 
 function DashboardPage() {
-  const container = {
-    hidden: { opacity: 0 },
-    show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-  };
-  const item = {
-    hidden: { opacity: 0, y: 12 },
-    show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" as const } },
-  };
-
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-300">
       {/* Header */}
-      <motion.div variants={item}>
+      <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Visão geral da sua loja hoje
         </p>
-      </motion.div>
+      </div>
 
       {/* KPI Cards */}
-      <motion.div variants={item} className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard
           title="Vendas do dia"
           value="R$ 4.280"
@@ -133,11 +116,11 @@ function DashboardPage() {
           icon={AlertTriangle}
           alert
         />
-      </motion.div>
+      </div>
 
       {/* Charts */}
       <div className="grid lg:grid-cols-2 gap-4">
-        <motion.div variants={item}>
+        <div>
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -149,40 +132,15 @@ function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={revenueData}>
-                    <defs>
-                      <linearGradient id="colorValor" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--color-primary)" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="var(--color-primary)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "var(--color-surface)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: "12px",
-                        fontSize: 12,
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="valor"
-                      stroke="var(--color-primary)"
-                      strokeWidth={2}
-                      fill="url(#colorValor)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
+                  <RevenueChart />
+                </Suspense>
               </div>
             </CardContent>
           </Card>
-        </motion.div>
+        </div>
 
-        <motion.div variants={item}>
+        <div>
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -194,30 +152,17 @@ function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={ordersData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12 }} stroke="var(--color-muted-foreground)" axisLine={false} tickLine={false} />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "var(--color-surface)",
-                        border: "1px solid var(--color-border)",
-                        borderRadius: "12px",
-                        fontSize: 12,
-                      }}
-                    />
-                    <Bar dataKey="pedidos" fill="var(--color-primary)" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
+                  <OrdersChart />
+                </Suspense>
               </div>
             </CardContent>
           </Card>
-        </motion.div>
+        </div>
       </div>
 
       {/* Recent Orders */}
-      <motion.div variants={item}>
+      <div>
         <Card className="rounded-2xl border-border/50 shadow-soft">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -253,8 +198,8 @@ function DashboardPage() {
             </div>
           </CardContent>
         </Card>
-      </motion.div>
-    </motion.div>
+      </div>
+    </div>
   );
 }
 

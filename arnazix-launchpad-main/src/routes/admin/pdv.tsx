@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import {
   Search,
   Plus,
@@ -96,10 +95,7 @@ function PDVPage() {
   ];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
+    <div
       className="h-[calc(100vh-7rem)] flex flex-col lg:flex-row gap-4"
     >
       {/* Products Panel */}
@@ -257,19 +253,14 @@ function PDVPage() {
       {/* Checkout Success Modal */}
       {showCheckout && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
+          <div
             className="bg-surface rounded-2xl p-8 max-w-sm w-full text-center shadow-soft"
           >
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.2 }}
+            <div
               className="grid place-items-center w-16 h-16 mx-auto rounded-full bg-gradient-primary text-primary-foreground shadow-glow mb-4"
             >
               <Check className="w-8 h-8" />
-            </motion.div>
+            </div>
             <h3 className="text-xl font-bold">Venda concluída!</h3>
             <p className="text-sm text-muted-foreground mt-1">
               Total: R$ {total.toFixed(2).replace(".", ",")}
@@ -288,10 +279,10 @@ function PDVPage() {
             >
               Nova venda
             </Button>
-          </motion.div>
+          </div>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }
 

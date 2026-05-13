@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import { Ticket, Plus, MoreHorizontal, Calendar, Percent } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,11 +32,8 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 
 function CouponsPage() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
-      className="space-y-6"
+    <div
+      className="space-y-6 animate-in fade-in duration-300"
     >
       <div className="flex items-center justify-between">
         <div>
@@ -52,11 +48,8 @@ function CouponsPage() {
 
       <div className="space-y-3">
         {COUPONS.map((coupon, i) => (
-          <motion.div
+          <div
             key={coupon.id}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05, duration: 0.3 }}
           >
             <Card className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-shadow">
               <CardContent className="p-4">
@@ -110,9 +103,9 @@ function CouponsPage() {
                 </div>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }

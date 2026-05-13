@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import { Tags, Plus, MoreHorizontal } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,11 +30,8 @@ const CATEGORIES = [
 
 function CategoriesPage() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
-      className="space-y-6"
+    <div
+      className="space-y-6 animate-in fade-in duration-300"
     >
       <div className="flex items-center justify-between">
         <div>
@@ -50,11 +46,8 @@ function CategoriesPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {CATEGORIES.map((cat, i) => (
-          <motion.div
+          <div
             key={cat.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.04, duration: 0.3 }}
           >
             <Card className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-shadow group">
               <CardContent className="p-4">
@@ -85,9 +78,9 @@ function CategoriesPage() {
                 </div>
               </CardContent>
             </Card>
-          </motion.div>
+          </div>
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }

@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { motion } from "framer-motion";
 import {
   Store,
   User,
@@ -26,11 +25,8 @@ export const Route = createFileRoute("/admin/settings")({
 
 function SettingsPage() {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
-      className="space-y-6 max-w-2xl"
+    <div
+      className="space-y-6 max-w-2xl animate-in fade-in duration-300"
     >
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
@@ -204,6 +200,6 @@ function SettingsPage() {
           </CardContent>
         </Card>
       </div>
-    </motion.div>
+    </div>
   );
 }
