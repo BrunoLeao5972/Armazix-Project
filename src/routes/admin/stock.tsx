@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowUpCircle,
@@ -8,6 +8,7 @@ import {
   TrendingUp,
   TrendingDown,
   MoreHorizontal,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,31 +22,27 @@ export const Route = createFileRoute("/admin/stock")({
   }),
 });
 
-const stockMovements = [
-  { id: 1, product: "Arroz 5kg", type: "entrada", qty: 50, date: "Hoje, 10:30", supplier: "Distribuidora ABC" },
-  { id: 2, product: "Feijão 1kg", type: "saida", qty: 12, date: "Hoje, 09:15", supplier: "" },
-  { id: 3, product: "Leite 1L", type: "perda", qty: 3, date: "Hoje, 08:00", supplier: "" },
-  { id: 4, product: "Café 500g", type: "entrada", qty: 30, date: "Ontem, 16:00", supplier: "Café do Brasil" },
-  { id: 5, product: "Açúcar 1kg", type: "saida", qty: 8, date: "Ontem, 14:30", supplier: "" },
-  { id: 6, product: "Óleo 900ml", type: "entrada", qty: 25, date: "Ontem, 11:00", supplier: "Distribuidora ABC" },
-];
+interface StockStats {
+  totalStock: number;
+  weeklyIn: number;
+  weeklyOut: number;
+  lowStockCount: number;
+}
 
-const lowStockItems = [
-  { name: "Leite Integral 1L", stock: 12, min: 30 },
-  { name: "Biscoito Cream 200g", stock: 5, min: 20 },
-  { name: "Macarrão Espaguete 500g", stock: 0, min: 25 },
-  { name: "Sabonete Liquido 250ml", stock: 8, min: 15 },
-];
+interface StockMovement {
+  id: string;
+  product: string;
+  type: "entrada" | "saida" | "perda";
+  qty: number;
+  date: string;
+}
 
-const movementData = [
-  { name: "Seg", entrada: 80, saida: 45 },
-  { name: "Ter", entrada: 50, saida: 30 },
-  { name: "Qua", entrada: 70, saida: 55 },
-  { name: "Qui", entrada: 90, saida: 40 },
-  { name: "Sex", entrada: 60, saida: 50 },
-  { name: "Sáb", entrada: 40, saida: 65 },
-  { name: "Dom", entrada: 30, saida: 25 },
-];
+interface LowStockItem {
+  id: string;
+  name: string;
+  stock: number;
+  minStock: number;
+}
 
 const typeConfig: Record<string, { label: string; icon: React.ElementType; color: string; bgColor: string }> = {
   entrada: { label: "Entrada", icon: ArrowUpCircle, color: "text-primary", bgColor: "bg-primary/15" },
@@ -54,6 +51,64 @@ const typeConfig: Record<string, { label: string; icon: React.ElementType; color
 };
 
 function StockPage() {
+  const [stats, setStats] = useState<StockStats | null>(null);
+  const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const storeId = localStorage.getItem("storeId");
+    if (!storeId) {
+      setLoading(false);
+      setError("Loja não encontrada");
+      return;
+    }
+    fetchStockData(storeId);
+  }, []);
+
+  const fetchStockData = async (storeId: string) => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/stock/stats?storeId=${storeId}`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data.error || "Erro ao carregar dados");
+        return;
+      }
+
+      setStats(data.stats);
+      setMovements(data.movements || []);
+      setLowStock(data.lowStock || []);
+    } catch (err) {
+      setError("Erro de conexão");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="h-[60vh] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground">{error}</p>
+          <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
+            Tentar novamente
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div>
@@ -72,7 +127,7 @@ function StockPage() {
                 <Package className="w-4 h-4 text-primary" />
               </span>
             </div>
-            <div className="text-2xl font-bold">1.280</div>
+            <div className="text-2xl font-bold">{stats?.totalStock || 0}</div>
             <div className="text-xs text-muted-foreground">Total em estoque</div>
           </CardContent>
         </Card>
@@ -83,7 +138,7 @@ function StockPage() {
                 <TrendingUp className="w-4 h-4 text-primary" />
               </span>
             </div>
-            <div className="text-2xl font-bold">155</div>
+            <div className="text-2xl font-bold">{stats?.weeklyIn || 0}</div>
             <div className="text-xs text-muted-foreground">Entradas na semana</div>
           </CardContent>
         </Card>
@@ -94,7 +149,7 @@ function StockPage() {
                 <TrendingDown className="w-4 h-4 text-blue-600" />
               </span>
             </div>
-            <div className="text-2xl font-bold">310</div>
+            <div className="text-2xl font-bold">{stats?.weeklyOut || 0}</div>
             <div className="text-xs text-muted-foreground">Saídas na semana</div>
           </CardContent>
         </Card>
@@ -105,7 +160,7 @@ function StockPage() {
                 <AlertTriangle className="w-4 h-4 text-amber-600" />
               </span>
             </div>
-            <div className="text-2xl font-bold">4</div>
+            <div className="text-2xl font-bold">{stats?.lowStockCount || 0}</div>
             <div className="text-xs text-muted-foreground">Itens em alerta</div>
           </CardContent>
         </Card>
@@ -138,7 +193,11 @@ function StockPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {stockMovements.map((m) => {
+              {movements.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  Nenhuma movimentação recente
+                </div>
+              ) : movements.map((m) => {
                 const cfg = typeConfig[m.type];
                 const Icon = cfg.icon;
                 return (
@@ -174,20 +233,24 @@ function StockPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {lowStockItems.map((item) => (
+              {lowStock.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  Nenhum item com estoque baixo
+                </div>
+              ) : lowStock.map((item) => (
                 <div key={item.name} className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{item.name}</span>
                     <span className={`text-xs font-bold ${item.stock === 0 ? "text-destructive" : "text-amber-600"}`}>
-                      {item.stock === 0 ? "Sem estoque" : `${item.stock}/${item.min}`}
+                      {item.stock === 0 ? "Sem estoque" : `${item.stock}/${item.minStock}`}
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-secondary overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${
-                        item.stock === 0 ? "bg-destructive" : item.stock < item.min * 0.5 ? "bg-amber-500" : "bg-primary"
+                        item.stock === 0 ? "bg-destructive" : item.stock < item.minStock * 0.5 ? "bg-amber-500" : "bg-primary"
                       }`}
-                      style={{ width: `${Math.min((item.stock / item.min) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((item.stock / item.minStock) * 100, 100)}%` }}
                     />
                   </div>
                 </div>

@@ -35,6 +35,7 @@ export const stores = pgTable("stores", {
   deliveryFee: numeric("delivery_fee", { precision: 10, scale: 2 }).default("0"),
   minDeliveryOrder: numeric("min_delivery_order", { precision: 10, scale: 2 }).default("0"),
   deliveryEstimate: varchar("delivery_estimate", { length: 30 }).default("30-50 min"),
+  businessHours: jsonb("business_hours").$type<Array<{ day: string; open: string; close: string; closed: boolean }>>(),
   rating: numeric("rating", { precision: 2, scale: 1 }).default("4.8"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),

@@ -1,6 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { BarChart3, TrendingUp, Users, Package, DollarSign, MoreHorizontal } from "lucide-react";
+import { BarChart3, TrendingUp, Users, Package, DollarSign, MoreHorizontal, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 const MonthlySalesChart = lazy(() => import("@/components/armazix/MonthlySalesChart"));
@@ -12,24 +12,80 @@ export const Route = createFileRoute("/admin/reports")({
   }),
 });
 
-const monthlyData = [
-  { name: "Jan", vendas: 18500, pedidos: 120 },
-  { name: "Fev", vendas: 22000, pedidos: 145 },
-  { name: "Mar", vendas: 19800, pedidos: 130 },
-  { name: "Abr", vendas: 24500, pedidos: 160 },
-  { name: "Mai", vendas: 28450, pedidos: 185 },
-  { name: "Jun", vendas: 26000, pedidos: 170 },
-];
+interface ReportStats {
+  totalRevenue: number;
+  totalOrders: number;
+  totalCustomers: number;
+  averageTicket: number;
+}
 
-const topProducts = [
-  { name: "Arroz 5kg", qty: 280, revenue: "R$ 6.972" },
-  { name: "Feijão 1kg", qty: 195, revenue: "R$ 1.735" },
-  { name: "Café 500g", qty: 150, revenue: "R$ 2.835" },
-  { name: "Leite 1L", qty: 140, revenue: "R$ 868" },
-  { name: "Óleo 900ml", qty: 120, revenue: "R$ 936" },
-];
+interface TopProduct {
+  name: string;
+  qty: number;
+  revenue: number;
+}
 
 function ReportsPage() {
+  const [stats, setStats] = useState<ReportStats | null>(null);
+  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const storeId = localStorage.getItem("storeId");
+    if (!storeId) {
+      setLoading(false);
+      setError("Loja não encontrada");
+      return;
+    }
+    fetchReportsData(storeId);
+  }, []);
+
+  const fetchReportsData = async (storeId: string) => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/reports/stats?storeId=${storeId}`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data.error || "Erro ao carregar dados");
+        return;
+      }
+
+      setStats(data.stats);
+      setTopProducts(data.topProducts || []);
+    } catch (err) {
+      setError("Erro de conexão");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return `R$ ${value.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
+  };
+
+  if (loading) {
+    return (
+      <div className="h-[60vh] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground">{error}</p>
+          <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
+            Tentar novamente
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div>
@@ -44,7 +100,7 @@ function ReportsPage() {
               <DollarSign className="w-4 h-4 text-primary" />
               <span className="text-xs text-muted-foreground">Receita total</span>
             </div>
-            <div className="text-xl font-bold">R$ 139.250</div>
+            <div className="text-xl font-bold">{formatCurrency(stats?.totalRevenue || 0)}</div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-border/50 shadow-soft">
@@ -53,7 +109,7 @@ function ReportsPage() {
               <Package className="w-4 h-4 text-blue-500" />
               <span className="text-xs text-muted-foreground">Pedidos total</span>
             </div>
-            <div className="text-xl font-bold">910</div>
+            <div className="text-xl font-bold">{stats?.totalOrders || 0}</div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-border/50 shadow-soft">
@@ -62,7 +118,7 @@ function ReportsPage() {
               <Users className="w-4 h-4 text-purple-500" />
               <span className="text-xs text-muted-foreground">Clientes</span>
             </div>
-            <div className="text-xl font-bold">342</div>
+            <div className="text-xl font-bold">{stats?.totalCustomers || 0}</div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl border-border/50 shadow-soft">
@@ -71,7 +127,7 @@ function ReportsPage() {
               <TrendingUp className="w-4 h-4 text-amber-500" />
               <span className="text-xs text-muted-foreground">Ticket médio</span>
             </div>
-            <div className="text-xl font-bold">R$ 153,02</div>
+            <div className="text-xl font-bold">{formatCurrency(stats?.averageTicket || 0)}</div>
           </CardContent>
         </Card>
       </div>
@@ -103,7 +159,11 @@ function ReportsPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {topProducts.map((p, i) => (
+            {topProducts.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                Nenhum produto vendido ainda
+              </div>
+            ) : topProducts.map((p, i) => (
               <div key={p.name} className="flex items-center justify-between py-2 px-3 rounded-xl hover:bg-secondary/50 transition-colors">
                 <div className="flex items-center gap-3">
                   <span className="w-7 h-7 rounded-lg bg-primary/15 grid place-items-center text-xs font-bold text-primary">
@@ -113,7 +173,7 @@ function ReportsPage() {
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-sm text-muted-foreground">{p.qty} un</span>
-                  <span className="text-sm font-bold">{p.revenue}</span>
+                  <span className="text-sm font-bold">{formatCurrency(p.revenue)}</span>
                 </div>
               </div>
             ))}
