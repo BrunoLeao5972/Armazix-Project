@@ -20,6 +20,14 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Environment
+.env
+.env.local
+.env.production
+
+# Drizzle
+.drizzle/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
