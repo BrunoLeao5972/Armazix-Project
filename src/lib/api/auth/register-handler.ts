@@ -53,13 +53,13 @@ export async function registerHandler(request: Request): Promise<Response> {
     emailVerified: false,
   }).returning();
 
-  // Create store
+  // Create store - slug without hyphens
   const slug = body.storeName
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "");
+    .replace(/[^a-z0-9]/g, "")
+    .slice(0, 30);
 
   const [store] = await db.insert(stores).values({
     name: body.storeName,

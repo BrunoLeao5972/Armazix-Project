@@ -75,7 +75,6 @@ function RegisterPage() {
   const [docType, setDocType] = useState<"cpf" | "cnpj">("cpf");
   const [docNumber, setDocNumber] = useState("");
   const [companyName, setCompanyName] = useState("");
-  const [stateReg, setStateReg] = useState("");
 
   // Step 4
   const [cep, setCep] = useState("");
@@ -121,15 +120,28 @@ function RegisterPage() {
     setDocNumber(docType === "cpf" ? formatCPF(v) : formatCNPJ(v));
   };
 
-  const handleCepChange = (v: string) => {
+  const [cepLoading, setCepLoading] = useState(false);
+
+  const handleCepChange = async (v: string) => {
     const formatted = formatCEP(v);
     setCep(formatted);
     const raw = v.replace(/\D/g, "");
     if (raw.length === 8) {
-      setStreet("Rua Exemplo da Silva");
-      setNeighborhood("Centro");
-      setCity("São Paulo");
-      setState("SP");
+      setCepLoading(true);
+      try {
+        const res = await fetch(`https://viacep.com.br/ws/${raw}/json/`);
+        const data = await res.json();
+        if (!data.erro) {
+          setStreet(data.logradouro || "");
+          setNeighborhood(data.bairro || "");
+          setCity(data.localidade || "");
+          setState(data.uf || "");
+        }
+      } catch (error) {
+        console.error("Error fetching CEP:", error);
+      } finally {
+        setCepLoading(false);
+      }
     }
   };
 
@@ -402,7 +414,6 @@ function RegisterPage() {
                             setDocType("cpf");
                             setDocNumber("");
                             setCompanyName("");
-                            setStateReg("");
                           }}
                           className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
                             docType === "cpf"
@@ -437,26 +448,15 @@ function RegisterPage() {
                       />
                     </Field>
                     {docType === "cnpj" && (
-                      <>
-                        <div className="space-y-2">
-                          <Label>Razão social</Label>
-                          <Input
-                            placeholder="Nome empresarial"
-                            value={companyName}
-                            onChange={(e) => setCompanyName(e.target.value)}
-                            className="h-11 rounded-xl"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Inscrição estadual</Label>
-                          <Input
-                            placeholder="Opcional"
-                            value={stateReg}
-                            onChange={(e) => setStateReg(e.target.value)}
-                            className="h-11 rounded-xl"
-                          />
-                        </div>
-                      </>
+                      <div className="space-y-2">
+                        <Label>Razão social (opcional)</Label>
+                        <Input
+                          placeholder="Nome empresarial"
+                          value={companyName}
+                          onChange={(e) => setCompanyName(e.target.value)}
+                          className="h-11 rounded-xl"
+                        />
+                      </div>
                     )}
                   </div>
                 </StepWrapper>
@@ -469,12 +469,20 @@ function RegisterPage() {
                 >
                   <div className="space-y-4">
                     <Field label="CEP" icon={MapPin}>
-                      <Input
-                        placeholder="00000-000"
-                        value={cep}
-                        onChange={(e) => handleCepChange(e.target.value)}
-                        className="pl-10 h-11 rounded-xl"
-                      />
+                      <div className="relative">
+                        <Input
+                          placeholder="00000-000"
+                          value={cep}
+                          onChange={(e) => handleCepChange(e.target.value)}
+                          className="pl-10 h-11 rounded-xl"
+                          disabled={cepLoading}
+                        />
+                        {cepLoading && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
                     </Field>
                     <div className="space-y-2">
                       <Label>Rua</Label>

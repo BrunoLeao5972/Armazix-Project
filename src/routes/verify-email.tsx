@@ -153,8 +153,10 @@ function VerifyEmailPage() {
         </div>
 
         {/* Icon */}
-        <div className="w-20 h-20 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center mb-6 overflow-visible">
-          <Mail className="w-10 h-10 text-primary" />
+        <div className="flex justify-center mb-6">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <Mail className="w-8 h-8 text-primary" />
+          </div>
         </div>
 
         <h1 className="text-2xl font-bold text-center">Verifique seu email</h1>

@@ -4,32 +4,40 @@ import { loginHandler } from "./api/auth/login-handler";
 import { forgotPasswordHandler } from "./api/auth/forgot-password-handler";
 import { resetPasswordHandler } from "./api/auth/reset-password-handler";
 import { resendVerificationHandler } from "./api/auth/resend-verification-handler";
+import { getStoreHandler, updateStoreHandler, getDashboardStatsHandler, getUserStoreHandler } from "./api/store-handler";
 
 type ApiHandler = (request: Request) => Promise<Response>;
 
-const routes: Record<string, ApiHandler> = {
+const postRoutes: Record<string, ApiHandler> = {
   "/api/auth/register": registerHandler,
   "/api/auth/verify-email": verifyEmailHandler,
   "/api/auth/login": loginHandler,
   "/api/auth/forgot-password": forgotPasswordHandler,
   "/api/auth/reset-password": resetPasswordHandler,
   "/api/auth/resend-verification": resendVerificationHandler,
+  "/api/store/update": updateStoreHandler,
+};
+
+const getRoutes: Record<string, ApiHandler> = {
+  "/api/store/get": getStoreHandler,
+  "/api/store/user": getUserStoreHandler,
+  "/api/dashboard/stats": getDashboardStatsHandler,
 };
 
 export async function handleApiRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const handler = routes[url.pathname];
+
+  let handler: ApiHandler | undefined;
+
+  if (request.method === "POST") {
+    handler = postRoutes[url.pathname];
+  } else if (request.method === "GET") {
+    handler = getRoutes[url.pathname];
+  }
 
   if (!handler) {
     return new Response(JSON.stringify({ error: "Not found" }), {
       status: 404,
-      headers: { "content-type": "application/json" },
-    });
-  }
-
-  if (request.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
       headers: { "content-type": "application/json" },
     });
   }

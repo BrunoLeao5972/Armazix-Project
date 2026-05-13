@@ -61,8 +61,21 @@ function LoginPage() {
         return;
       }
 
-      // Store token and redirect
+      // Store token and fetch user's store
       localStorage.setItem("armazix_token", data.token);
+      localStorage.setItem("userId", data.user.id);
+      
+      // Fetch user's store
+      try {
+        const storeRes = await fetch(`/api/store/user?userId=${data.user.id}`);
+        const storeData = await storeRes.json();
+        if (storeRes.ok && storeData.store) {
+          localStorage.setItem("storeId", storeData.store.id);
+        }
+      } catch (err) {
+        console.error("Error fetching store:", err);
+      }
+      
       navigate({ to: "/admin/dashboard" });
     } catch {
       setError("Erro de conexão. Tente novamente.");
@@ -125,14 +138,14 @@ function LoginPage() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 1, duration: 0.5 }}
-            className="absolute -right-4 top-28 glass rounded-2xl p-3 pr-5 shadow-soft border border-border/60 flex items-center gap-3"
+            className="absolute right-0 lg:-right-2 top-20 lg:top-28 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60 flex items-center gap-3 z-10 max-w-[200px]"
           >
-            <span className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-primary text-primary-foreground">
+            <span className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-primary text-primary-foreground flex-shrink-0">
               <Bell className="w-4 h-4" />
             </span>
-            <div>
+            <div className="min-w-0">
               <div className="text-xs text-muted-foreground">Novo Pedido</div>
-              <div className="text-sm font-semibold">#3208 • R$ 189,90</div>
+              <div className="text-sm font-semibold truncate">#3208 • R$ 189,90</div>
             </div>
           </motion.div>
 
@@ -141,7 +154,7 @@ function LoginPage() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 1.3, duration: 0.5 }}
-            className="absolute -left-4 bottom-12 glass rounded-2xl p-3 pr-5 shadow-soft border border-border/60"
+            className="absolute left-0 lg:-left-2 bottom-4 lg:bottom-8 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60 z-10"
           >
             <div className="text-xs text-muted-foreground">Venda via PIX</div>
             <div className="text-lg font-bold text-gradient-primary">R$ 1.249,00</div>

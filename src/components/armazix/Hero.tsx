@@ -67,21 +67,21 @@ export function Hero() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.6 }}
-              className="absolute top-6 -left-2 sm:left-0 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60 flex items-center gap-3"
+              className="absolute top-4 sm:top-6 left-0 sm:left-2 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60 flex items-center gap-3 z-10 max-w-[180px]"
             >
-              <span className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-primary text-primary-foreground">
+              <span className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-primary text-primary-foreground flex-shrink-0">
                 <Bell className="w-4 h-4" />
               </span>
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs text-muted-foreground">Novo Pedido</div>
-                <div className="text-sm font-semibold">#3208 • Maria S.</div>
+                <div className="text-sm font-semibold truncate">#3208 • Maria S.</div>
               </div>
             </motion.div>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.85 }}
-              className="absolute bottom-10 -right-2 sm:right-0 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60"
+              className="absolute bottom-6 sm:bottom-10 right-0 sm:right-2 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60 z-10"
             >
               <div className="text-xs text-muted-foreground">Venda via PIX</div>
               <div className="text-lg font-bold text-gradient-primary">R$ 189,90</div>

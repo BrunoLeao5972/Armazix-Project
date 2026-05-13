@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   TrendingUp,
@@ -9,6 +9,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   MoreHorizontal,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,19 +25,108 @@ export const Route = createFileRoute("/admin/dashboard")({
   }),
 });
 
-const revenueData: { name: string; valor: number }[] = [];
-const ordersData: { name: string; pedidos: number }[] = [];
-const recentOrders: { id: string; customer: string; total: string; status: string; time: string }[] = [];
+interface DashboardStats {
+  totalOrders: number;
+  pendingOrders: number;
+  completedOrders: number;
+  cancelledOrders: number;
+  revenue: number;
+  productsCount: number;
+  lowStockProducts: number;
+  customersCount: number;
+  averageTicket: number;
+}
+
+interface RecentOrder {
+  id: string;
+  customer: string;
+  total: string;
+  status: string;
+  time: string;
+}
 
 const statusConfig: Record<string, { label: string; color: string }> = {
-  novo: { label: "Novo", color: "bg-blue-500/15 text-blue-600" },
-  preparando: { label: "Preparando", color: "bg-amber-500/15 text-amber-600" },
-  saiu_entrega: { label: "Saiu p/ entrega", color: "bg-purple-500/15 text-purple-600" },
-  concluido: { label: "Concluído", color: "bg-primary/15 text-primary" },
-  cancelado: { label: "Cancelado", color: "bg-destructive/15 text-destructive" },
+  received: { label: "Novo", color: "bg-blue-500/15 text-blue-600" },
+  preparing: { label: "Preparando", color: "bg-amber-500/15 text-amber-600" },
+  ready: { label: "Pronto", color: "bg-indigo-500/15 text-indigo-600" },
+  delivering: { label: "Em entrega", color: "bg-purple-500/15 text-purple-600" },
+  delivered: { label: "Entregue", color: "bg-primary/15 text-primary" },
+  cancelled: { label: "Cancelado", color: "bg-destructive/15 text-destructive" },
 };
 
 function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    // Get store ID from localStorage or session
+    const storeId = localStorage.getItem("storeId");
+    if (!storeId) {
+      setLoading(false);
+      setError("Loja não encontrada");
+      return;
+    }
+
+    fetchDashboardData(storeId);
+  }, []);
+
+  const fetchDashboardData = async (storeId: string) => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/dashboard/stats?storeId=${storeId}`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data.error || "Erro ao carregar dados");
+        return;
+      }
+
+      setStats(data.stats);
+      setRecentOrders(data.recentOrders?.map((o: any) => ({
+        id: `#${o.number || o.id.slice(-4)}`,
+        customer: o.customer?.name || "Cliente",
+        total: `R$ ${parseFloat(o.total).toFixed(2).replace(".", ",")}`,
+        status: o.status,
+        time: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+      })) || []);
+    } catch (err) {
+      setError("Erro de conexão");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return `R$ ${value.toFixed(2).replace(".", ",")}`;
+  };
+
+  if (loading) {
+    return (
+      <div className="h-[60vh] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground">{error}</p>
+          <Button 
+            variant="outline" 
+            className="mt-4"
+            onClick={() => window.location.reload()}
+          >
+            Tentar novamente
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Header */}
@@ -49,12 +139,12 @@ function DashboardPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <KpiCard title="Vendas do dia" value="R$ 0" change="" up icon={DollarSign} />
-        <KpiCard title="Faturamento" value="R$ 0" change="" up icon={TrendingUp} />
-        <KpiCard title="Pedidos" value="0" change="" up icon={ShoppingCart} />
-        <KpiCard title="Ticket médio" value="R$ 0" change="" up icon={Package} />
-        <KpiCard title="Produtos vendidos" value="0" change="" up icon={Package} />
-        <KpiCard title="Estoque baixo" value="0" change="" up={false} icon={AlertTriangle} alert />
+        <KpiCard title="Faturamento" value={formatCurrency(stats?.revenue || 0)} change="" up icon={DollarSign} />
+        <KpiCard title="Pedidos" value={String(stats?.totalOrders || 0)} change="" up icon={ShoppingCart} />
+        <KpiCard title="Pendentes" value={String(stats?.pendingOrders || 0)} change="" up icon={TrendingUp} />
+        <KpiCard title="Concluídos" value={String(stats?.completedOrders || 0)} change="" up icon={Package} />
+        <KpiCard title="Clientes" value={String(stats?.customersCount || 0)} change="" up icon={Package} />
+        <KpiCard title="Estoque baixo" value={String(stats?.lowStockProducts || 0)} change="" up={false} icon={AlertTriangle} alert />
       </div>
 
       {/* Charts */}

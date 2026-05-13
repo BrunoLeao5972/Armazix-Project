@@ -36,7 +36,7 @@ export function Footer() {
           />
         </div>
         <div className="mt-12 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
-          <p>© {new Date().getFullYear()} ARMAZIX. Feito no Brasil.</p>
+          <p>© {new Date().getFullYear()} ARMAZIX. armazix.com.br</p>
           <p>Todos os direitos reservados.</p>
         </div>
       </div>

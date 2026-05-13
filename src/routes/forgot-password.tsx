@@ -55,8 +55,10 @@ function ForgotPasswordPage() {
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-sm text-center"
         >
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-            <Mail className="w-8 h-8 text-primary" />
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <Mail className="w-8 h-8 text-primary" />
+            </div>
           </div>
           <h1 className="text-2xl font-bold">Código enviado!</h1>
           <p className="text-sm text-muted-foreground mt-2">
