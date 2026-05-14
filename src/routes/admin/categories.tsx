@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { api } from "@/lib/api-client";
 import { Tags, Plus, MoreHorizontal, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -63,11 +64,7 @@ function CategoriesPage() {
     if (!storeId) return;
     setCreating(true);
     try {
-      const res = await fetch("/api/categories/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ storeId, name: newName, emoji: newEmoji || undefined, color: newColor }),
-      });
+      const res = await api.post("/api/categories/create", { storeId, name: newName, emoji: newEmoji || undefined, color: newColor });
       const data = await res.json();
       if (res.ok && data.success) {
         setCategories(prev => [...prev, { ...data.category, productsCount: 0 }]);
@@ -79,11 +76,7 @@ function CategoriesPage() {
 
   const handleDelete = async (categoryId: string) => {
     try {
-      const res = await fetch("/api/categories/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ categoryId }),
-      });
+      const res = await api.post("/api/categories/delete", { categoryId });
       if (res.ok) setCategories(prev => prev.filter(c => c.id !== categoryId));
     } catch {}
   };

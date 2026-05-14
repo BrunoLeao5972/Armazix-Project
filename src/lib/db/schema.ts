@@ -419,3 +419,30 @@ export const verificationCodes = pgTable("verification_codes", {
 export const verificationCodesRelations = relations(verificationCodes, ({ one }) => ({
   user: one(users, { fields: [verificationCodes.userId], references: [users.id] }),
 }));
+
+// ─── AUDIT LOGS (Security & Compliance) ─────────────────────────
+export const auditLogs = pgTable("audit_logs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  storeId: uuid("store_id").references(() => stores.id, { onDelete: "set null" }),
+  action: varchar("action", { length: 50 }).notNull(), // e.g., "LOGIN", "CREATE_PRODUCT", "UPDATE_ORDER"
+  resourceType: varchar("resource_type", { length: 50 }), // e.g., "product", "order", "user"
+  resourceId: varchar("resource_id", { length: 100 }), // UUID of the affected resource
+  details: jsonb("details").$type<Record<string, unknown>>(), // Additional context
+  ipAddress: varchar("ip_address", { length: 45 }), // Client IP
+  userAgent: text("user_agent"), // Client user agent
+  status: varchar("status", { length: 20 }).default("success"), // "success" | "failure" | "denied"
+  errorMessage: text("error_message"), // If status is failure
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("audit_logs_user_idx").on(t.userId),
+  index("audit_logs_store_idx").on(t.storeId),
+  index("audit_logs_action_idx").on(t.action),
+  index("audit_logs_created_at_idx").on(t.createdAt),
+  index("audit_logs_resource_idx").on(t.resourceType, t.resourceId),
+]);
+
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+  user: one(users, { fields: [auditLogs.userId], references: [users.id] }),
+  store: one(stores, { fields: [auditLogs.storeId], references: [stores.id] }),
+}));

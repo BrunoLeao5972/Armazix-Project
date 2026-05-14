@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { api } from "@/lib/api-client";
 import {
   Search,
   Plus,
@@ -112,19 +113,15 @@ function PDVPage() {
         unitPrice: item.price.toFixed(2),
         total: (item.price * item.qty).toFixed(2),
       }));
-      const res = await fetch("/api/orders/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          storeId,
-          type: "pickup",
-          paymentMethod,
-          items,
-          subtotal: subtotal.toFixed(2),
-          deliveryFee: "0",
-          discount: discountValue.toFixed(2),
-          total: total.toFixed(2),
-        }),
+      const res = await api.post("/api/orders/create", {
+        storeId,
+        type: "pickup",
+        paymentMethod,
+        items,
+        subtotal: subtotal.toFixed(2),
+        deliveryFee: "0",
+        discount: discountValue.toFixed(2),
+        total: total.toFixed(2),
       });
       const data = await res.json();
       if (res.ok && data.success) {

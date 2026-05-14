@@ -1,6 +1,7 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
+import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 
 const { stores } = schema;
 const MP_API = "https://api.mercadopago.com";
@@ -25,17 +26,25 @@ export const PDV_PRICE = 50.00;
 // ─── POST /api/subscriptions/create ──────────────────────────────
 // Creates a Mercado Pago preapproval (recurring subscription) and
 // returns the init_point URL to redirect the user.
-export async function createSubscriptionHandler(request: Request): Promise<Response> {
+export async function createSubscriptionHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return json({ error: (error as Error).message }, auth?.userId ? 403 : 401);
+  }
+
   const body = await request.json() as {
-    storeId: string;
     planId: string;       // start | pro | full
     withPdv?: boolean;
     payerEmail: string;
     payerName?: string;
   };
 
-  if (!body.storeId || !body.planId || !body.payerEmail) {
-    return json({ error: "storeId, planId e payerEmail são obrigatórios" }, 400);
+  if (!body.planId || !body.payerEmail) {
+    return json({ error: "planId e payerEmail são obrigatórios" }, 400);
   }
 
   const plan = PLANS[body.planId];
@@ -58,7 +67,7 @@ export async function createSubscriptionHandler(request: Request): Promise<Respo
     },
     back_url: `${origin}/admin/settings?tab=planos`,
     payer_email: body.payerEmail,
-    external_reference: `${body.storeId}|${body.planId}${body.withPdv ? "|pdv" : ""}`,
+    external_reference: `${storeId}|${body.planId}${body.withPdv ? "|pdv" : ""}`,
   };
 
   const mpRes = await fetch(`${MP_API}/preapproval`, {
@@ -83,17 +92,22 @@ export async function createSubscriptionHandler(request: Request): Promise<Respo
   const db = createDb(dbUrl);
   await db.update(stores)
     .set({ mpSubscriptionId: preapproval.id, updatedAt: new Date() })
-    .where(eq(stores.id, body.storeId));
+    .where(eq(stores.id, storeId));
 
   return json({ init_point: preapproval.init_point, subscriptionId: preapproval.id });
 }
 
 // ─── GET /api/subscriptions/status ───────────────────────────────
 // Returns the current plan info for a store.
-export async function getSubscriptionStatusHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-  if (!storeId) return json({ error: "storeId obrigatório" }, 400);
+export async function getSubscriptionStatusHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return json({ error: (error as Error).message }, auth?.userId ? 403 : 401);
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);

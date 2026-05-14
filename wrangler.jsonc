@@ -10,6 +10,8 @@
   // Secrets (set via `wrangler secret put`):
   //   DATABASE_URL — Neon PostgreSQL connection string
   //   JWT_SECRET   — Auth signing key
+  //   ENCRYPTION_KEY — AES-256 encryption key for sensitive data (mpAccessToken)
+  //   WEBHOOK_API_KEY — Secret for validating webhook requests (optional)
   //   PLATFORM_MP_ACCESS_TOKEN — Mercado Pago token for Armazix platform subscriptions
   "observability": {
     "enabled": true

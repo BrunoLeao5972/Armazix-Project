@@ -61,15 +61,20 @@ function LoginPage() {
         return;
       }
 
-      // Store token and fetch user's store
-      localStorage.setItem("armazix_token", data.token);
-      localStorage.setItem("userId", data.user.id);
+      // Token is stored in HttpOnly cookie automatically by browser
+      // Store CSRF token for subsequent requests
+      if (data.csrfToken) {
+        localStorage.setItem("csrf_token", data.csrfToken);
+      }
       
-      // Fetch user's store
+      // Fetch user's store - cookie will be sent automatically
       try {
-        const storeRes = await fetch(`/api/store/user?userId=${data.user.id}`);
+        const storeRes = await fetch(`/api/store/user`, {
+          credentials: "include", // Include cookies
+        });
         const storeData = await storeRes.json();
         if (storeRes.ok && storeData.store) {
+          // Store only non-sensitive data in localStorage
           localStorage.setItem("storeId", storeData.store.id);
         }
       } catch (err) {

@@ -1,17 +1,21 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, gte, desc, sql } from "drizzle-orm";
+import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 
-const { products, orders, orderItems, verificationCodes, users } = schema;
+const { products, orders, orderItems, verificationCodes, users, storeUsers } = schema;
 
 // ─── Get Stock Stats ────────────────────────────────────────────
-export async function getStockStatsHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-
-  if (!storeId) {
-    return new Response(JSON.stringify({ error: "Store ID required" }), {
-      status: 400, headers: { "content-type": "application/json" },
+export async function getStockStatsHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
     });
   }
 
@@ -81,13 +85,16 @@ export async function getStockStatsHandler(request: Request): Promise<Response> 
 }
 
 // ─── Get Reports Stats ──────────────────────────────────────────
-export async function getReportsStatsHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-
-  if (!storeId) {
-    return new Response(JSON.stringify({ error: "Store ID required" }), {
-      status: 400, headers: { "content-type": "application/json" },
+export async function getReportsStatsHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
     });
   }
 
@@ -191,7 +198,12 @@ export async function validateCepHandler(request: Request): Promise<Response> {
 }
 
 // ─── Update Store Address ───────────────────────────────────────
-export async function updateAddressHandler(request: Request): Promise<Response> {
+export async function updateAddressHandler(request: Request, auth?: { userId?: string; storeId?: string }): Promise<Response> {
+  // IDOR Fix: Validate auth context
+  if (!auth?.userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
+
   const body = await request.json() as {
     storeId: string;
     address: { street: string; number: string; neighborhood: string; city: string; state: string; zip: string; complement?: string };
@@ -201,6 +213,15 @@ export async function updateAddressHandler(request: Request): Promise<Response> 
   const db = createDb(dbUrl);
 
   try {
+    // IDOR Fix: Verify user has access to this store
+    const storeAccess = await db.query.storeUsers.findFirst({
+      where: and(eq(storeUsers.userId, auth.userId), eq(storeUsers.storeId, body.storeId))
+    });
+
+    if (!storeAccess) {
+      return new Response(JSON.stringify({ error: "No access to this store" }), { status: 403, headers: { "content-type": "application/json" } });
+    }
+
     await db.update(schema.stores).set({ address: body.address }).where(eq(schema.stores.id, body.storeId));
     return new Response(JSON.stringify({ success: true, address: body.address }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -214,13 +235,16 @@ export async function updateAddressHandler(request: Request): Promise<Response> 
 }
 
 // ─── Get Business Hours ─────────────────────────────────────────
-export async function getBusinessHoursHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-
-  if (!storeId) {
-    return new Response(JSON.stringify({ error: "Store ID required" }), {
-      status: 400, headers: { "content-type": "application/json" },
+export async function getBusinessHoursHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
     });
   }
 
@@ -245,7 +269,12 @@ export async function getBusinessHoursHandler(request: Request): Promise<Respons
 }
 
 // ─── Update Business Hours ──────────────────────────────────────
-export async function updateBusinessHoursHandler(request: Request): Promise<Response> {
+export async function updateBusinessHoursHandler(request: Request, auth?: { userId?: string; storeId?: string }): Promise<Response> {
+  // IDOR Fix: Validate auth context
+  if (!auth?.userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
+
   const body = await request.json() as {
     storeId: string;
     businessHours: Array<{ day: string; open: string; close: string; closed: boolean }>;
@@ -255,6 +284,15 @@ export async function updateBusinessHoursHandler(request: Request): Promise<Resp
   const db = createDb(dbUrl);
 
   try {
+    // IDOR Fix: Verify user has access to this store
+    const storeAccess = await db.query.storeUsers.findFirst({
+      where: and(eq(storeUsers.userId, auth.userId), eq(storeUsers.storeId, body.storeId))
+    });
+
+    if (!storeAccess) {
+      return new Response(JSON.stringify({ error: "No access to this store" }), { status: 403, headers: { "content-type": "application/json" } });
+    }
+
     await db.update(schema.stores).set({ businessHours: body.businessHours }).where(eq(schema.stores.id, body.storeId));
     return new Response(JSON.stringify({ success: true, businessHours: body.businessHours }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -268,8 +306,14 @@ export async function updateBusinessHoursHandler(request: Request): Promise<Resp
 }
 
 // ─── Send Email Verification Code ───────────────────────────────
-export async function sendEmailVerificationCodeHandler(request: Request): Promise<Response> {
-  const body = await request.json() as { userId: string; newEmail: string };
+export async function sendEmailVerificationCodeHandler(request: Request, auth?: { userId?: string }): Promise<Response> {
+  // IDOR Fix: Use userId from auth context, never from body
+  const userId = auth?.userId;
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
+
+  const body = await request.json() as { newEmail: string };
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -279,7 +323,7 @@ export async function sendEmailVerificationCodeHandler(request: Request): Promis
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
     await db.insert(verificationCodes).values({
-      userId: body.userId,
+      userId: userId,
       code,
       type: "email_change",
       expiresAt,
@@ -300,8 +344,14 @@ export async function sendEmailVerificationCodeHandler(request: Request): Promis
 }
 
 // ─── Verify Email Change ────────────────────────────────────────
-export async function verifyEmailChangeHandler(request: Request): Promise<Response> {
-  const body = await request.json() as { userId: string; newEmail: string; code: string };
+export async function verifyEmailChangeHandler(request: Request, auth?: { userId?: string }): Promise<Response> {
+  // IDOR Fix: Use userId from auth context, never from body
+  const userId = auth?.userId;
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
+
+  const body = await request.json() as { newEmail: string; code: string };
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -312,7 +362,7 @@ export async function verifyEmailChangeHandler(request: Request): Promise<Respon
       .from(verificationCodes)
       .where(
         and(
-          eq(verificationCodes.userId, body.userId),
+          eq(verificationCodes.userId, userId),
           eq(verificationCodes.code, body.code),
           eq(verificationCodes.type, "email_change"),
           sql`${verificationCodes.usedAt} IS NULL`,
@@ -339,7 +389,7 @@ export async function verifyEmailChangeHandler(request: Request): Promise<Respon
     }
 
     // Update email
-    await db.update(users).set({ email: body.newEmail, emailVerified: true }).where(eq(users.id, body.userId));
+    await db.update(users).set({ email: body.newEmail, emailVerified: true }).where(eq(users.id, userId));
 
     return new Response(JSON.stringify({ success: true, message: "Email atualizado com sucesso" }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -353,14 +403,20 @@ export async function verifyEmailChangeHandler(request: Request): Promise<Respon
 }
 
 // ─── Update User Password ───────────────────────────────────────
-export async function updateUserPasswordHandler(request: Request): Promise<Response> {
-  const body = await request.json() as { userId: string; currentPassword: string; newPassword: string };
+export async function updateUserPasswordHandler(request: Request, auth?: { userId?: string }): Promise<Response> {
+  // IDOR Fix: Use userId from auth context, never from body
+  const userId = auth?.userId;
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
+
+  const body = await request.json() as { currentPassword: string; newPassword: string };
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
   try {
-    const [user] = await db.select().from(users).where(eq(users.id, body.userId));
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
 
     if (!user) {
       return new Response(JSON.stringify({ error: "Usuário não encontrado" }), {
@@ -380,7 +436,7 @@ export async function updateUserPasswordHandler(request: Request): Promise<Respo
     const { hashPassword } = await import("@/lib/auth");
     const newPasswordHash = await hashPassword(body.newPassword);
 
-    await db.update(users).set({ passwordHash: newPasswordHash }).where(eq(users.id, body.userId));
+    await db.update(users).set({ passwordHash: newPasswordHash }).where(eq(users.id, userId));
 
     return new Response(JSON.stringify({ success: true, message: "Senha alterada com sucesso" }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -394,14 +450,11 @@ export async function updateUserPasswordHandler(request: Request): Promise<Respo
 }
 
 // ─── Get User Data ──────────────────────────────────────────────
-export async function getUserDataHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const userId = url.searchParams.get("userId");
-
+export async function getUserDataHandler(request: Request, auth?: { userId?: string }): Promise<Response> {
+  // IDOR Fix: Use userId from auth context, never from query params
+  const userId = auth?.userId;
   if (!userId) {
-    return new Response(JSON.stringify({ error: "User ID required" }), {
-      status: 400, headers: { "content-type": "application/json" },
-    });
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
   }
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -431,8 +484,14 @@ export async function getUserDataHandler(request: Request): Promise<Response> {
 }
 
 // ─── Update User Data ────────────────────────────────────────────
-export async function updateUserDataHandler(request: Request): Promise<Response> {
-  const body = await request.json() as { userId: string; name?: string; phone?: string };
+export async function updateUserDataHandler(request: Request, auth?: { userId?: string }): Promise<Response> {
+  // IDOR Fix: Use userId from auth context, never from body
+  const userId = auth?.userId;
+  if (!userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
+
+  const body = await request.json() as { name?: string; phone?: string };
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -442,7 +501,7 @@ export async function updateUserDataHandler(request: Request): Promise<Response>
     if (body.name) updates.name = body.name;
     if (body.phone) updates.phone = body.phone;
 
-    await db.update(users).set(updates).where(eq(users.id, body.userId));
+    await db.update(users).set(updates).where(eq(users.id, userId));
 
     return new Response(JSON.stringify({ success: true, message: "Dados atualizados" }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -483,7 +542,12 @@ export async function checkStoreSlugHandler(request: Request): Promise<Response>
 }
 
 // ─── Update Store Slug ──────────────────────────────────────────
-export async function updateStoreSlugHandler(request: Request): Promise<Response> {
+export async function updateStoreSlugHandler(request: Request, auth?: { userId?: string; storeId?: string }): Promise<Response> {
+  // IDOR Fix: Validate auth context
+  if (!auth?.userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
+
   const body = await request.json() as { storeId: string; slug: string };
 
   const cleanSlug = body.slug
@@ -503,6 +567,15 @@ export async function updateStoreSlugHandler(request: Request): Promise<Response
   const db = createDb(dbUrl);
 
   try {
+    // IDOR Fix: Verify user has access to this store
+    const storeAccess = await db.query.storeUsers.findFirst({
+      where: and(eq(storeUsers.userId, auth.userId), eq(storeUsers.storeId, body.storeId))
+    });
+
+    if (!storeAccess) {
+      return new Response(JSON.stringify({ error: "No access to this store" }), { status: 403, headers: { "content-type": "application/json" } });
+    }
+
     const existing = await db.select({ id: schema.stores.id }).from(schema.stores).where(eq(schema.stores.slug, cleanSlug));
     if (existing.length > 0 && existing[0].id !== body.storeId) {
       return new Response(JSON.stringify({ error: "Slug já está em uso" }), {
@@ -524,10 +597,18 @@ export async function updateStoreSlugHandler(request: Request): Promise<Response
 }
 
 // ─── Get Financial Stats ─────────────────────────────────────────
-export async function getFinancialStatsHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+export async function getFinancialStatsHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -598,10 +679,18 @@ export async function getFinancialStatsHandler(request: Request): Promise<Respon
 }
 
 // ─── Get Delivery Orders ─────────────────────────────────────────
-export async function getDeliveryOrdersHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+export async function getDeliveryOrdersHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -637,10 +726,18 @@ export async function getDeliveryOrdersHandler(request: Request): Promise<Respon
 }
 
 // ─── Get Coupons ──────────────────────────────────────────────────
-export async function getCouponsHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+export async function getCouponsHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -669,10 +766,18 @@ export async function getCouponsHandler(request: Request): Promise<Response> {
 }
 
 // ─── Get Dashboard Chart Data ─────────────────────────────────────
-export async function getDashboardChartDataHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+export async function getDashboardChartDataHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { api } from "@/lib/api-client";
 import {
   Plus,
   Search,
@@ -88,11 +89,7 @@ function ProductsPage() {
     if (!storeId) return;
     setCreating(true);
     try {
-      const res = await fetch("/api/products/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ storeId, name: newName, price: newPrice, stock: Number(newStock) || 0, emoji: newEmoji || undefined }),
-      });
+      const res = await api.post("/api/products/create", { storeId, name: newName, price: newPrice, stock: Number(newStock) || 0, emoji: newEmoji || undefined });
       const data = await res.json();
       if (res.ok && data.success) {
         setProducts(prev => [...prev, data.product]);
@@ -104,11 +101,7 @@ function ProductsPage() {
 
   const handleDelete = async (productId: string) => {
     try {
-      const res = await fetch("/api/products/delete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ productId }),
-      });
+      const res = await api.post("/api/products/delete", { productId });
       if (res.ok) setProducts(prev => prev.filter(p => p.id !== productId));
     } catch {}
   };

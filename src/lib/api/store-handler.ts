@@ -1,6 +1,6 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 const { stores, storeUsers, orders, products, customers } = schema;
 
@@ -45,7 +45,12 @@ export async function getStoreHandler(request: Request): Promise<Response> {
 }
 
 // ─── Update Store ───────────────────────────────────────────────
-export async function updateStoreHandler(request: Request): Promise<Response> {
+export async function updateStoreHandler(request: Request, auth?: { userId?: string; storeId?: string }): Promise<Response> {
+  // IDOR Fix: Validate auth context
+  if (!auth?.userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
+
   const body = await request.json() as {
     storeId: string;
     name?: string;
@@ -70,6 +75,15 @@ export async function updateStoreHandler(request: Request): Promise<Response> {
   const db = createDb(dbUrl);
 
   try {
+    // IDOR Fix: Verify user has access to this store
+    const storeAccess = await db.query.storeUsers.findFirst({
+      where: and(eq(storeUsers.userId, auth.userId), eq(storeUsers.storeId, body.storeId))
+    });
+
+    if (!storeAccess) {
+      return new Response(JSON.stringify({ error: "No access to this store" }), { status: 403, headers: { "content-type": "application/json" } });
+    }
+
     const [updated] = await db
       .update(stores)
       .set({

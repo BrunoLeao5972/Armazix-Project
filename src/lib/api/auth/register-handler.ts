@@ -1,7 +1,9 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { hashPassword, findUserByEmail, createVerificationCode } from "@/lib/auth";
+import { hashPassword, findUserByEmail, createVerificationCode, validatePasswordPolicy } from "@/lib/auth";
 import { sendVerificationEmail } from "@/lib/auth/email";
+import { sanitizeString } from "@/lib/validation/schemas";
+import { logAudit, AuditActions } from "@/lib/audit";
 
 const { users, stores, storeUsers } = schema;
 
@@ -31,6 +33,18 @@ export async function registerHandler(request: Request): Promise<Response> {
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
+  // Validate password policy
+  const passwordCheck = validatePasswordPolicy(body.password);
+  if (!passwordCheck.valid) {
+    return new Response(JSON.stringify({ 
+      error: "Senha não atende aos requisitos de segurança",
+      details: passwordCheck.errors 
+    }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   // Check if email already exists
   const existing = await findUserByEmail(db, body.email);
   if (existing) {
@@ -40,12 +54,16 @@ export async function registerHandler(request: Request): Promise<Response> {
     });
   }
 
+  // Sanitize inputs
+  const sanitizedName = sanitizeString(body.name);
+  const sanitizedStoreName = sanitizeString(body.storeName);
+
   // Hash password
   const passwordHash = await hashPassword(body.password);
 
   // Create user
   const [user] = await db.insert(users).values({
-    name: body.name,
+    name: sanitizedName,
     email: body.email,
     phone: body.phone,
     passwordHash,
@@ -54,7 +72,7 @@ export async function registerHandler(request: Request): Promise<Response> {
   }).returning();
 
   // Create store - slug without hyphens
-  const slug = body.storeName
+  const slug = sanitizedStoreName
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -62,7 +80,7 @@ export async function registerHandler(request: Request): Promise<Response> {
     .slice(0, 30);
 
   const [store] = await db.insert(stores).values({
-    name: body.storeName,
+    name: sanitizedStoreName,
     slug,
     description: body.description || null,
     primaryColor: body.storeColor || "#00C853",
@@ -84,16 +102,25 @@ export async function registerHandler(request: Request): Promise<Response> {
 
   // Send verification email
   try {
-    await sendVerificationEmail(body.email, code, body.name);
+    await sendVerificationEmail(body.email, code, sanitizedName);
   } catch (emailError) {
     console.error("Failed to send verification email:", emailError);
   }
 
+  // Audit log
+  logAudit({
+    userId: user.id,
+    storeId: store.id,
+    action: AuditActions.REGISTER,
+    resourceType: "user",
+    resourceId: user.id,
+    status: "success",
+  }, request);
+
   return new Response(JSON.stringify({
     success: true,
+    message: "Usuário cadastrado com sucesso. Verifique seu email.",
     userId: user.id,
-    email: user.email,
-    message: "Conta criada! Verifique seu email para ativar.",
   }), {
     status: 201,
     headers: { "content-type": "application/json" },

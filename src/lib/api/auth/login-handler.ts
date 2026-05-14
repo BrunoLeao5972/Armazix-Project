@@ -1,5 +1,7 @@
 import { createDb } from "@/lib/db";
 import { findUserByEmail, verifyPassword, signJWT } from "@/lib/auth";
+import { generateCsrfToken, createCsrfCookie } from "@/lib/middleware/csrf";
+import { logAudit, AuditActions } from "@/lib/audit";
 
 export async function loginHandler(request: Request): Promise<Response> {
   const { email, password } = await request.json() as { email: string; password: string };
@@ -17,6 +19,13 @@ export async function loginHandler(request: Request): Promise<Response> {
   const user = await findUserByEmail(db, email);
 
   if (!user) {
+    logAudit({
+      action: AuditActions.LOGIN,
+      resourceType: "user",
+      status: "failure",
+      errorMessage: "Invalid email",
+      details: { email },
+    }, request);
     return new Response(JSON.stringify({ error: "Email ou senha incorretos" }), {
       status: 401,
       headers: { "content-type": "application/json" },
@@ -25,6 +34,14 @@ export async function loginHandler(request: Request): Promise<Response> {
 
   const valid = await verifyPassword(password, user.passwordHash);
   if (!valid) {
+    logAudit({
+      userId: user.id,
+      action: AuditActions.LOGIN,
+      resourceType: "user",
+      resourceId: user.id,
+      status: "failure",
+      errorMessage: "Invalid password",
+    }, request);
     return new Response(JSON.stringify({ error: "Email ou senha incorretos" }), {
       status: 401,
       headers: { "content-type": "application/json" },
@@ -56,9 +73,22 @@ export async function loginHandler(request: Request): Promise<Response> {
     secret,
   );
 
+  // Generate CSRF token
+  const csrfToken = generateCsrfToken();
+
+  // Audit log for successful login
+  logAudit({
+    userId: user.id,
+    action: AuditActions.LOGIN,
+    resourceType: "user",
+    resourceId: user.id,
+    status: "success",
+  }, request);
+
   return new Response(JSON.stringify({
     success: true,
     token,
+    csrfToken, // Frontend precisa enviar isso no header x-csrf-token
     user: {
       id: user.id,
       name: user.name,
@@ -69,7 +99,10 @@ export async function loginHandler(request: Request): Promise<Response> {
     status: 200,
     headers: {
       "content-type": "application/json",
-      "set-cookie": `armazix_token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`,
+      "set-cookie": [
+        `armazix_token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`,
+        createCsrfCookie(csrfToken),
+      ].join(", "),
     },
   });
 }

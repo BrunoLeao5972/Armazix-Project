@@ -3,6 +3,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { MapPin, Truck, Package, CreditCard, Smartphone, Banknote, CheckCircle2, ChevronRight, ChevronLeft, Loader2, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { api } from "@/lib/api-client";
 import { useStore } from "../store";
 
 export const Route = createFileRoute("/store/checkout")({
@@ -241,47 +242,9 @@ function CheckoutPage() {
 
                 // ── Mercado Pago Checkout Pro ─────────────────────
                 if (paymentMethod === "mercadopago") {
-                  const res = await fetch("/api/payments/mp-checkout", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({
-                      storeId,
-                      type: deliveryType,
-                      items,
-                      subtotal: cartTotal.toFixed(2),
-                      deliveryFee: "0",
-                      total: cartTotal.toFixed(2),
-                      addressSnapshot: {
-                        street: address.street,
-                        number: address.number,
-                        neighborhood: address.neighborhood,
-                        city: address.city,
-                        state: "SP",
-                        zip: "",
-                      },
-                      estimatedDelivery: new Date(Date.now() + (deliveryType === "delivery" ? 40 : 20) * 60000).toISOString(),
-                    }),
-                  });
-                  const data = await res.json();
-                  if (res.ok && data.init_point) {
-                    clearCart();
-                    window.location.href = data.init_point;
-                    return;
-                  } else {
-                    setOrderError(data.error || "Erro ao iniciar pagamento no Mercado Pago");
-                    setSubmitting(false);
-                    return;
-                  }
-                }
-
-                // ── Other payment methods (cash, card on delivery, pix) ──
-                const res = await fetch("/api/orders/create", {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({
+                  const res = await api.post("/api/payments/mp-checkout", {
                     storeId,
                     type: deliveryType,
-                    paymentMethod,
                     items,
                     subtotal: cartTotal.toFixed(2),
                     deliveryFee: "0",
@@ -295,8 +258,38 @@ function CheckoutPage() {
                       zip: "",
                     },
                     estimatedDelivery: new Date(Date.now() + (deliveryType === "delivery" ? 40 : 20) * 60000).toISOString(),
-                  }),
-                });
+                  }, { skipCsrf: true });
+                  const data = await res.json();
+                  if (res.ok && data.init_point) {
+                    clearCart();
+                    window.location.href = data.init_point;
+                    return;
+                  } else {
+                    setOrderError(data.error || "Erro ao iniciar pagamento no Mercado Pago");
+                    setSubmitting(false);
+                    return;
+                  }
+                }
+
+                // ── Other payment methods (cash, card on delivery, pix) ──
+                const res = await api.post("/api/orders/create", {
+                  storeId,
+                  type: deliveryType,
+                  paymentMethod,
+                  items,
+                  subtotal: cartTotal.toFixed(2),
+                  deliveryFee: "0",
+                  total: cartTotal.toFixed(2),
+                  addressSnapshot: {
+                    street: address.street,
+                    number: address.number,
+                    neighborhood: address.neighborhood,
+                    city: address.city,
+                    state: "SP",
+                    zip: "",
+                  },
+                  estimatedDelivery: new Date(Date.now() + (deliveryType === "delivery" ? 40 : 20) * 60000).toISOString(),
+                }, { skipCsrf: true });
                 const data = await res.json();
                 if (res.ok && data.success) {
                   setOrderNumber(data.order.number);

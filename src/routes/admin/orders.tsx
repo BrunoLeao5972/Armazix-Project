@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { api } from "@/lib/api-client";
 import {
   Search,
   Filter,
@@ -83,11 +84,7 @@ function OrdersPage() {
 
   const handleStatusChange = async (orderId: string, status: string) => {
     try {
-      const res = await fetch("/api/orders/update-status", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ orderId, status }),
-      });
+      const res = await api.post("/api/orders/update-status", { orderId, status });
       if (res.ok) {
         setOrders(prev => prev.map(o => o.orderId === orderId ? { ...o, status } : o));
       }

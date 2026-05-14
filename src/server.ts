@@ -4,6 +4,57 @@ import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { handleApiRequest } from "./lib/api-handler";
 
+// ============================================================================
+// SECURITY HEADERS
+// ============================================================================
+const SECURITY_HEADERS = {
+  // Content Security Policy - Strict
+  "Content-Security-Policy": [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Required for React
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' https: data: blob:",
+    "font-src 'self' https://fonts.gstatic.com",
+    "connect-src 'self' https://api.mercadopago.com https://*.workers.dev",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "upgrade-insecure-requests",
+  ].join("; "),
+  // Prevent clickjacking
+  "X-Frame-Options": "DENY",
+  // Prevent MIME sniffing
+  "X-Content-Type-Options": "nosniff",
+  // XSS Protection
+  "X-XSS-Protection": "1; mode=block",
+  // Referrer Policy
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  // Permissions Policy
+  "Permissions-Policy": "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()",
+  // HSTS - Force HTTPS (2 years)
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+  // Certificate Transparency
+  "Expect-CT": "max-age=86400, enforce",
+  // Remove server identification
+  "X-Powered-By": "",
+};
+
+// Add security headers to any response
+function addSecurityHeaders(response: Response): Response {
+  const newHeaders = new Headers(response.headers);
+  
+  // Add all security headers
+  Object.entries(SECURITY_HEADERS).forEach(([key, value]) => {
+    if (value) newHeaders.set(key, value);
+  });
+  
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders,
+  });
+}
+
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
 };
@@ -73,16 +124,18 @@ export default {
 
     // Intercept API routes before TanStack Start
     if (url.pathname.startsWith("/api/")) {
-      return handleApiRequest(request);
+      const response = await handleApiRequest(request);
+      return addSecurityHeaders(response);
     }
 
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      const normalizedResponse = await normalizeCatastrophicSsrResponse(response);
+      return addSecurityHeaders(normalizedResponse);
     } catch (error) {
       console.error(error);
-      return brandedErrorResponse();
+      return addSecurityHeaders(brandedErrorResponse());
     }
   },
 };

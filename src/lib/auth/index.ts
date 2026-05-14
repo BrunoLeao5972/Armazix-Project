@@ -5,6 +5,64 @@ import { createDb, schema } from "@/lib/db";
 
 const { users, verificationCodes } = schema;
 
+// ─── Password Policy ────────────────────────────────────────────
+export interface PasswordValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+export function validatePasswordPolicy(password: string): PasswordValidationResult {
+  const errors: string[] = [];
+  
+  // Minimum length
+  if (password.length < 8) {
+    errors.push("Mínimo 8 caracteres");
+  }
+  
+  // Maximum length
+  if (password.length > 100) {
+    errors.push("Máximo 100 caracteres");
+  }
+  
+  // Uppercase letter
+  if (!/[A-Z]/.test(password)) {
+    errors.push("Deve conter letra maiúscula");
+  }
+  
+  // Lowercase letter
+  if (!/[a-z]/.test(password)) {
+    errors.push("Deve conter letra minúscula");
+  }
+  
+  // Number
+  if (!/[0-9]/.test(password)) {
+    errors.push("Deve conter número");
+  }
+  
+  // Special character
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    errors.push("Deve conter caractere especial");
+  }
+  
+  // Common patterns to avoid
+  const commonPatterns = [
+    /^123/, /^password/i, /^qwerty/i, /^abc/, /^111/, /^000/,
+    /(.)\1{2,}/, // Repeated characters
+  ];
+  
+  for (const pattern of commonPatterns) {
+    if (pattern.test(password)) {
+      errors.push("Padrão comum muito fraco");
+      break;
+    }
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
+}
+
 // ─── Password hashing ───────────────────────────────────────────
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);

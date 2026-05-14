@@ -1,6 +1,9 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, sql } from "drizzle-orm";
+import { encrypt, decrypt } from "@/lib/crypto";
+import { validateWebhookApiKey } from "@/lib/webhook-validator";
+import { requireStoreOwner, type AuthContext } from "@/lib/auth/require-store-access";
 
 const { stores, orders, orderItems, products } = schema;
 
@@ -60,6 +63,18 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
   if (!store) return json({ error: "Loja não encontrada" }, 404);
   if (!store.mpAccessToken) {
     return json({ error: "Token do Mercado Pago não configurado. Acesse Configurações → Pagamentos." }, 400);
+  }
+
+  // Decrypt MP access token
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    console.error("ENCRYPTION_KEY not set");
+    return json({ error: "Configuração de segurança incompleta" }, 500);
+  }
+
+  const mpAccessToken = await decrypt(store.mpAccessToken, encryptionKey);
+  if (!mpAccessToken) {
+    return json({ error: "Erro ao descriptografar token de pagamento" }, 500);
   }
 
   // Create the order with status awaiting_payment
@@ -150,7 +165,7 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
   const mpRes = await fetch(`${MP_API}/checkout/preferences`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${store.mpAccessToken}`,
+      Authorization: `Bearer ${mpAccessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(preferenceBody),
@@ -170,6 +185,19 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
 // ─── POST /api/payments/mp-webhook ──────────────────────────────
 // Receives Mercado Pago IPN/webhook notifications and updates order status.
 export async function mpWebhookHandler(request: Request): Promise<Response> {
+  // Validate webhook using API key - MANDATORY (fail closed)
+  const webhookSecret = process.env.WEBHOOK_API_KEY;
+  if (!webhookSecret) {
+    console.error("WEBHOOK_API_KEY not configured - webhook validation disabled");
+    return new Response("Webhook security not configured", { status: 500 });
+  }
+
+  const validation = validateWebhookApiKey(request, webhookSecret);
+  if (!validation.valid) {
+    console.error("Webhook validation failed:", validation.error);
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const url = new URL(request.url);
 
   // MP can send data-id as query param or in body
@@ -226,12 +254,23 @@ export async function mpWebhookHandler(request: Request): Promise<Response> {
   if (resource && resource.includes("/v1/payments/")) {
     const pid = resource.split("/v1/payments/")[1];
     if (pid) {
+      const encryptionKey = process.env.ENCRYPTION_KEY;
+      if (!encryptionKey) {
+        console.error("ENCRYPTION_KEY not set");
+        return new Response("ok", { status: 200 });
+      }
+
       // Find all stores and try to fetch payment — limited, but works for single-store setups
       const allStores = await db.query.stores.findMany();
       for (const store of allStores) {
         if (!store.mpAccessToken) continue;
+        
+        // Decrypt token for this store
+        const accessToken = await decrypt(store.mpAccessToken, encryptionKey);
+        if (!accessToken) continue;
+        
         const pmtRes = await fetch(`${MP_API}/v1/payments/${pid}`, {
-          headers: { Authorization: `Bearer ${store.mpAccessToken}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (pmtRes.ok) {
           const pmt = await pmtRes.json() as { external_reference?: string; status?: string };
@@ -250,9 +289,21 @@ export async function mpWebhookHandler(request: Request): Promise<Response> {
 async function verifyAndUpdatePayment(
   db: ReturnType<typeof createDb>,
   paymentId: string,
-  accessToken: string,
+  encryptedAccessToken: string,
   orderId: string
 ) {
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    console.error("ENCRYPTION_KEY not set");
+    return;
+  }
+
+  const accessToken = await decrypt(encryptedAccessToken, encryptionKey);
+  if (!accessToken) {
+    console.error("Failed to decrypt MP access token");
+    return;
+  }
+
   const pmtRes = await fetch(`${MP_API}/v1/payments/${paymentId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -297,11 +348,23 @@ async function verifyAndUpdatePayment(
 }
 
 // ─── POST /api/payments/mp-token ────────────────────────────────
-// Saves the MP access token for a store.
-export async function saveMpTokenHandler(request: Request): Promise<Response> {
-  const body = await request.json() as { storeId: string; accessToken: string };
-  if (!body.storeId || !body.accessToken) {
-    return json({ error: "storeId e accessToken são obrigatórios" }, 400);
+// Saves the MP access token for a store (encrypted).
+// CRITICAL: Only store owner/admin can set payment tokens to prevent revenue theft.
+export async function saveMpTokenHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // CRITICAL IDOR Fix: Validate store owner access for sensitive payment configuration
+  let storeId: string;
+  try {
+    const access = await requireStoreOwner(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return json({ 
+      error: (error as Error).message || "Unauthorized" 
+    }, auth?.userId ? 403 : 401);
+  }
+
+  const body = await request.json() as { accessToken: string };
+  if (!body.accessToken) {
+    return json({ error: "accessToken é obrigatório" }, 400);
   }
 
   // Basic validation: token must start with APP_USR- or TEST-
@@ -309,13 +372,27 @@ export async function saveMpTokenHandler(request: Request): Promise<Response> {
     return json({ error: "Token inválido. Deve começar com APP_USR- (produção) ou TEST- (sandbox)" }, 400);
   }
 
-  const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    console.error("ENCRYPTION_KEY not set");
+    return json({ error: "Configuração de segurança incompleta" }, 500);
+  }
 
-  await db
-    .update(stores)
-    .set({ mpAccessToken: body.accessToken, updatedAt: new Date() })
-    .where(eq(stores.id, body.storeId));
+  try {
+    // Encrypt token before saving
+    const encryptedToken = await encrypt(body.accessToken, encryptionKey);
 
-  return json({ success: true });
+    const dbUrl = process.env.DATABASE_URL!;
+    const db = createDb(dbUrl);
+
+    await db
+      .update(stores)
+      .set({ mpAccessToken: encryptedToken, updatedAt: new Date() })
+      .where(eq(stores.id, storeId));
+
+    return json({ success: true });
+  } catch (error) {
+    console.error("Error saving MP token:", error);
+    return json({ error: "Erro ao salvar token" }, 500);
+  }
 }

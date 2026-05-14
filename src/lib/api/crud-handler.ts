@@ -1,13 +1,25 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, desc, sql, and } from "drizzle-orm";
+import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 
 const { products, categories, orders, orderItems, coupons, customers, stores } = schema;
 
 // ─── Create Product ──────────────────────────────────────────────
-export async function createProductHandler(request: Request): Promise<Response> {
+export async function createProductHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const body = await request.json() as {
-    storeId: string;
     name: string;
     description?: string;
     price: string;
@@ -25,8 +37,8 @@ export async function createProductHandler(request: Request): Promise<Response> 
     active?: boolean;
   };
 
-  if (!body.storeId || !body.name || !body.price) {
-    return new Response(JSON.stringify({ error: "storeId, name e price são obrigatórios" }), {
+  if (!body.name || !body.price) {
+    return new Response(JSON.stringify({ error: "name e price são obrigatórios" }), {
       status: 400, headers: { "content-type": "application/json" },
     });
   }
@@ -36,7 +48,7 @@ export async function createProductHandler(request: Request): Promise<Response> 
 
   try {
     const [product] = await db.insert(products).values({
-      storeId: body.storeId,
+      storeId,
       name: body.name,
       description: body.description || null,
       price: body.price,
@@ -86,7 +98,7 @@ export async function listProductsHandler(request: Request): Promise<Response> {
 }
 
 // ─── Update Product ──────────────────────────────────────────────
-export async function updateProductHandler(request: Request): Promise<Response> {
+export async function updateProductHandler(request: Request, auth?: { storeId?: string }): Promise<Response> {
   const body = await request.json() as {
     productId: string;
     name?: string;
@@ -110,10 +122,25 @@ export async function updateProductHandler(request: Request): Promise<Response> 
     return new Response(JSON.stringify({ error: "productId required" }), { status: 400, headers: { "content-type": "application/json" } });
   }
 
+  // IDOR Fix: Validate storeId from auth context
+  const storeId = auth?.storeId;
+  if (!storeId) {
+    return new Response(JSON.stringify({ error: "Unauthorized - storeId required" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
+
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
   try {
+    // IDOR Fix: Verify product belongs to the tenant before updating
+    const existingProduct = await db.query.products.findFirst({
+      where: and(eq(products.id, body.productId), eq(products.storeId, storeId))
+    });
+
+    if (!existingProduct) {
+      return new Response(JSON.stringify({ error: "Product not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (body.name !== undefined) updates.name = body.name;
     if (body.description !== undefined) updates.description = body.description;
@@ -131,7 +158,11 @@ export async function updateProductHandler(request: Request): Promise<Response> 
     if (body.badge !== undefined) updates.badge = body.badge;
     if (body.active !== undefined) updates.active = body.active;
 
-    const [updated] = await db.update(products).set(updates).where(eq(products.id, body.productId)).returning();
+    // IDOR Fix: Include storeId in WHERE clause
+    const [updated] = await db.update(products)
+      .set(updates)
+      .where(and(eq(products.id, body.productId), eq(products.storeId, storeId)))
+      .returning();
 
     return new Response(JSON.stringify({ success: true, product: updated }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -143,15 +174,31 @@ export async function updateProductHandler(request: Request): Promise<Response> 
 }
 
 // ─── Delete Product ──────────────────────────────────────────────
-export async function deleteProductHandler(request: Request): Promise<Response> {
+export async function deleteProductHandler(request: Request, auth?: { storeId?: string }): Promise<Response> {
   const body = await request.json() as { productId: string };
   if (!body.productId) return new Response(JSON.stringify({ error: "productId required" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  // IDOR Fix: Validate storeId from auth context
+  const storeId = auth?.storeId;
+  if (!storeId) {
+    return new Response(JSON.stringify({ error: "Unauthorized - storeId required" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
   try {
-    await db.delete(products).where(eq(products.id, body.productId));
+    // IDOR Fix: Verify product belongs to tenant before deleting
+    const existingProduct = await db.query.products.findFirst({
+      where: and(eq(products.id, body.productId), eq(products.storeId, storeId))
+    });
+
+    if (!existingProduct) {
+      return new Response(JSON.stringify({ error: "Product not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+
+    // IDOR Fix: Include storeId in WHERE clause
+    await db.delete(products).where(and(eq(products.id, body.productId), eq(products.storeId, storeId)));
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("Delete product error:", error);
@@ -160,16 +207,28 @@ export async function deleteProductHandler(request: Request): Promise<Response> 
 }
 
 // ─── Create Category ─────────────────────────────────────────────
-export async function createCategoryHandler(request: Request): Promise<Response> {
-  const body = await request.json() as { storeId: string; name: string; emoji?: string; color?: string; imageUrl?: string };
-  if (!body.storeId || !body.name) return new Response(JSON.stringify({ error: "storeId e name obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
+export async function createCategoryHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const body = await request.json() as { name: string; emoji?: string; color?: string; imageUrl?: string };
+  if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
   try {
     const [cat] = await db.insert(categories).values({
-      storeId: body.storeId,
+      storeId,
       name: body.name,
       emoji: body.emoji || null,
       color: body.color || null,
@@ -207,15 +266,31 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
 }
 
 // ─── Delete Category ─────────────────────────────────────────────
-export async function deleteCategoryHandler(request: Request): Promise<Response> {
+export async function deleteCategoryHandler(request: Request, auth?: { storeId?: string }): Promise<Response> {
   const body = await request.json() as { categoryId: string };
   if (!body.categoryId) return new Response(JSON.stringify({ error: "categoryId required" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  // IDOR Fix: Validate storeId from auth context
+  const storeId = auth?.storeId;
+  if (!storeId) {
+    return new Response(JSON.stringify({ error: "Unauthorized - storeId required" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
   try {
-    await db.delete(categories).where(eq(categories.id, body.categoryId));
+    // IDOR Fix: Verify category belongs to tenant before deleting
+    const existingCategory = await db.query.categories.findFirst({
+      where: and(eq(categories.id, body.categoryId), eq(categories.storeId, storeId))
+    });
+
+    if (!existingCategory) {
+      return new Response(JSON.stringify({ error: "Category not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+
+    // IDOR Fix: Include storeId in WHERE clause
+    await db.delete(categories).where(and(eq(categories.id, body.categoryId), eq(categories.storeId, storeId)));
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("Delete category error:", error);
@@ -320,10 +395,18 @@ export async function createOrderHandler(request: Request): Promise<Response> {
 }
 
 // ─── List Orders ──────────────────────────────────────────────────
-export async function listOrdersHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+export async function listOrdersHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -332,24 +415,13 @@ export async function listOrdersHandler(request: Request): Promise<Response> {
     const storeOrders = await db.query.orders.findMany({
       where: eq(orders.storeId, storeId),
       orderBy: desc(orders.createdAt),
-      with: {
-        customer: true,
-        items: true,
-      },
+      with: { items: true, customer: true },
     });
 
     const formatted = storeOrders.map(o => ({
-      id: `#${o.number}`,
-      orderId: o.id,
-      customer: o.customer?.name || "Cliente",
-      items: o.items.map(i => `${i.quantity}x ${i.productName}`),
-      total: `R$ ${parseFloat(o.total).toFixed(2).replace(".", ",")}`,
-      payment: o.paymentMethod || "",
-      status: o.status,
-      time: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-      address: o.addressSnapshot ? `${o.addressSnapshot.street}, ${o.addressSnapshot.number}` : "",
-      type: o.type,
-      createdAt: o.createdAt,
+      ...o,
+      totalFormatted: `R$ ${parseFloat(o.total).toFixed(2).replace(".", ",")}`,
+      date: new Date(o.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
     }));
 
     return new Response(JSON.stringify({ orders: formatted }), { status: 200, headers: { "content-type": "application/json" } });
@@ -360,15 +432,31 @@ export async function listOrdersHandler(request: Request): Promise<Response> {
 }
 
 // ─── Update Order Status ─────────────────────────────────────────
-export async function updateOrderStatusHandler(request: Request): Promise<Response> {
+export async function updateOrderStatusHandler(request: Request, auth?: { storeId?: string }): Promise<Response> {
   const body = await request.json() as { orderId: string; status: string };
   if (!body.orderId || !body.status) return new Response(JSON.stringify({ error: "orderId e status obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  // IDOR Fix: Validate storeId from auth context
+  const storeId = auth?.storeId;
+  if (!storeId) {
+    return new Response(JSON.stringify({ error: "Unauthorized - storeId required" }), { status: 401, headers: { "content-type": "application/json" } });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
   try {
-    await db.update(orders).set({ status: body.status, updatedAt: new Date() }).where(eq(orders.id, body.orderId));
+    // IDOR Fix: Verify order belongs to tenant before updating
+    const existingOrder = await db.query.orders.findFirst({
+      where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId))
+    });
+
+    if (!existingOrder) {
+      return new Response(JSON.stringify({ error: "Order not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+
+    // IDOR Fix: Include storeId in WHERE clause
+    await db.update(orders).set({ status: body.status, updatedAt: new Date() }).where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
 
     // Insert timeline entry
     const statusLabels: Record<string, string> = {
@@ -387,10 +475,10 @@ export async function updateOrderStatusHandler(request: Request): Promise<Respon
     });
 
     if (body.status === "delivered") {
-      await db.update(orders).set({ deliveredAt: new Date() }).where(eq(orders.id, body.orderId));
+      await db.update(orders).set({ deliveredAt: new Date() }).where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
     }
     if (body.status === "cancelled") {
-      await db.update(orders).set({ cancelledAt: new Date() }).where(eq(orders.id, body.orderId));
+      await db.update(orders).set({ cancelledAt: new Date() }).where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
     }
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
@@ -401,9 +489,20 @@ export async function updateOrderStatusHandler(request: Request): Promise<Respon
 }
 
 // ─── Create Coupon ───────────────────────────────────────────────
-export async function createCouponHandler(request: Request): Promise<Response> {
+export async function createCouponHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const body = await request.json() as {
-    storeId: string;
     code: string;
     type: string; // percent | fixed
     discount: string;
@@ -413,8 +512,8 @@ export async function createCouponHandler(request: Request): Promise<Response> {
     active?: boolean;
   };
 
-  if (!body.storeId || !body.code || !body.type || !body.discount) {
-    return new Response(JSON.stringify({ error: "storeId, code, type e discount obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
+  if (!body.code || !body.type || !body.discount) {
+    return new Response(JSON.stringify({ error: "code, type e discount obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
   }
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -422,13 +521,13 @@ export async function createCouponHandler(request: Request): Promise<Response> {
 
   try {
     // Check if code already exists for this store
-    const existing = await db.select().from(coupons).where(and(eq(coupons.storeId, body.storeId), eq(coupons.code, body.code.toUpperCase())));
+    const existing = await db.select().from(coupons).where(and(eq(coupons.storeId, storeId), eq(coupons.code, body.code.toUpperCase())));
     if (existing.length > 0) {
       return new Response(JSON.stringify({ error: "Cupom com este código já existe" }), { status: 409, headers: { "content-type": "application/json" } });
     }
 
     const [coupon] = await db.insert(coupons).values({
-      storeId: body.storeId,
+      storeId,
       code: body.code.toUpperCase(),
       type: body.type,
       discount: body.discount,
@@ -446,10 +545,19 @@ export async function createCouponHandler(request: Request): Promise<Response> {
 }
 
 // ─── List Customers ──────────────────────────────────────────────
-export async function listCustomersHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+// LGPD: Customer data is masked in list view to minimize PII exposure
+export async function listCustomersHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -460,8 +568,33 @@ export async function listCustomersHandler(request: Request): Promise<Response> 
     const customersWithStats = await Promise.all(storeCustomers.map(async (c) => {
       const customerOrders = await db.select().from(orders).where(and(eq(orders.storeId, storeId), eq(orders.customerId, c.id)));
       const totalSpent = customerOrders.filter(o => o.status !== "cancelled").reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+      
+      // LGPD: Mask sensitive data in list view
+      const maskCPF = (cpf?: string | null) => {
+        if (!cpf || cpf.length < 11) return cpf;
+        return `***.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-**`;
+      };
+      
+      const maskPhone = (phone?: string | null) => {
+        if (!phone || phone.length < 8) return phone;
+        const cleaned = phone.replace(/\D/g, '');
+        if (cleaned.length < 10) return phone;
+        return `(${cleaned.slice(0, 2)}) *****-${cleaned.slice(-4)}`;
+      };
+      
+      const maskEmail = (email?: string | null) => {
+        if (!email || !email.includes('@')) return email;
+        const [local, domain] = email.split('@');
+        if (local.length <= 3) return `***@${domain}`;
+        return `${local.slice(0, 2)}***@${domain}`;
+      };
+      
       return {
-        ...c,
+        id: c.id,
+        name: c.name,
+        email: maskEmail(c.email),
+        phone: maskPhone(c.phone),
+        cpf: maskCPF(c.cpf),
         ordersCount: customerOrders.length,
         totalSpent: `R$ ${totalSpent.toFixed(2).replace(".", ",")}`,
         since: new Date(c.createdAt).toLocaleDateString("pt-BR", { month: "short", year: "numeric" }),
@@ -476,16 +609,28 @@ export async function listCustomersHandler(request: Request): Promise<Response> 
 }
 
 // ─── Create Customer ─────────────────────────────────────────────
-export async function createCustomerHandler(request: Request): Promise<Response> {
-  const body = await request.json() as { storeId: string; name: string; email?: string; phone?: string; cpf?: string };
-  if (!body.storeId || !body.name) return new Response(JSON.stringify({ error: "storeId e name obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
+export async function createCustomerHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const body = await request.json() as { name: string; email?: string; phone?: string; cpf?: string };
+  if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
   try {
     const [customer] = await db.insert(customers).values({
-      storeId: body.storeId,
+      storeId,
       name: body.name,
       email: body.email || null,
       phone: body.phone || null,

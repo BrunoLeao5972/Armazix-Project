@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { api } from "@/lib/api-client";
 import { Ticket, Plus, MoreHorizontal, Calendar, Percent, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,17 +88,13 @@ function CouponsPage() {
     if (!storeId) return;
     setCreating(true);
     try {
-      const res = await fetch("/api/coupons/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          storeId,
-          code: newCode,
-          type: newType,
-          discount: newDiscount,
-          maxUses: newMaxUses ? Number(newMaxUses) : undefined,
-          expiresAt: newExpires || undefined,
-        }),
+      const res = await api.post("/api/coupons/create", {
+        storeId,
+        code: newCode,
+        type: newType,
+        discount: newDiscount,
+        maxUses: newMaxUses ? Number(newMaxUses) : undefined,
+        expiresAt: newExpires || undefined,
       });
       const data = await res.json();
       if (res.ok && data.success) {

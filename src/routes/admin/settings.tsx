@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { api } from "@/lib/api-client";
 import {
   Store,
   User,
@@ -118,11 +119,7 @@ function SettingsPage() {
     setMpTokenSuccess(false);
     setMpTokenError("");
     try {
-      const res = await fetch("/api/payments/mp-token", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ storeId: store.id, accessToken: mpToken }),
-      });
+      const res = await api.post("/api/payments/mp-token", { storeId: store.id, accessToken: mpToken });
       const data = await res.json();
       if (res.ok) {
         setMpTokenSuccess(true);
@@ -197,18 +194,14 @@ function SettingsPage() {
     setSaving(true);
     setSuccess(false);
     try {
-      const res = await fetch("/api/store/update", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          storeId: store.id,
-          name: storeName,
-          ownerName,
-          description,
-          phone,
-          email,
-          primaryColor,
-        }),
+      const res = await api.post("/api/store/update", {
+        storeId: store.id,
+        name: storeName,
+        ownerName,
+        description,
+        phone,
+        email,
+        primaryColor,
       });
       const data = await res.json();
       if (res.ok) {
@@ -259,11 +252,7 @@ function SettingsPage() {
         zip: addressCep,
         complement: addressComplement || undefined,
       };
-      const res = await fetch("/api/store/update-address", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ storeId: store.id, address }),
-      });
+      const res = await api.post("/api/store/update-address", { storeId: store.id, address });
       const data = await res.json();
       if (res.ok) {
         setAddressSuccess(true);
@@ -1014,7 +1003,7 @@ function PlansSection() {
       let payerEmail = "";
       let payerName = "";
       if (userId) {
-        const userRes = await fetch(`/api/user/get?userId=${userId}`);
+        const userRes = await api.get(`/api/user/get?userId=${userId}`);
         if (userRes.ok) {
           const userData = await userRes.json();
           payerEmail = userData.user?.email || "";
@@ -1024,16 +1013,12 @@ function PlansSection() {
 
       if (!payerEmail) { setSubError("Email do usuário não encontrado. Faça login novamente."); setSubscribing(null); return; }
 
-      const res = await fetch("/api/subscriptions/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          storeId,
-          planId,
-          withPdv: pdvToggles[planId] || false,
-          payerEmail,
-          payerName,
-        }),
+      const res = await api.post("/api/subscriptions/create", {
+        storeId,
+        planId,
+        withPdv: pdvToggles[planId] || false,
+        payerEmail,
+        payerName,
       });
       const data = await res.json();
       if (res.ok && data.init_point) {

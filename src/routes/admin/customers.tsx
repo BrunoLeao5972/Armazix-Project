@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { api } from "@/lib/api-client";
 import { Search, Plus, MoreHorizontal, Mail, Phone, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,11 +69,7 @@ function CustomersPage() {
     if (!storeId) return;
     setCreating(true);
     try {
-      const res = await fetch("/api/customers/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ storeId, name: newName, email: newEmail || undefined, phone: newPhone || undefined }),
-      });
+      const res = await api.post("/api/customers/create", { storeId, name: newName, email: newEmail || undefined, phone: newPhone || undefined });
       const data = await res.json();
       if (res.ok && data.success) {
         setCustomers(prev => [...prev, { ...data.customer, ordersCount: 0, totalSpent: "R$ 0,00", since: new Date().toLocaleDateString("pt-BR", { month: "short", year: "numeric" }) }]);

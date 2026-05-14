@@ -1,0 +1,23 @@
+# Security Policy for Armazix
+# Last updated: 2026-05-14
+
+# Contact Information
+Contact: mailto:security@armazix.com
+
+# Expiration Date
+Expires: 2027-05-14T00:00:00.000Z
+
+# Preferred Languages
+Preferred-Languages: pt, en
+
+# Canonical URL
+Canonical: https://armazix.brunoleao5972.workers.dev/.well-known/security.txt
+
+# Policy Page
+Policy: https://armazix.brunoleao5972.workers.dev/security-policy
+
+# Acknowledgments
+Acknowledgments: https://armazix.brunoleao5972.workers.dev/security/hall-of-fame
+
+# Hiring
+Hiring: https://armazix.brunoleao5972.workers.dev/careers
