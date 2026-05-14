@@ -109,7 +109,7 @@ export async function loginHandler(request: Request): Promise<Response> {
     headers: {
       "content-type": "application/json",
       "set-cookie": [
-        `armazix_token=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`,
+        `armazix_token=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${7 * 24 * 60 * 60}`,
         createCsrfCookie(csrfToken),
       ].join(", "),
     },

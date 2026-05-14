@@ -260,26 +260,10 @@ export async function mpWebhookHandler(request: Request): Promise<Response> {
         return new Response("ok", { status: 200 });
       }
 
-      // Find all stores and try to fetch payment — limited, but works for single-store setups
-      const allStores = await db.query.stores.findMany();
-      for (const store of allStores) {
-        if (!store.mpAccessToken) continue;
-        
-        // Decrypt token for this store
-        const accessToken = await decrypt(store.mpAccessToken, encryptionKey);
-        if (!accessToken) continue;
-        
-        const pmtRes = await fetch(`${MP_API}/v1/payments/${pid}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (pmtRes.ok) {
-          const pmt = await pmtRes.json() as { external_reference?: string; status?: string };
-          if (pmt.external_reference) {
-            await verifyAndUpdatePayment(db, pid, store.mpAccessToken, pmt.external_reference);
-            break;
-          }
-        }
-      }
+      // SECURITY: Do not iterate all stores if no external_reference is available.
+      // Iterating all stores to try each MP token is a DoS vector (O(n) API calls).
+      // Only process the payment if we can identify the store from external_reference.
+      console.error("[Webhook] Payment notification received without external_reference — skipping token scan");
     }
   }
 

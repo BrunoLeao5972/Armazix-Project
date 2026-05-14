@@ -1,4 +1,4 @@
-import { createDb } from "@/lib/db";
+import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { requireStoreAccess, AuthContext } from "@/lib/auth/require-store-access";
@@ -32,7 +32,12 @@ export async function getStoreHandler(request: Request): Promise<Response> {
       });
     }
 
-    return new Response(JSON.stringify({ store }), {
+    // SECURITY: Never expose sensitive payment/billing fields to public consumers.
+    // These fields are internal and only needed by authenticated store management routes.
+    const { mpAccessToken: _mpToken, plan: _plan, planStatus: _planStatus,
+            planExpiresAt: _planExpiry, mpSubscriptionId: _subId, ...publicStoreData } = store;
+
+    return new Response(JSON.stringify({ store: publicStoreData }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -79,7 +84,7 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
   };
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const [updated] = await db
@@ -136,7 +141,7 @@ export async function getDashboardStatsHandler(
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     // Get orders stats

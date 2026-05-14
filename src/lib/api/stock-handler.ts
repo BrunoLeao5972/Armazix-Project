@@ -1,4 +1,4 @@
-import { createDb } from "@/lib/db";
+import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, gte, desc, sql } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
@@ -20,7 +20,7 @@ export async function getStockStatsHandler(request: Request, auth?: AuthContext)
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const productsData = await db.select().from(products).where(eq(products.storeId, storeId));
@@ -99,7 +99,7 @@ export async function getReportsStatsHandler(request: Request, auth?: AuthContex
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const ordersData = await db.select().from(orders).where(eq(orders.storeId, storeId));
@@ -216,7 +216,7 @@ export async function updateAddressHandler(request: Request, auth?: AuthContext)
   };
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     await db.update(schema.stores).set({ address: body.address }).where(eq(schema.stores.id, storeId));
@@ -246,7 +246,7 @@ export async function getBusinessHoursHandler(request: Request, auth?: AuthConte
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const [store] = await db
@@ -284,7 +284,7 @@ export async function updateBusinessHoursHandler(request: Request, auth?: AuthCo
   };
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     await db.update(schema.stores).set({ businessHours: body.businessHours }).where(eq(schema.stores.id, storeId));
@@ -324,7 +324,7 @@ export async function sendEmailVerificationCodeHandler(request: Request, auth?: 
     });
 
     // TODO: Send email with code via email service
-    console.log(`[DEV] Email change code for ${body.newEmail}: ${code}`);
+    // NOTE: Code intentionally NOT logged — it is a one-time secret credential
 
     return new Response(JSON.stringify({ success: true, message: "Código enviado para o novo email" }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -427,7 +427,15 @@ export async function updateUserPasswordHandler(request: Request, auth?: { userI
       });
     }
 
-    const { hashPassword } = await import("@/lib/auth");
+    // SECURITY: Enforce password policy on new password
+    const { hashPassword, validatePasswordPolicy } = await import("@/lib/auth");
+    const policyResult = validatePasswordPolicy(body.newPassword);
+    if (!policyResult.valid) {
+      return new Response(JSON.stringify({ error: policyResult.errors.join(". ") }), {
+        status: 400, headers: { "content-type": "application/json" },
+      });
+    }
+
     const newPasswordHash = await hashPassword(body.newPassword);
 
     await db.update(users).set({ passwordHash: newPasswordHash }).where(eq(users.id, userId));
@@ -510,7 +518,19 @@ export async function updateUserDataHandler(request: Request, auth?: { userId?: 
 }
 
 // ─── Check Store Slug ───────────────────────────────────────────
-async function checkStoreSlugHandler(slug: string): Promise<Response> {
+export async function checkStoreSlugHandler(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const slug = url.searchParams.get("slug");
+
+  if (!slug) {
+    return new Response(JSON.stringify({ error: "slug required" }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  }
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+
   try {
     const existing = await db.select({ id: schema.stores.id }).from(schema.stores).where(eq(schema.stores.slug, slug));
     return new Response(JSON.stringify({ available: existing.length === 0 }), {
@@ -554,7 +574,7 @@ export async function updateStoreSlugHandler(request: Request, auth?: AuthContex
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const existing = await db.select({ id: schema.stores.id }).from(schema.stores).where(eq(schema.stores.slug, cleanSlug));
@@ -592,7 +612,7 @@ export async function getFinancialStatsHandler(request: Request, auth?: AuthCont
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const storeOrders = await db.select().from(orders).where(eq(orders.storeId, storeId));
@@ -674,7 +694,7 @@ export async function getDeliveryOrdersHandler(request: Request, auth?: AuthCont
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const deliveryOrders = await db.query.orders.findMany({
@@ -721,7 +741,7 @@ export async function getCouponsHandler(request: Request, auth?: AuthContext): P
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const storeCoupons = await db.select().from(schema.coupons).where(eq(schema.coupons.storeId, storeId));
@@ -761,7 +781,7 @@ export async function getDashboardChartDataHandler(request: Request, auth?: Auth
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const storeOrders = await db.select().from(orders).where(eq(orders.storeId, storeId));

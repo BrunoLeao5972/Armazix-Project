@@ -68,5 +68,9 @@ export function createCsrfErrorResponse(): Response {
 // Criar cookie CSRF
 export function createCsrfCookie(token: string): string {
   const maxAge = 24 * 60 * 60; // 24 horas
-  return `${CSRF_COOKIE_NAME}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+  // SECURITY: Do NOT add HttpOnly here.
+  // The double-submit cookie pattern requires JavaScript to read this token
+  // and send it in the X-CSRF-Token header. The token itself is not a secret —
+  // it only needs to be unguessable. SameSite=Strict prevents cross-origin reads.
+  return `${CSRF_COOKIE_NAME}=${token}; Path=/; Secure; SameSite=Strict; Max-Age=${maxAge}`;
 }

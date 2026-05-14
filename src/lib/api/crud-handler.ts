@@ -1,4 +1,4 @@
-import { createDb } from "@/lib/db";
+import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, desc, sql, and } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
@@ -44,7 +44,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const [product] = await db.insert(products).values({
@@ -98,7 +98,19 @@ export async function listProductsHandler(request: Request): Promise<Response> {
 }
 
 // ─── Update Product ──────────────────────────────────────────────
-export async function updateProductHandler(request: Request, auth?: { storeId?: string }): Promise<Response> {
+export async function updateProductHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // DB-verified tenant isolation — revoked store members are blocked immediately
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const body = await request.json() as {
     productId: string;
     name?: string;
@@ -122,14 +134,8 @@ export async function updateProductHandler(request: Request, auth?: { storeId?: 
     return new Response(JSON.stringify({ error: "productId required" }), { status: 400, headers: { "content-type": "application/json" } });
   }
 
-  // IDOR Fix: Validate storeId from auth context
-  const storeId = auth?.storeId;
-  if (!storeId) {
-    return new Response(JSON.stringify({ error: "Unauthorized - storeId required" }), { status: 401, headers: { "content-type": "application/json" } });
-  }
-
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     // IDOR Fix: Verify product belongs to the tenant before updating
@@ -174,18 +180,24 @@ export async function updateProductHandler(request: Request, auth?: { storeId?: 
 }
 
 // ─── Delete Product ──────────────────────────────────────────────
-export async function deleteProductHandler(request: Request, auth?: { storeId?: string }): Promise<Response> {
+export async function deleteProductHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // DB-verified tenant isolation — revoked store members are blocked immediately
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const body = await request.json() as { productId: string };
   if (!body.productId) return new Response(JSON.stringify({ error: "productId required" }), { status: 400, headers: { "content-type": "application/json" } });
 
-  // IDOR Fix: Validate storeId from auth context
-  const storeId = auth?.storeId;
-  if (!storeId) {
-    return new Response(JSON.stringify({ error: "Unauthorized - storeId required" }), { status: 401, headers: { "content-type": "application/json" } });
-  }
-
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     // IDOR Fix: Verify product belongs to tenant before deleting
@@ -224,7 +236,7 @@ export async function createCategoryHandler(request: Request, auth?: AuthContext
   if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const [cat] = await db.insert(categories).values({
@@ -266,18 +278,24 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
 }
 
 // ─── Delete Category ─────────────────────────────────────────────
-export async function deleteCategoryHandler(request: Request, auth?: { storeId?: string }): Promise<Response> {
+export async function deleteCategoryHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // DB-verified tenant isolation — revoked store members are blocked immediately
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const body = await request.json() as { categoryId: string };
   if (!body.categoryId) return new Response(JSON.stringify({ error: "categoryId required" }), { status: 400, headers: { "content-type": "application/json" } });
 
-  // IDOR Fix: Validate storeId from auth context
-  const storeId = auth?.storeId;
-  if (!storeId) {
-    return new Response(JSON.stringify({ error: "Unauthorized - storeId required" }), { status: 401, headers: { "content-type": "application/json" } });
-  }
-
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     // IDOR Fix: Verify category belongs to tenant before deleting
@@ -378,11 +396,11 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       }
     }
 
-    // Update coupon usage if applicable
+    // Update coupon usage if applicable — SECURITY: verify coupon belongs to THIS store
     if (body.couponId) {
       await db.update(coupons)
         .set({ usedCount: sql`${coupons.usedCount} + 1` })
-        .where(eq(coupons.id, body.couponId));
+        .where(and(eq(coupons.id, body.couponId), eq(coupons.storeId, body.storeId)));
     }
 
     return new Response(JSON.stringify({ success: true, order: { id: order.id, number: nextNumber } }), {
@@ -409,7 +427,7 @@ export async function listOrdersHandler(request: Request, auth?: AuthContext): P
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const storeOrders = await db.query.orders.findMany({
@@ -432,18 +450,34 @@ export async function listOrdersHandler(request: Request, auth?: AuthContext): P
 }
 
 // ─── Update Order Status ─────────────────────────────────────────
-export async function updateOrderStatusHandler(request: Request, auth?: { storeId?: string }): Promise<Response> {
+const VALID_ORDER_STATUSES = ["received", "preparing", "ready", "delivering", "delivered", "cancelled"] as const;
+type OrderStatus = typeof VALID_ORDER_STATUSES[number];
+
+export async function updateOrderStatusHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // DB-verified tenant isolation — revoked store members are blocked immediately
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const body = await request.json() as { orderId: string; status: string };
   if (!body.orderId || !body.status) return new Response(JSON.stringify({ error: "orderId e status obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
 
-  // IDOR Fix: Validate storeId from auth context
-  const storeId = auth?.storeId;
-  if (!storeId) {
-    return new Response(JSON.stringify({ error: "Unauthorized - storeId required" }), { status: 401, headers: { "content-type": "application/json" } });
+  // SECURITY: Whitelist valid statuses to prevent arbitrary status injection
+  if (!VALID_ORDER_STATUSES.includes(body.status as OrderStatus)) {
+    return new Response(JSON.stringify({ error: `Status inválido. Deve ser: ${VALID_ORDER_STATUSES.join(", ")}` }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     // IDOR Fix: Verify order belongs to tenant before updating
@@ -517,7 +551,7 @@ export async function createCouponHandler(request: Request, auth?: AuthContext):
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     // Check if code already exists for this store
@@ -560,7 +594,7 @@ export async function listCustomersHandler(request: Request, auth?: AuthContext)
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const storeCustomers = await db.select().from(customers).where(eq(customers.storeId, storeId));
@@ -626,7 +660,7 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
   if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const db = await createTenantDb(dbUrl, storeId);
 
   try {
     const [customer] = await db.insert(customers).values({

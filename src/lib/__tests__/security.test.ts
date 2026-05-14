@@ -24,8 +24,8 @@ const mockCustomersCount = vi.fn();
 const mockOrderItemsFind = vi.fn();
 const mockProductsFind = vi.fn();
 
-vi.mock("@/lib/db", () => ({
-  createDb: () => ({
+vi.mock("@/lib/db", () => {
+  const mockDb = () => ({
     query: {
       storeUsers: { findFirst: mockStoreUsersFind },
       orders: {
@@ -37,16 +37,21 @@ vi.mock("@/lib/db", () => ({
     },
     $count: mockProductsCount,
     select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
-  }),
-  schema: {
-    storeUsers: { userId: "userId", storeId: "storeId" },
-    stores: { id: "id" },
-    orders: { storeId: "storeId", id: "id", createdAt: "createdAt" },
-    products: { storeId: "storeId", id: "id", stock: "stock" },
-    customers: { storeId: "storeId" },
-    orderItems: { orderId: "orderId", productId: "productId", productName: "productName", quantity: 1, total: "0" },
-  },
-}));
+  });
+  return {
+    createDb: mockDb,
+    // createTenantDb mirrors createDb in tests — RLS context is not tested here
+    createTenantDb: (_url: string, _storeId: string) => Promise.resolve(mockDb()),
+    schema: {
+      storeUsers: { userId: "userId", storeId: "storeId" },
+      stores: { id: "id" },
+      orders: { storeId: "storeId", id: "id", createdAt: "createdAt" },
+      products: { storeId: "storeId", id: "id", stock: "stock" },
+      customers: { storeId: "storeId" },
+      orderItems: { orderId: "orderId", productId: "productId", productName: "productName", quantity: 1, total: "0" },
+    },
+  };
+});
 
 vi.mock("@/lib/audit", () => ({
   logAudit: vi.fn(),
