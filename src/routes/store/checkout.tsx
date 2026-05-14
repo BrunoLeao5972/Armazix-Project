@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { MapPin, Truck, Package, CreditCard, Smartphone, Banknote, CheckCircle2, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { MapPin, Truck, Package, CreditCard, Smartphone, Banknote, CheckCircle2, ChevronRight, ChevronLeft, Loader2, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useStore } from "../store";
@@ -15,6 +15,7 @@ export const Route = createFileRoute("/store/checkout")({
 const STEPS = ["Endereço", "Entrega", "Pagamento", "Confirmação"];
 
 function CheckoutPage() {
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const { cart, cartTotal, clearCart } = useStore();
   const [address, setAddress] = useState({ street: "Rua das Flores", number: "120", neighborhood: "Centro", city: "São Paulo" });
@@ -137,7 +138,8 @@ function CheckoutPage() {
           <h2 className="text-lg font-bold">Forma de pagamento</h2>
           <div className="space-y-2">
             {[
-              { key: "pix", label: "PIX", desc: "Pagamento instantâneo", icon: Smartphone },
+              { key: "mercadopago", label: "Mercado Pago", desc: "Cartão, PIX, boleto e mais", icon: ShoppingBag },
+              { key: "pix", label: "PIX (na entrega)", desc: "Pagamento na entrega", icon: Smartphone },
               { key: "card", label: "Cartão de crédito", desc: "Visa, Master, Elo", icon: CreditCard },
               { key: "cash", label: "Dinheiro", desc: "Troco para quanto?", icon: Banknote },
             ].map((method) => (
@@ -197,7 +199,7 @@ function CheckoutPage() {
             <div className="border-t border-border/50 pt-2 space-y-1.5 text-xs text-muted-foreground">
               <p>📍 {address.street}, {address.number}</p>
               <p>🚚 {deliveryType === "delivery" ? "Delivery — 30-50 min" : "Retirada — 20 min"}</p>
-              <p>💳 {paymentMethod === "pix" ? "PIX" : paymentMethod === "card" ? "Cartão de crédito" : "Dinheiro"}</p>
+              <p>💳 {paymentMethod === "pix" ? "PIX (na entrega)" : paymentMethod === "card" ? "Cartão de crédito" : paymentMethod === "mercadopago" ? "Mercado Pago" : "Dinheiro"}</p>
             </div>
           </div>
         </div>
@@ -237,6 +239,42 @@ function CheckoutPage() {
                   total: (item.price * item.qty).toFixed(2),
                 }));
 
+                // ── Mercado Pago Checkout Pro ─────────────────────
+                if (paymentMethod === "mercadopago") {
+                  const res = await fetch("/api/payments/mp-checkout", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                      storeId,
+                      type: deliveryType,
+                      items,
+                      subtotal: cartTotal.toFixed(2),
+                      deliveryFee: "0",
+                      total: cartTotal.toFixed(2),
+                      addressSnapshot: {
+                        street: address.street,
+                        number: address.number,
+                        neighborhood: address.neighborhood,
+                        city: address.city,
+                        state: "SP",
+                        zip: "",
+                      },
+                      estimatedDelivery: new Date(Date.now() + (deliveryType === "delivery" ? 40 : 20) * 60000).toISOString(),
+                    }),
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.init_point) {
+                    clearCart();
+                    window.location.href = data.init_point;
+                    return;
+                  } else {
+                    setOrderError(data.error || "Erro ao iniciar pagamento no Mercado Pago");
+                    setSubmitting(false);
+                    return;
+                  }
+                }
+
+                // ── Other payment methods (cash, card on delivery, pix) ──
                 const res = await fetch("/api/orders/create", {
                   method: "POST",
                   headers: { "content-type": "application/json" },

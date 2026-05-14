@@ -49,6 +49,7 @@ export async function updateStoreHandler(request: Request): Promise<Response> {
   const body = await request.json() as {
     storeId: string;
     name?: string;
+    ownerName?: string;
     description?: string;
     phone?: string;
     email?: string;
@@ -73,6 +74,7 @@ export async function updateStoreHandler(request: Request): Promise<Response> {
       .update(stores)
       .set({
         name: body.name,
+        ownerName: body.ownerName,
         description: body.description,
         phone: body.phone,
         email: body.email,

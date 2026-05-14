@@ -39,6 +39,8 @@ import {
   listCustomersHandler,
   createCustomerHandler,
 } from "./api/crud-handler";
+import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
+import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler } from "./api/subscription-handler";
 
 type ApiHandler = (request: Request) => Promise<Response>;
 
@@ -66,6 +68,11 @@ const postRoutes: Record<string, ApiHandler> = {
   "/api/orders/update-status": updateOrderStatusHandler,
   "/api/coupons/create": createCouponHandler,
   "/api/customers/create": createCustomerHandler,
+  "/api/payments/mp-checkout": createMpCheckoutHandler,
+  "/api/payments/mp-webhook": mpWebhookHandler,
+  "/api/payments/mp-token": saveMpTokenHandler,
+  "/api/subscriptions/create": createSubscriptionHandler,
+  "/api/subscriptions/mp-webhook": subscriptionWebhookHandler,
 };
 
 const getRoutes: Record<string, ApiHandler> = {
@@ -86,6 +93,7 @@ const getRoutes: Record<string, ApiHandler> = {
   "/api/categories/list": listCategoriesHandler,
   "/api/orders/list": listOrdersHandler,
   "/api/customers/list": listCustomersHandler,
+  "/api/subscriptions/status": getSubscriptionStatusHandler,
 };
 
 export async function handleApiRequest(request: Request): Promise<Response> {

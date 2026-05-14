@@ -20,6 +20,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as StoreIndexRouteImport } from './routes/store/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as StoreSearchRouteImport } from './routes/store/search'
+import { Route as StorePaymentRouteImport } from './routes/store/payment'
 import { Route as StoreCheckoutRouteImport } from './routes/store/checkout'
 import { Route as StoreCategoriesRouteImport } from './routes/store/categories'
 import { Route as StoreCartRouteImport } from './routes/store/cart'
@@ -92,6 +93,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const StoreSearchRoute = StoreSearchRouteImport.update({
   id: '/search',
   path: '/search',
+  getParentRoute: () => StoreRoute,
+} as any)
+const StorePaymentRoute = StorePaymentRouteImport.update({
+  id: '/payment',
+  path: '/payment',
   getParentRoute: () => StoreRoute,
 } as any)
 const StoreCheckoutRoute = StoreCheckoutRouteImport.update({
@@ -210,6 +216,7 @@ export interface FileRoutesByFullPath {
   '/store/cart': typeof StoreCartRoute
   '/store/categories': typeof StoreCategoriesRoute
   '/store/checkout': typeof StoreCheckoutRoute
+  '/store/payment': typeof StorePaymentRoute
   '/store/search': typeof StoreSearchRoute
   '/admin/': typeof AdminIndexRoute
   '/store/': typeof StoreIndexRoute
@@ -239,6 +246,7 @@ export interface FileRoutesByTo {
   '/store/cart': typeof StoreCartRoute
   '/store/categories': typeof StoreCategoriesRoute
   '/store/checkout': typeof StoreCheckoutRoute
+  '/store/payment': typeof StorePaymentRoute
   '/store/search': typeof StoreSearchRoute
   '/admin': typeof AdminIndexRoute
   '/store': typeof StoreIndexRoute
@@ -271,6 +279,7 @@ export interface FileRoutesById {
   '/store/cart': typeof StoreCartRoute
   '/store/categories': typeof StoreCategoriesRoute
   '/store/checkout': typeof StoreCheckoutRoute
+  '/store/payment': typeof StorePaymentRoute
   '/store/search': typeof StoreSearchRoute
   '/admin/': typeof AdminIndexRoute
   '/store/': typeof StoreIndexRoute
@@ -304,6 +313,7 @@ export interface FileRouteTypes {
     | '/store/cart'
     | '/store/categories'
     | '/store/checkout'
+    | '/store/payment'
     | '/store/search'
     | '/admin/'
     | '/store/'
@@ -333,6 +343,7 @@ export interface FileRouteTypes {
     | '/store/cart'
     | '/store/categories'
     | '/store/checkout'
+    | '/store/payment'
     | '/store/search'
     | '/admin'
     | '/store'
@@ -364,6 +375,7 @@ export interface FileRouteTypes {
     | '/store/cart'
     | '/store/categories'
     | '/store/checkout'
+    | '/store/payment'
     | '/store/search'
     | '/admin/'
     | '/store/'
@@ -459,6 +471,13 @@ declare module '@tanstack/react-router' {
       path: '/search'
       fullPath: '/store/search'
       preLoaderRoute: typeof StoreSearchRouteImport
+      parentRoute: typeof StoreRoute
+    }
+    '/store/payment': {
+      id: '/store/payment'
+      path: '/payment'
+      fullPath: '/store/payment'
+      preLoaderRoute: typeof StorePaymentRouteImport
       parentRoute: typeof StoreRoute
     }
     '/store/checkout': {
@@ -629,6 +648,7 @@ interface StoreRouteChildren {
   StoreCartRoute: typeof StoreCartRoute
   StoreCategoriesRoute: typeof StoreCategoriesRoute
   StoreCheckoutRoute: typeof StoreCheckoutRoute
+  StorePaymentRoute: typeof StorePaymentRoute
   StoreSearchRoute: typeof StoreSearchRoute
   StoreIndexRoute: typeof StoreIndexRoute
   StoreOrderOrderIdRoute: typeof StoreOrderOrderIdRoute
@@ -640,6 +660,7 @@ const StoreRouteChildren: StoreRouteChildren = {
   StoreCartRoute: StoreCartRoute,
   StoreCategoriesRoute: StoreCategoriesRoute,
   StoreCheckoutRoute: StoreCheckoutRoute,
+  StorePaymentRoute: StorePaymentRoute,
   StoreSearchRoute: StoreSearchRoute,
   StoreIndexRoute: StoreIndexRoute,
   StoreOrderOrderIdRoute: StoreOrderOrderIdRoute,

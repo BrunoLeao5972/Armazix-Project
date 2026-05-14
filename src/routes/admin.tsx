@@ -67,7 +67,7 @@ function AdminLayout() {
     <div className="min-h-screen bg-background flex">
       {/* Desktop Sidebar */}
       <aside
-        className={`hidden lg:flex flex-col border-r border-border/50 bg-surface transition-[width] duration-200 ${
+        className={`hidden lg:flex flex-col border-r border-border/50 bg-surface transition-[width] duration-200 fixed left-0 top-0 h-screen z-30 ${
           collapsed ? "w-[68px]" : "w-[240px]"
         }`}
       >
@@ -177,7 +177,7 @@ function AdminLayout() {
       )}
 
       {/* Main content area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className={`flex-1 flex flex-col min-w-0 transition-[margin] duration-200 ${collapsed ? "lg:ml-[68px]" : "lg:ml-[240px]"}`}>
         {/* Topbar */}
         <header className="h-16 border-b border-border/50 bg-surface sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">

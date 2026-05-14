@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Store,
   User,
@@ -45,6 +45,7 @@ export const Route = createFileRoute("/admin/settings")({
 interface StoreData {
   id: string;
   name: string;
+  ownerName: string;
   slug: string;
   description: string;
   phone: string;
@@ -71,6 +72,7 @@ function SettingsPage() {
 
   // Form states
   const [storeName, setStoreName] = useState("");
+  const [ownerName, setOwnerName] = useState("");
   const [description, setDescription] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -104,6 +106,37 @@ function SettingsPage() {
   const [hoursSaving, setHoursSaving] = useState(false);
   const [hoursSuccess, setHoursSuccess] = useState(false);
 
+  // Mercado Pago states
+  const [mpToken, setMpToken] = useState("");
+  const [mpTokenSaving, setMpTokenSaving] = useState(false);
+  const [mpTokenSuccess, setMpTokenSuccess] = useState(false);
+  const [mpTokenError, setMpTokenError] = useState("");
+
+  const saveMpToken = async () => {
+    if (!store || !mpToken) return;
+    setMpTokenSaving(true);
+    setMpTokenSuccess(false);
+    setMpTokenError("");
+    try {
+      const res = await fetch("/api/payments/mp-token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ storeId: store.id, accessToken: mpToken }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMpTokenSuccess(true);
+        setTimeout(() => setMpTokenSuccess(false), 3000);
+      } else {
+        setMpTokenError(data.error || "Erro ao salvar token");
+      }
+    } catch {
+      setMpTokenError("Erro de conexão");
+    } finally {
+      setMpTokenSaving(false);
+    }
+  };
+
   useEffect(() => {
     const storeId = localStorage.getItem("storeId");
     if (storeId) {
@@ -121,6 +154,7 @@ function SettingsPage() {
       if (res.ok && data.store) {
         setStore(data.store);
         setStoreName(data.store.name || "");
+        setOwnerName(data.store.ownerName || "");
         setDescription(data.store.description || "");
         setPhone(data.store.phone || "");
         setEmail(data.store.email || "");
@@ -169,6 +203,7 @@ function SettingsPage() {
         body: JSON.stringify({
           storeId: store.id,
           name: storeName,
+          ownerName,
           description,
           phone,
           email,
@@ -259,10 +294,11 @@ function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-5 rounded-xl">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 rounded-xl">
           <TabsTrigger value="geral" className="rounded-lg">Geral</TabsTrigger>
           <TabsTrigger value="horarios" className="rounded-lg">Horários</TabsTrigger>
           <TabsTrigger value="personalizacao" className="rounded-lg">Aparência</TabsTrigger>
+          <TabsTrigger value="pagamentos" className="rounded-lg">Pagamentos</TabsTrigger>
           <TabsTrigger value="planos" className="rounded-lg">Ver Planos</TabsTrigger>
           <TabsTrigger value="notificacoes" className="rounded-lg">Notificações</TabsTrigger>
         </TabsList>
@@ -290,6 +326,15 @@ function SettingsPage() {
                   <Label>Slug (URL)</Label>
                   <Input value={store?.slug || ""} disabled className="h-11 rounded-xl bg-muted" />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Nome do titular</Label>
+                <Input
+                  value={ownerName}
+                  onChange={(e) => setOwnerName(e.target.value)}
+                  placeholder="Nome completo do responsável pela conta"
+                  className="h-11 rounded-xl"
+                />
               </div>
 
               {/* Store Link */}
@@ -592,6 +637,58 @@ function SettingsPage() {
           <PlansSection />
         </TabsContent>
 
+        <TabsContent value="pagamentos" className="mt-6 space-y-6">
+          <Card className="rounded-2xl border-border/50 shadow-soft">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
+                Mercado Pago — Checkout Pro
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm text-blue-700 dark:text-blue-300 space-y-1">
+                <p className="font-medium">Como obter o Access Token:</p>
+                <ol className="list-decimal list-inside space-y-0.5 text-xs opacity-90">
+                  <li>Acesse <span className="font-mono">mercadopago.com.br</span> → Sua conta → Ferramentas de integração</li>
+                  <li>Vá em <strong>Credenciais</strong> e copie o <strong>Access Token de produção</strong></li>
+                  <li>Cole abaixo e salve</li>
+                </ol>
+              </div>
+              <div className="space-y-2">
+                <Label>Access Token</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    value={mpToken}
+                    onChange={(e) => { setMpToken(e.target.value); setMpTokenError(""); }}
+                    placeholder="APP_USR-... ou TEST-..."
+                    className="h-11 rounded-xl font-mono text-sm"
+                  />
+                  <Button
+                    onClick={saveMpToken}
+                    disabled={mpTokenSaving || !mpToken}
+                    className="h-11 px-5 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow shrink-0"
+                  >
+                    {mpTokenSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : mpTokenSuccess ? <Check className="w-4 h-4" /> : "Salvar"}
+                  </Button>
+                </div>
+                {mpTokenError && <p className="text-xs text-destructive">{mpTokenError}</p>}
+                {mpTokenSuccess && <p className="text-xs text-green-600">Token salvo com sucesso!</p>}
+              </div>
+              <Separator />
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Como funciona</p>
+                <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+                  <li>O cliente escolhe "Mercado Pago" no checkout</li>
+                  <li>É redirecionado para a página de pagamento do Mercado Pago</li>
+                  <li>Aceita PIX, cartão de crédito/débito e boleto automaticamente</li>
+                  <li>O pedido é confirmado via webhook após o pagamento</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="notificacoes" className="mt-6 space-y-6">
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-3">
@@ -849,10 +946,108 @@ function CopyStoreUrlButton({ url }: { url: string }) {
 
 // ─── Plans Section Component ─────────────────────────────────────
 function PlansSection() {
-  const [currentPlan] = useState("start");
+  const [currentPlan, setCurrentPlan] = useState("free");
+  const [planStatus, setPlanStatus] = useState("active");
+  const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
   const [pdvToggles, setPdvToggles] = useState<Record<string, boolean>>({ start: false, pro: false, full: false });
+  const [subscribing, setSubscribing] = useState<string | null>(null);
+  const [subError, setSubError] = useState("");
+
+  // Redirect confirmation modal
+  const [confirmPlan, setConfirmPlan] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(5);
+  const [initPoint, setInitPoint] = useState<string | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startCountdown = (url: string) => {
+    setInitPoint(url);
+    setCountdown(5);
+    countdownRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownRef.current!);
+          window.location.href = url;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const cancelRedirect = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    setConfirmPlan(null);
+    setInitPoint(null);
+    setSubscribing(null);
+    setCountdown(5);
+  };
+
+  const confirmRedirect = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (initPoint) window.location.href = initPoint;
+  };
 
   const PDV_PRICE = 50;
+
+  useEffect(() => {
+    const storeId = localStorage.getItem("storeId");
+    if (!storeId) return;
+    fetch(`/api/subscriptions/status?storeId=${storeId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.plan) setCurrentPlan(data.plan);
+        if (data.planStatus) setPlanStatus(data.planStatus);
+        if (data.planExpiresAt) setPlanExpiresAt(data.planExpiresAt);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleUpgrade = async (planId: string) => {
+    setSubError("");
+    const storeId = localStorage.getItem("storeId");
+    const userId = localStorage.getItem("userId");
+    if (!storeId) { setSubError("Loja não encontrada"); return; }
+
+    setSubscribing(planId);
+    try {
+      // Fetch user email from API (not stored in localStorage)
+      let payerEmail = "";
+      let payerName = "";
+      if (userId) {
+        const userRes = await fetch(`/api/user/get?userId=${userId}`);
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          payerEmail = userData.user?.email || "";
+          payerName = userData.user?.name || "";
+        }
+      }
+
+      if (!payerEmail) { setSubError("Email do usuário não encontrado. Faça login novamente."); setSubscribing(null); return; }
+
+      const res = await fetch("/api/subscriptions/create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          storeId,
+          planId,
+          withPdv: pdvToggles[planId] || false,
+          payerEmail,
+          payerName,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.init_point) {
+        setConfirmPlan(planId);
+        startCountdown(data.init_point);
+      } else {
+        setSubError(data.error || "Erro ao iniciar assinatura");
+        setSubscribing(null);
+      }
+    } catch {
+      setSubError("Erro de conexão");
+      setSubscribing(null);
+    }
+  };
 
   const plans = [
     {
@@ -917,12 +1112,19 @@ function PlansSection() {
     },
   ];
 
-  const currentPlanData = plans.find(p => p.id === currentPlan);
+  const currentPlanData = plans.find(p => p.id === currentPlan) || plans[0];
   const basePrice = currentPlanData?.price || 0;
   const currentPdv = pdvToggles[currentPlan] || false;
   const totalPrice = basePrice + (currentPdv ? PDV_PRICE : 0);
 
   const formatPrice = (val: number) => val.toFixed(2).replace(".", ",");
+
+  const planStatusLabel: Record<string, string> = {
+    active: "Ativo",
+    pending: "Pendente",
+    paused: "Pausado",
+    cancelled: "Cancelado",
+  };
 
   return (
     <div className="space-y-6">
@@ -934,23 +1136,30 @@ function PlansSection() {
               <div className="text-sm text-muted-foreground mb-1">Plano atual</div>
               <div className="text-2xl font-bold">{currentPlanData?.name}</div>
               <div className="text-sm text-muted-foreground mt-1">
-                {currentPdv ? (
-                  <div className="space-y-0.5">
-                    <div className="line-through">R$ {formatPrice(basePrice)}/mês</div>
-                    <div className="text-primary font-semibold">
-                      R$ {formatPrice(totalPrice)}/mês (com PDV)
-                    </div>
-                  </div>
-                ) : (
-                  `R$ ${formatPrice(basePrice)}/mês`
-                )}
+                {basePrice === 0 ? "Gratuito" : `R$ ${formatPrice(basePrice)}/mês`}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">Validade: 30 dias</div>
+              {planExpiresAt && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  Expira em: {new Date(planExpiresAt).toLocaleDateString("pt-BR")}
+                </div>
+              )}
             </div>
-            <Badge className="rounded-full bg-primary text-primary-foreground">Ativo</Badge>
+            <Badge className={`rounded-full ${
+              planStatus === "active" ? "bg-primary text-primary-foreground" :
+              planStatus === "pending" ? "bg-yellow-500 text-white" :
+              "bg-destructive text-destructive-foreground"
+            }`}>
+              {planStatusLabel[planStatus] || planStatus}
+            </Badge>
           </div>
         </CardContent>
       </Card>
+
+      {subError && (
+        <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+          {subError}
+        </div>
+      )}
 
       {/* Plan Cards */}
       <div className="grid gap-4">
@@ -1033,17 +1242,29 @@ function PlansSection() {
                   <Button disabled className="w-full h-10 rounded-xl">
                     Plano atual
                   </Button>
+                ) : plan.id === "free" ? (
+                  <Button variant="outline" disabled className="w-full h-10 rounded-xl font-medium">
+                    Gratuito
+                  </Button>
                 ) : (
-                  <Button 
+                  <Button
+                    onClick={() => handleUpgrade(plan.id)}
+                    disabled={subscribing === plan.id}
                     variant={plan.id === "pro" ? "default" : "outline"}
                     className={`w-full h-10 rounded-xl font-medium ${
                       plan.id === "pro" ? "bg-gradient-primary shadow-glow" : ""
                     }`}
                   >
-                    {currentPlan && plans.findIndex(p => p.id === currentPlan) < plans.findIndex(p => p.id === plan.id) 
-                      ? "Fazer upgrade" 
-                      : "Fazer downgrade"}
-                    <ArrowRight className="w-4 h-4 ml-2" />
+                    {subscribing === plan.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        {plans.findIndex(p => p.id === currentPlan) < plans.findIndex(p => p.id === plan.id)
+                          ? "Fazer upgrade"
+                          : "Fazer downgrade"}
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </>
+                    )}
                   </Button>
                 )}
               </CardContent>
@@ -1055,6 +1276,56 @@ function PlansSection() {
       <p className="text-xs text-muted-foreground text-center">
         Todos os planos possuem validade de 30 dias. O PDV é um adicional de R$ {formatPrice(PDV_PRICE)}/mês e não está incluso em nenhum plano.
       </p>
+
+      {/* Redirect confirmation modal */}
+      {confirmPlan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in duration-200">
+          <div className="bg-card rounded-2xl border border-border shadow-lg p-6 w-full max-w-sm mx-4 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center gap-4">
+              {/* Countdown ring */}
+              <div className="relative w-16 h-16">
+                <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+                  <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" strokeWidth="4" className="text-border" />
+                  <circle
+                    cx="32" cy="32" r="28"
+                    fill="none" stroke="currentColor" strokeWidth="4"
+                    strokeDasharray={`${2 * Math.PI * 28}`}
+                    strokeDashoffset={`${2 * Math.PI * 28 * (1 - countdown / 5)}`}
+                    strokeLinecap="round"
+                    className="text-primary transition-all duration-1000"
+                  />
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-xl font-bold">{countdown}</span>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-bold">Redirecionando para o Mercado Pago</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Você será levado à página de pagamento do plano{" "}
+                  <span className="font-semibold text-foreground capitalize">{confirmPlan}</span>.
+                  <br />O redirecionamento acontece em <span className="font-bold text-primary">{countdown}s</span>.
+                </p>
+              </div>
+
+              <div className="flex gap-3 w-full">
+                <Button
+                  variant="outline"
+                  className="flex-1 h-10 rounded-xl font-medium"
+                  onClick={cancelRedirect}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="flex-1 h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
+                  onClick={confirmRedirect}
+                >
+                  Ir agora
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
