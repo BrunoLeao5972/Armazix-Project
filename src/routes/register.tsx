@@ -2,7 +2,6 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ShoppingBag,
   Eye,
   EyeOff,
   Mail,
@@ -199,9 +198,7 @@ function RegisterPage() {
       <header className="border-b border-border/50 bg-surface/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5 font-bold text-lg">
-            <span className="grid place-items-center w-9 h-9 rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
-              <ShoppingBag className="w-5 h-5" />
-            </span>
+            <img src="/logo.png" alt="Armazix" className="w-9 h-9" />
             ARMAZIX
           </Link>
           <Link

@@ -34,10 +34,9 @@ export function Categories() {
             </p>
           </div>
         </div>
-        <div className="-mx-4 px-4 overflow-x-auto no-scrollbar">
-          <ul className="flex gap-4 min-w-max pb-2">
-            {categories.map((c) => (
-              <li key={c.label}>
+        <div className="flex flex-wrap justify-center gap-4">
+          {categories.map((c) => (
+            <div key={c.label}>
                 <button className="group flex flex-col items-center gap-3 w-28">
                   <span className="grid place-items-center w-20 h-20 rounded-3xl bg-surface border border-border shadow-soft transition-all duration-300 group-hover:scale-110 group-hover:shadow-glow group-hover:border-primary/30">
                     <c.Icon className="w-7 h-7 text-primary" strokeWidth={1.75} />
@@ -46,9 +45,8 @@ export function Categories() {
                     {c.label}
                   </span>
                 </button>
-              </li>
-            ))}
-          </ul>
+            </div>
+          ))}
         </div>
       </div>
     </section>

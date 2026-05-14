@@ -2,7 +2,6 @@ import { useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ShoppingBag,
   Eye,
   EyeOff,
   Mail,
@@ -103,9 +102,7 @@ function LoginPage() {
         >
           {/* Logo */}
           <div className="flex items-center gap-3 mb-10">
-            <span className="grid place-items-center w-11 h-11 rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
-              <ShoppingBag className="w-6 h-6" />
-            </span>
+            <img src="/logo.png" alt="Armazix" className="w-11 h-11" />
             <span className="text-2xl font-bold tracking-tight">ARMAZIX</span>
           </div>
 
@@ -150,7 +147,7 @@ function LoginPage() {
             </span>
             <div className="min-w-0">
               <div className="text-xs text-muted-foreground">Novo Pedido</div>
-              <div className="text-sm font-semibold truncate">#3208 • R$ 189,90</div>
+              <div className="text-sm font-semibold truncate">#1107 Isadora C.</div>
             </div>
           </motion.div>
 
@@ -159,7 +156,7 @@ function LoginPage() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 1.3, duration: 0.5 }}
-            className="absolute left-0 lg:-left-4 -bottom-2 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60 z-10"
+            className="absolute left-0 lg:-left-20 -bottom-2 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60 z-10"
           >
             <div className="text-xs text-muted-foreground">Venda via PIX</div>
             <div className="text-lg font-bold text-gradient-primary">R$ 1.249,00</div>
@@ -177,9 +174,7 @@ function LoginPage() {
         >
           {/* Mobile logo */}
           <div className="flex items-center gap-2.5 mb-8 lg:hidden">
-            <span className="grid place-items-center w-10 h-10 rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
-              <ShoppingBag className="w-5 h-5" />
-            </span>
+            <img src="/logo.png" alt="Armazix" className="w-10 h-10" />
             <span className="text-xl font-bold tracking-tight">ARMAZIX</span>
           </div>
 

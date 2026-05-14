@@ -1,4 +1,4 @@
-import { ShoppingBag, Lock, ShieldCheck } from "lucide-react";
+import { Lock, ShieldCheck } from "lucide-react";
 
 export function Footer() {
   return (
@@ -7,9 +7,7 @@ export function Footer() {
         <div className="grid md:grid-cols-4 gap-10">
           <div className="md:col-span-2">
             <a href="#" className="flex items-center gap-2 font-bold text-lg">
-              <span className="grid place-items-center w-9 h-9 rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
-                <ShoppingBag className="w-5 h-5" />
-              </span>
+              <img src="/logo.png" alt="Armazix" className="w-9 h-9" />
               ARMAZIX
             </a>
             <p className="mt-4 text-sm text-muted-foreground max-w-sm">

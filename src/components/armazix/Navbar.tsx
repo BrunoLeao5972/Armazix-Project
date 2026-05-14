@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Menu, ShoppingBag, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
 const links = [
   { href: "#funcionalidades", label: "Funcionalidades" },
@@ -29,9 +29,7 @@ export function Navbar() {
       >
         <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <a href="#" className="flex items-center gap-2 font-bold text-lg">
-            <span className="grid place-items-center w-9 h-9 rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
-              <ShoppingBag className="w-5 h-5" />
-            </span>
+            <img src="/logo.png" alt="Armazix" className="w-9 h-9" />
             ARMAZIX
           </a>
           <ul className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">

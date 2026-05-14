@@ -20,12 +20,5 @@
     "enabled": true,
     "head_sampling_rate": 1  // 100% sampling — capture all requests for security audit trail
   },
-  // ─── Rate Limiting ──────────────────────────────────────────────────────
-  // Cloudflare-native rate limiting rules (WAF layer, before the Worker runs).
-  // These complement the application-level rate limiter in middleware/rate-limit.ts.
-  "limits": {
-    // Max 1000 requests/minute per Worker invocation (hard cap — Cloudflare default)
-    "cpu_ms": 50
-  }
 }
 

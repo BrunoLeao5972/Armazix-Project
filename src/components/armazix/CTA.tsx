@@ -13,7 +13,7 @@ export function CTA() {
               <span className="text-gradient-primary">próximo nível.</span>
             </h2>
             <p className="mt-5 text-background/70 text-lg">
-              Comece grátis hoje. Em 30 segundos sua loja está no ar.
+              Comece grátis hoje. Em 2 minutos sua loja está no ar.
             </p>
             <div className="mt-8 flex justify-center">
               <a
@@ -25,7 +25,7 @@ export function CTA() {
               </a>
             </div>
             <p className="mt-4 text-xs text-background/50">
-              Sem cartão de crédito. Sem taxas de adesão.
+              Planos recorrentes com cartão de crédito ou mensalidades via PIX. Sem taxas de adesão.
             </p>
           </div>
         </div>

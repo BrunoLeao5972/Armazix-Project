@@ -43,11 +43,11 @@ const plans: Plan[] = [
     tagline: "A partir de R$ 0,66/dia",
     price: "R$ 19,90",
     period: "/mês",
-    capacity: "Até 30 produtos",
+    capacity: "Até 20 produtos",
     description:
       "Ideal para pequenos lojistas que precisam ganhar tempo, evitar erros no estoque e profissionalizar a operação.",
     features: [
-      "Catálogo com até 30 produtos",
+      "Catálogo com até 20 produtos",
       "Integração com WhatsApp",
       "Controle de estoque automático",
       "Alertas de estoque baixo",

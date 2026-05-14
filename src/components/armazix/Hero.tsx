@@ -24,15 +24,15 @@ export function Hero() {
             <span className="text-gradient-primary">velocidade de um clique.</span>
           </h1>
           <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
-            A plataforma brasileira feita para quem quer vender hoje. Gestão simples,
-            pagamentos integrados e visual de app premium para o seu negócio.
+            O ecossistema brasileiro para lojas digitais e marketplaces locais.
+            Pensado por quem vive o varejo, desenvolvido para quem quer crescer.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
             <a
               href="#cta"
               className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full bg-gradient-primary text-primary-foreground font-semibold shadow-glow hover:scale-[1.02] active:scale-[0.99] transition-transform"
             >
-              Começar agora — é grátis
+              Comece agora, é grátis
               <ArrowRight className="w-4 h-4" />
             </a>
           </div>
@@ -43,8 +43,8 @@ export function Hero() {
               ))}
             </div>
             <span>
-              <strong className="text-foreground">4.9/5</strong> por mais de{" "}
-              <strong className="text-foreground">2.500 lojistas</strong>.
+              <strong className="text-foreground">4,8/5</strong> por mais de{" "}
+              <strong className="text-foreground">300 lojistas</strong>.
             </span>
           </div>
         </motion.div>
@@ -73,8 +73,8 @@ export function Hero() {
                 <Bell className="w-4 h-4" />
               </span>
               <div className="min-w-0">
-                <div className="text-xs text-muted-foreground">Novo Pedido</div>
-                <div className="text-sm font-semibold truncate">#3208 • Maria S.</div>
+                <div className="text-xs text-muted-foreground">Novo Pedido  #1007</div>
+                <div className="text-sm font-semibold truncate">Isadora C.</div>
               </div>
             </motion.div>
             <motion.div
