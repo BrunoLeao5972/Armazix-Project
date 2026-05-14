@@ -1,7 +1,10 @@
-import { createDb } from "@/lib/db";
+import { createDb, schema } from "@/lib/db";
 import { findUserByEmail, verifyPassword, signJWT } from "@/lib/auth";
 import { generateCsrfToken, createCsrfCookie } from "@/lib/middleware/csrf";
 import { logAudit, AuditActions } from "@/lib/audit";
+import { eq } from "drizzle-orm";
+
+const { storeUsers } = schema;
 
 export async function loginHandler(request: Request): Promise<Response> {
   const { email, password } = await request.json() as { email: string; password: string };
@@ -66,10 +69,16 @@ export async function loginHandler(request: Request): Promise<Response> {
     });
   }
 
-  // Sign JWT
+  // Look up user's storeId — JWT is the single source of truth for tenant
+  const storeUserRecord = await db.query.storeUsers.findFirst({
+    where: eq(storeUsers.userId, user.id),
+  });
+  const storeId = storeUserRecord?.storeId;
+
+  // Sign JWT with storeId embedded — NEVER read storeId from request
   const secret = process.env.JWT_SECRET!;
   const token = await signJWT(
-    { userId: user.id, email: user.email, role: user.role },
+    { userId: user.id, email: user.email, role: user.role, storeId },
     secret,
   );
 

@@ -74,7 +74,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 
 // ─── JWT ────────────────────────────────────────────────────────
 export async function signJWT(
-  payload: { userId: string; email: string; role: string },
+  payload: { userId: string; email: string; role: string; storeId?: string },
   secret: string,
   expiresIn = "7d",
 ): Promise<string> {
@@ -89,11 +89,11 @@ export async function signJWT(
 export async function verifyJWT(
   token: string,
   secret: string,
-): Promise<{ userId: string; email: string; role: string } | null> {
+): Promise<{ userId: string; email: string; role: string; storeId?: string } | null> {
   try {
     const key = new TextEncoder().encode(secret);
     const { payload } = await jwtVerify(token, key);
-    return payload as unknown as { userId: string; email: string; role: string };
+    return payload as unknown as { userId: string; email: string; role: string; storeId?: string };
   } catch {
     return null;
   }

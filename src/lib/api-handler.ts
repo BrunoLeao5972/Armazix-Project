@@ -42,7 +42,7 @@ import {
 } from "./api/crud-handler";
 import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
 import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler } from "./api/subscription-handler";
-import { requireAuth, requireStoreAccess, getStoreIdFromRequest, AuthContext } from "./middleware/auth";
+import { requireAuth, AuthContext } from "./middleware/auth";
 import { rateLimit, createRateLimitResponse } from "./middleware/rate-limit";
 import { withSecurityHeaders } from "./middleware/security-headers";
 import { validateCsrfToken, createCsrfErrorResponse } from "./middleware/csrf";
@@ -121,13 +121,10 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/subscriptions/mp-webhook": "webhook",
 };
 
-async function getRequestBodyStoreId(request: Request): Promise<string | null> {
-  try {
-    const body = await request.clone().json();
-    return body?.storeId || null;
-  } catch {
-    return null;
-  }
+async function getRequestBodyStoreId(_request: Request): Promise<string | null> {
+  // SECURITY: storeId must never be read from the request body.
+  // It is embedded in the JWT and extracted by requireAuth.
+  return null;
 }
 
 export async function handleApiRequest(request: Request): Promise<Response> {
@@ -178,24 +175,15 @@ export async function handleApiRequest(request: Request): Promise<Response> {
         return withSecurityHeaders(createCsrfErrorResponse());
       }
 
-      // Verificar autenticação
+      // Verificar autenticação — storeId comes from JWT, never from request
       const auth = await requireAuth(request);
       if (auth instanceof Response) {
         return withSecurityHeaders(auth);
       }
 
-      // Verificar acesso ao tenant (storeId)
-      const requestedStoreId = getStoreIdFromRequest(request) || await getRequestBodyStoreId(request);
-      
-      if (requestedStoreId) {
-        const authWithStore = await requireStoreAccess(request, auth, requestedStoreId);
-        if (authWithStore instanceof Response) {
-          return withSecurityHeaders(authWithStore);
-        }
-        response = await handler(request, authWithStore);
-      } else {
-        response = await handler(request, auth);
-      }
+      // Pass auth directly; storeId is already embedded in the JWT token.
+      // Individual handlers call requireStoreAccess(auth) to enforce DB-level access.
+      response = await handler(request, auth);
     } else {
       // Rota pública
       response = await handler(request);

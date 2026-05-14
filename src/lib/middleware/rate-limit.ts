@@ -15,7 +15,13 @@ const configs: Record<string, RateLimitConfig> = {
   
   // API geral - mais restritivo
   api: { windowMs: 60 * 1000, max: 60 },           // 60 por minuto
-  
+
+  // Operações de pagamento - restritivo para prevenir abuso de cartão
+  payments: { windowMs: 60 * 60 * 1000, max: 10 }, // 10 tentativas por hora
+
+  // Operações sensíveis (configurações, senha, token MP)
+  sensitive: { windowMs: 15 * 60 * 1000, max: 20 }, // 20 por 15 min
+
   // Webhooks - mais permissivo
   webhook: { windowMs: 60 * 1000, max: 1000 },    // 1000 por minuto
 };

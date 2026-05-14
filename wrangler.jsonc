@@ -14,6 +14,18 @@
   //   WEBHOOK_API_KEY — Secret for validating webhook requests (optional)
   //   PLATFORM_MP_ACCESS_TOKEN — Mercado Pago token for Armazix platform subscriptions
   "observability": {
-    "enabled": true
+    // Enables Cloudflare Workers Observability: logs, metrics, traces in the dashboard.
+    // Security events from logSecurityEvent() are emitted as structured JSON to stdout
+    // and captured here for SIEM/alerting via Cloudflare Logpush or Workers Logs.
+    "enabled": true,
+    "head_sampling_rate": 1  // 100% sampling — capture all requests for security audit trail
+  },
+  // ─── Rate Limiting ──────────────────────────────────────────────────────
+  // Cloudflare-native rate limiting rules (WAF layer, before the Worker runs).
+  // These complement the application-level rate limiter in middleware/rate-limit.ts.
+  "limits": {
+    // Max 1000 requests/minute per Worker invocation (hard cap — Cloudflare default)
+    "cpu_ms": 50
   }
 }
+

@@ -127,6 +127,18 @@ export const AuditActions = {
   RATE_LIMIT_EXCEEDED: "RATE_LIMIT_EXCEEDED",
   INVALID_CSRF: "INVALID_CSRF",
   UNAUTHORIZED_ACCESS: "UNAUTHORIZED_ACCESS",
+
+  // Tenant / IDOR security events
+  /** Attacker attempted to access a resource owned by another tenant */
+  IDOR_ATTEMPT: "IDOR_ATTEMPT",
+  /** Cross-tenant data access was detected and blocked */
+  CROSS_TENANT_BLOCKED: "CROSS_TENANT_BLOCKED",
+  /** Tenant-guard anti-regression rule triggered */
+  TENANT_GUARD_TRIGGERED: "TENANT_GUARD_TRIGGERED",
+  /** JWT contained no storeId for a tenant-scoped operation */
+  MISSING_TENANT_CONTEXT: "MISSING_TENANT_CONTEXT",
+  /** Suspicious sequence of access-denied events from same IP */
+  SUSPICIOUS_ACTIVITY: "SUSPICIOUS_ACTIVITY",
   
   // Webhooks
   WEBHOOK_RECEIVED: "WEBHOOK_RECEIVED",
@@ -147,4 +159,51 @@ export const ResourceTypes = {
   SETTINGS: "settings",
   SESSION: "session",
   WEBHOOK: "webhook",
+  TENANT: "tenant",
 } as const;
+
+/**
+ * Log a security event (IDOR attempt, cross-tenant block, etc.)
+ * Structured format ensures SIEM/alerting can detect anomalies.
+ */
+export function logSecurityEvent(options: {
+  action: (typeof AuditActions)[keyof typeof AuditActions];
+  userId?: string;
+  jwtStoreId?: string;
+  requestedStoreId?: string;
+  handler?: string;
+  request?: Request;
+}): void {
+  const { action, userId, jwtStoreId, requestedStoreId, handler, request } = options;
+
+  // Structured console output for Cloudflare Workers observability / SIEM ingestion
+  console.error(
+    JSON.stringify({
+      level: "SECURITY",
+      action,
+      userId: userId ?? "anonymous",
+      jwtStoreId: jwtStoreId ?? null,
+      requestedStoreId: requestedStoreId ?? null,
+      handler: handler ?? "unknown",
+      timestamp: new Date().toISOString(),
+    })
+  );
+
+  logAudit(
+    {
+      userId,
+      storeId: jwtStoreId,
+      action,
+      resourceType: ResourceTypes.TENANT,
+      details: {
+        jwtStoreId: jwtStoreId ?? null,
+        requestedStoreId: requestedStoreId ?? null,
+        handler: handler ?? "unknown",
+      },
+      status: "denied",
+      errorMessage: `${action}: jwt=${jwtStoreId ?? "none"} requested=${requestedStoreId ?? "none"}`,
+    },
+    request
+  );
+}
+

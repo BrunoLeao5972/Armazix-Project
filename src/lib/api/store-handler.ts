@@ -46,14 +46,20 @@ export async function getStoreHandler(request: Request): Promise<Response> {
 }
 
 // ─── Update Store ───────────────────────────────────────────────
-export async function updateStoreHandler(request: Request, auth?: { userId?: string; storeId?: string }): Promise<Response> {
-  // IDOR Fix: Validate auth context
-  if (!auth?.userId) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+export async function updateStoreHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Use storeId exclusively from auth (JWT) — ignore any storeId in body
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
   }
 
   const body = await request.json() as {
-    storeId: string;
     name?: string;
     ownerName?: string;
     description?: string;
@@ -76,15 +82,6 @@ export async function updateStoreHandler(request: Request, auth?: { userId?: str
   const db = createDb(dbUrl);
 
   try {
-    // IDOR Fix: Verify user has access to this store
-    const storeAccess = await db.query.storeUsers.findFirst({
-      where: and(eq(storeUsers.userId, auth.userId), eq(storeUsers.storeId, body.storeId))
-    });
-
-    if (!storeAccess) {
-      return new Response(JSON.stringify({ error: "No access to this store" }), { status: 403, headers: { "content-type": "application/json" } });
-    }
-
     const [updated] = await db
       .update(stores)
       .set({
@@ -98,7 +95,7 @@ export async function updateStoreHandler(request: Request, auth?: { userId?: str
         address: body.address,
         updatedAt: new Date(),
       })
-      .where(eq(stores.id, body.storeId))
+      .where(eq(stores.id, storeId))
       .returning();
 
     return new Response(JSON.stringify({ success: true, store: updated }), {
@@ -224,16 +221,16 @@ export async function getDashboardStatsHandler(
 }
 
 // ─── Get User's Store ────────────────────────────────────────────
-export async function getUserStoreHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const userId = url.searchParams.get("userId");
-
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "User ID required" }), {
-      status: 400,
+export async function getUserStoreHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: NEVER accept userId from query params — use auth context only
+  if (!auth?.userId) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
       headers: { "content-type": "application/json" },
     });
   }
+
+  const userId = auth.userId;
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);

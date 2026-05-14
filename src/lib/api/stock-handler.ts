@@ -198,14 +198,20 @@ export async function validateCepHandler(request: Request): Promise<Response> {
 }
 
 // ─── Update Store Address ───────────────────────────────────────
-export async function updateAddressHandler(request: Request, auth?: { userId?: string; storeId?: string }): Promise<Response> {
-  // IDOR Fix: Validate auth context
-  if (!auth?.userId) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+export async function updateAddressHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Use storeId exclusively from auth (JWT) — ignore any storeId in body
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
   }
 
   const body = await request.json() as {
-    storeId: string;
     address: { street: string; number: string; neighborhood: string; city: string; state: string; zip: string; complement?: string };
   };
 
@@ -213,16 +219,7 @@ export async function updateAddressHandler(request: Request, auth?: { userId?: s
   const db = createDb(dbUrl);
 
   try {
-    // IDOR Fix: Verify user has access to this store
-    const storeAccess = await db.query.storeUsers.findFirst({
-      where: and(eq(storeUsers.userId, auth.userId), eq(storeUsers.storeId, body.storeId))
-    });
-
-    if (!storeAccess) {
-      return new Response(JSON.stringify({ error: "No access to this store" }), { status: 403, headers: { "content-type": "application/json" } });
-    }
-
-    await db.update(schema.stores).set({ address: body.address }).where(eq(schema.stores.id, body.storeId));
+    await db.update(schema.stores).set({ address: body.address }).where(eq(schema.stores.id, storeId));
     return new Response(JSON.stringify({ success: true, address: body.address }), {
       status: 200, headers: { "content-type": "application/json" },
     });
@@ -269,14 +266,20 @@ export async function getBusinessHoursHandler(request: Request, auth?: AuthConte
 }
 
 // ─── Update Business Hours ──────────────────────────────────────
-export async function updateBusinessHoursHandler(request: Request, auth?: { userId?: string; storeId?: string }): Promise<Response> {
-  // IDOR Fix: Validate auth context
-  if (!auth?.userId) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+export async function updateBusinessHoursHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Use storeId exclusively from auth (JWT) — ignore any storeId in body
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
   }
 
   const body = await request.json() as {
-    storeId: string;
     businessHours: Array<{ day: string; open: string; close: string; closed: boolean }>;
   };
 
@@ -284,16 +287,7 @@ export async function updateBusinessHoursHandler(request: Request, auth?: { user
   const db = createDb(dbUrl);
 
   try {
-    // IDOR Fix: Verify user has access to this store
-    const storeAccess = await db.query.storeUsers.findFirst({
-      where: and(eq(storeUsers.userId, auth.userId), eq(storeUsers.storeId, body.storeId))
-    });
-
-    if (!storeAccess) {
-      return new Response(JSON.stringify({ error: "No access to this store" }), { status: 403, headers: { "content-type": "application/json" } });
-    }
-
-    await db.update(schema.stores).set({ businessHours: body.businessHours }).where(eq(schema.stores.id, body.storeId));
+    await db.update(schema.stores).set({ businessHours: body.businessHours }).where(eq(schema.stores.id, storeId));
     return new Response(JSON.stringify({ success: true, businessHours: body.businessHours }), {
       status: 200, headers: { "content-type": "application/json" },
     });
@@ -531,13 +525,20 @@ async function checkStoreSlugHandler(slug: string): Promise<Response> {
 }
 
 // ─── Update Store Slug ──────────────────────────────────────────
-export async function updateStoreSlugHandler(request: Request, auth?: { userId?: string; storeId?: string }): Promise<Response> {
-  // IDOR Fix: Validate auth context
-  if (!auth?.userId) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+export async function updateStoreSlugHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  // IDOR Fix: Use storeId exclusively from auth (JWT) — ignore any storeId in body
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
   }
 
-  const body = await request.json() as { storeId: string; slug: string };
+  const body = await request.json() as { slug: string };
 
   const cleanSlug = body.slug
     .toLowerCase()
@@ -556,23 +557,14 @@ export async function updateStoreSlugHandler(request: Request, auth?: { userId?:
   const db = createDb(dbUrl);
 
   try {
-    // IDOR Fix: Verify user has access to this store
-    const storeAccess = await db.query.storeUsers.findFirst({
-      where: and(eq(storeUsers.userId, auth.userId), eq(storeUsers.storeId, body.storeId))
-    });
-
-    if (!storeAccess) {
-      return new Response(JSON.stringify({ error: "No access to this store" }), { status: 403, headers: { "content-type": "application/json" } });
-    }
-
     const existing = await db.select({ id: schema.stores.id }).from(schema.stores).where(eq(schema.stores.slug, cleanSlug));
-    if (existing.length > 0 && existing[0].id !== body.storeId) {
+    if (existing.length > 0 && existing[0].id !== storeId) {
       return new Response(JSON.stringify({ error: "Slug já está em uso" }), {
         status: 409, headers: { "content-type": "application/json" },
       });
     }
 
-    await db.update(schema.stores).set({ slug: cleanSlug }).where(eq(schema.stores.id, body.storeId));
+    await db.update(schema.stores).set({ slug: cleanSlug }).where(eq(schema.stores.id, storeId));
 
     return new Response(JSON.stringify({ success: true, slug: cleanSlug }), {
       status: 200, headers: { "content-type": "application/json" },
