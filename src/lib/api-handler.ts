@@ -96,7 +96,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/store/user": getUserStoreHandler,
-  "/api/dashboard/stats": getDashboardStatsHandler,
+  "/api/dashboard/stats": (req, auth) => getDashboardStatsHandler(req, auth),
   "/api/stock/stats": getStockStatsHandler,
   "/api/reports/stats": getReportsStatsHandler,
   "/api/store/business-hours": getBusinessHoursHandler,

@@ -1,6 +1,7 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
+import { requireStoreAccess, AuthContext } from "@/lib/auth/require-store-access";
 
 const { stores, storeUsers, orders, products, customers } = schema;
 
@@ -114,15 +115,27 @@ export async function updateStoreHandler(request: Request, auth?: { userId?: str
 }
 
 // ─── Get Dashboard Stats ────────────────────────────────────────
-export async function getDashboardStatsHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const storeId = url.searchParams.get("storeId");
-
-  if (!storeId) {
-    return new Response(JSON.stringify({ error: "Store ID required" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+export async function getDashboardStatsHandler(
+  request: Request,
+  auth?: AuthContext
+): Promise<Response> {
+  // IDOR Fix: Validate store access using auth context only
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        error: (error as Error).message,
+      }),
+      {
+        status: auth?.userId ? 403 : 401,
+        headers: {
+          "content-type": "application/json",
+        },
+      }
+    );
   }
 
   const dbUrl = process.env.DATABASE_URL!;

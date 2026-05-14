@@ -509,25 +509,14 @@ export async function updateUserDataHandler(request: Request, auth?: { userId?: 
   } catch (error) {
     console.error("Update user data error:", error);
     return new Response(JSON.stringify({ error: "Failed to update user data" }), {
-      status: 500, headers: { "content-type": "application/json" },
+      status: 500,
+      headers: { "content-type": "application/json" },
     });
   }
 }
 
 // ─── Check Store Slug ───────────────────────────────────────────
-export async function checkStoreSlugHandler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const slug = url.searchParams.get("slug");
-
-  if (!slug) {
-    return new Response(JSON.stringify({ error: "Slug required" }), {
-      status: 400, headers: { "content-type": "application/json" },
-    });
-  }
-
-  const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
-
+async function checkStoreSlugHandler(slug: string): Promise<Response> {
   try {
     const existing = await db.select({ id: schema.stores.id }).from(schema.stores).where(eq(schema.stores.slug, slug));
     return new Response(JSON.stringify({ available: existing.length === 0 }), {
