@@ -28,6 +28,7 @@ type StoreContextType = {
   addToCart: (item: Omit<CartItem, "qty">) => void;
   removeFromCart: (id: number) => void;
   updateQty: (id: number, qty: number) => void;
+  clearCart: () => void;
   cartCount: number;
   cartTotal: number;
   favorites: number[];
@@ -39,6 +40,7 @@ export const StoreContext = createContext<StoreContextType>({
   addToCart: () => {},
   removeFromCart: () => {},
   updateQty: () => {},
+  clearCart: () => {},
   cartCount: 0,
   cartTotal: 0,
   favorites: [],
@@ -87,7 +89,7 @@ function StoreLayout() {
     setFavorites((prev) => (prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]));
 
   return (
-    <StoreContext.Provider value={{ cart, addToCart, removeFromCart, updateQty, cartCount, cartTotal, favorites, toggleFavorite }}>
+    <StoreContext.Provider value={{ cart, addToCart, removeFromCart, updateQty, clearCart: () => setCart([]), cartCount, cartTotal, favorites, toggleFavorite }}>
       <div className="min-h-screen bg-background flex flex-col">
         {/* Header */}
         <header className="sticky top-0 z-40 bg-surface/80 backdrop-blur-md border-b border-border/40">

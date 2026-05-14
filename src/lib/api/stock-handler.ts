@@ -522,3 +522,207 @@ export async function updateStoreSlugHandler(request: Request): Promise<Response
     });
   }
 }
+
+// ─── Get Financial Stats ─────────────────────────────────────────
+export async function getFinancialStatsHandler(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const storeId = url.searchParams.get("storeId");
+  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+
+  try {
+    const storeOrders = await db.select().from(orders).where(eq(orders.storeId, storeId));
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const monthOrders = storeOrders.filter(o => new Date(o.createdAt) >= monthStart && o.status !== "cancelled");
+    const revenue = monthOrders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+
+    // Cash flow: last 6 months
+    const cashFlow: { name: string; receita: number; despesa: number }[] = [];
+    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+      const mOrders = storeOrders.filter(o => {
+        const cd = new Date(o.createdAt);
+        return cd >= d && cd <= mEnd && o.status !== "cancelled";
+      });
+      const mRevenue = mOrders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+      cashFlow.push({ name: monthNames[d.getMonth()], receita: mRevenue, despesa: 0 });
+    }
+
+    // Payment methods
+    const methodCounts: Record<string, number> = {};
+    storeOrders.filter(o => o.status !== "cancelled" && o.paymentMethod).forEach(o => {
+      methodCounts[o.paymentMethod!] = (methodCounts[o.paymentMethod!] || 0) + 1;
+    });
+    const totalMethods = Object.values(methodCounts).reduce((a, b) => a + b, 0) || 1;
+    const methodColors: Record<string, string> = { pix: "#00C853", card: "#3b82f6", cash: "#f59e0b", boleto: "#8b5cf6" };
+    const methodLabels: Record<string, string> = { pix: "PIX", card: "Cartão", cash: "Dinheiro", boleto: "Boleto" };
+    const paymentMethods = Object.entries(methodCounts).map(([method, count]) => ({
+      name: methodLabels[method] || method,
+      value: Math.round((count / totalMethods) * 100),
+      color: methodColors[method] || "#94a3b8",
+    }));
+
+    // Recent transactions from orders
+    const recentOrders = storeOrders
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 10)
+      .map(o => ({
+        id: o.id,
+        desc: `Pedido #${o.number}`,
+        type: o.status === "cancelled" ? "despesa" : "receita",
+        value: `R$ ${parseFloat(o.total || "0").toFixed(2).replace(".", ",")}`,
+        date: new Date(o.createdAt).toLocaleDateString("pt-BR"),
+      }));
+
+    const profit = revenue;
+    const margin = revenue > 0 ? ((profit / revenue) * 100).toFixed(0) : "0";
+
+    return new Response(JSON.stringify({
+      stats: { revenue, expenses: 0, profit, margin: `${margin}%` },
+      cashFlow,
+      paymentMethods,
+      recentTransactions: recentOrders,
+      accountsPayable: [],
+      accountsReceivable: [],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  } catch (error) {
+    console.error("Financial stats error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── Get Delivery Orders ─────────────────────────────────────────
+export async function getDeliveryOrdersHandler(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const storeId = url.searchParams.get("storeId");
+  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+
+  try {
+    const deliveryOrders = await db.query.orders.findMany({
+      where: and(eq(orders.storeId, storeId), eq(orders.type, "delivery")),
+      orderBy: desc(orders.createdAt),
+      with: { customer: true },
+    });
+
+    const deliveries = deliveryOrders.map(o => ({
+      id: `#D${String(o.number).padStart(3, "0")}`,
+      customer: o.customer?.name || "Cliente",
+      address: o.addressSnapshot ? `${o.addressSnapshot.street}, ${o.addressSnapshot.number} — ${o.addressSnapshot.neighborhood}` : "",
+      phone: o.customer?.phone || "",
+      status: o.status === "received" ? "preparando" : o.status === "preparing" ? "preparando" : o.status === "ready" ? "em_rota" : o.status === "delivering" ? "em_rota" : o.status === "delivered" ? "entregue" : o.status,
+      driver: "",
+      time: o.estimatedDelivery ? `~${Math.round((new Date(o.estimatedDelivery).getTime() - Date.now()) / 60000)} min` : "",
+    }));
+
+    const preparing = deliveries.filter(d => d.status === "preparando").length;
+    const inRoute = deliveries.filter(d => d.status === "em_rota").length;
+    const delivered = deliveries.filter(d => d.status === "entregue").length;
+
+    return new Response(JSON.stringify({ deliveries, stats: { preparing, inRoute, delivered } }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Delivery orders error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── Get Coupons ──────────────────────────────────────────────────
+export async function getCouponsHandler(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const storeId = url.searchParams.get("storeId");
+  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+
+  try {
+    const storeCoupons = await db.select().from(schema.coupons).where(eq(schema.coupons.storeId, storeId));
+
+    const couponsList = storeCoupons.map(c => ({
+      id: c.id,
+      code: c.code,
+      type: c.type,
+      discount: c.type === "percent" ? `${c.discount}%` : c.type === "fixed" ? `R$ ${parseFloat(c.discount).toFixed(2).replace(".", ",")}` : c.discount,
+      uses: c.usedCount || 0,
+      maxUses: c.maxUses || 0,
+      expires: c.expiresAt ? new Date(c.expiresAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "Sem prazo",
+      status: c.active && (!c.expiresAt || new Date(c.expiresAt) > new Date()) ? "active" : "expired",
+    }));
+
+    return new Response(JSON.stringify({ coupons: couponsList }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Coupons error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── Get Dashboard Chart Data ─────────────────────────────────────
+export async function getDashboardChartDataHandler(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const storeId = url.searchParams.get("storeId");
+  if (!storeId) return new Response(JSON.stringify({ error: "Store ID required" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+
+  try {
+    const storeOrders = await db.select().from(orders).where(eq(orders.storeId, storeId));
+
+    // Weekly revenue/orders by day
+    const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+
+    const weekOrders = storeOrders.filter(o => new Date(o.createdAt) >= weekStart && o.status !== "cancelled");
+
+    const revenueByDay: Record<number, number> = {};
+    const ordersByDay: Record<number, number> = {};
+    for (let i = 0; i < 7; i++) revenueByDay[i] = 0, ordersByDay[i] = 0;
+
+    weekOrders.forEach(o => {
+      const day = new Date(o.createdAt).getDay();
+      revenueByDay[day] += parseFloat(o.total || "0");
+      ordersByDay[day]++;
+    });
+
+    const revenueData = dayNames.map((name, i) => ({ name, valor: revenueByDay[i] }));
+    const ordersData = dayNames.map((name, i) => ({ name, pedidos: ordersByDay[i] }));
+
+    // Monthly sales for last 6 months
+    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const monthlySales: { name: string; vendas: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+      const mOrders = storeOrders.filter(o => {
+        const cd = new Date(o.createdAt);
+        return cd >= d && cd <= mEnd && o.status !== "cancelled";
+      });
+      monthlySales.push({ name: monthNames[d.getMonth()], vendas: mOrders.reduce((s, o) => s + parseFloat(o.total || "0"), 0) });
+    }
+
+    // Stock movement (weekly in/out based on orders)
+    const stockMovement = dayNames.map((name, i) => ({ name, entrada: 0, saida: ordersByDay[i] }));
+
+    return new Response(JSON.stringify({ revenueData, ordersData, monthlySales, stockMovement }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Dashboard chart data error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}

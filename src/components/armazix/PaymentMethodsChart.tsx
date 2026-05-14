@@ -6,14 +6,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { name: "PIX", value: 45, color: "#00C853" },
-  { name: "Cartão", value: 30, color: "#3b82f6" },
-  { name: "Dinheiro", value: 15, color: "#f59e0b" },
-  { name: "Boleto", value: 10, color: "#8b5cf6" },
-];
+interface PaymentMethodsChartProps {
+  data?: { name: string; value: number; color: string }[];
+}
 
-export default function PaymentMethodsChart() {
+export default function PaymentMethodsChart({ data = [] }: PaymentMethodsChartProps) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <PieChart>

@@ -8,17 +8,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { name: "Seg", pedidos: 18 },
-  { name: "Ter", pedidos: 25 },
-  { name: "Qua", pedidos: 20 },
-  { name: "Qui", pedidos: 32 },
-  { name: "Sex", pedidos: 38 },
-  { name: "Sáb", pedidos: 45 },
-  { name: "Dom", pedidos: 28 },
-];
+interface OrdersChartProps {
+  data?: { name: string; pedidos: number }[];
+}
 
-export default function OrdersChart() {
+export default function OrdersChart({ data = [] }: OrdersChartProps) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data}>

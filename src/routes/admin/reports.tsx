@@ -25,9 +25,14 @@ interface TopProduct {
   revenue: number;
 }
 
+interface ReportsChartData {
+  monthlySales: { name: string; vendas: number }[];
+}
+
 function ReportsPage() {
   const [stats, setStats] = useState<ReportStats | null>(null);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+  const [chartData, setChartData] = useState<ReportsChartData>({ monthlySales: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -54,6 +59,15 @@ function ReportsPage() {
 
       setStats(data.stats);
       setTopProducts(data.topProducts || []);
+
+      // Fetch chart data
+      try {
+        const chartRes = await fetch(`/api/dashboard/charts?storeId=${storeId}`);
+        const chartResp = await chartRes.json();
+        if (chartRes.ok) {
+          setChartData({ monthlySales: chartResp.monthlySales || [] });
+        }
+      } catch {}
     } catch (err) {
       setError("Erro de conexão");
     } finally {
@@ -144,7 +158,7 @@ function ReportsPage() {
         <CardContent>
           <div className="h-[250px]">
             <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
-              <MonthlySalesChart />
+              <MonthlySalesChart data={chartData.monthlySales} />
             </Suspense>
           </div>
         </CardContent>

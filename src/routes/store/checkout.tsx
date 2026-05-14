@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { MapPin, Truck, Package, CreditCard, Smartphone, Banknote, CheckCircle2, ChevronRight, ChevronLeft } from "lucide-react";
+import { MapPin, Truck, Package, CreditCard, Smartphone, Banknote, CheckCircle2, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useStore } from "../store";
@@ -16,11 +16,14 @@ const STEPS = ["Endereço", "Entrega", "Pagamento", "Confirmação"];
 
 function CheckoutPage() {
   const [step, setStep] = useState(0);
-  const { cart, cartTotal } = useStore();
+  const { cart, cartTotal, clearCart } = useStore();
   const [address, setAddress] = useState({ street: "Rua das Flores", number: "120", neighborhood: "Centro", city: "São Paulo" });
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [orderNumber, setOrderNumber] = useState<number | null>(null);
+  const [orderError, setOrderError] = useState("");
 
   if (cart.length === 0 && !confirmed) {
     return (
@@ -38,16 +41,17 @@ function CheckoutPage() {
           <CheckCircle2 className="w-10 h-10 text-primary-foreground" />
         </div>
         <h1 className="text-2xl font-bold">Pedido confirmado!</h1>
-        <p className="text-sm text-muted-foreground mt-2">Seu pedido #3250 foi recebido com sucesso</p>
+        {orderNumber ? (
+          <p className="text-sm text-muted-foreground mt-2">Seu pedido #{orderNumber} foi recebido com sucesso</p>
+        ) : orderError ? (
+          <p className="text-sm text-destructive mt-2">{orderError}</p>
+        ) : null}
         <Badge className="mt-3 rounded-full bg-primary/15 text-primary text-sm px-4 py-1">Previsão: 35-50 min</Badge>
         <div className="mt-6 w-full max-w-sm">
-          <Link to="/store/order/3250">
+          <Link to="/store">
             <Button className="w-full h-11 rounded-2xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow">
-              Acompanhar pedido
+              Continuar comprando
             </Button>
-          </Link>
-          <Link to="/store" className="block mt-2">
-            <Button variant="outline" className="w-full h-11 rounded-2xl font-semibold">Continuar comprando</Button>
           </Link>
         </div>
       </div>
@@ -216,10 +220,63 @@ function CheckoutPage() {
           </Button>
         ) : (
           <Button
-            onClick={() => setConfirmed(true)}
+            onClick={async () => {
+              if (submitting) return;
+              setSubmitting(true);
+              setOrderError("");
+              try {
+                const storeId = localStorage.getItem("storeId");
+                if (!storeId) { setOrderError("Loja não encontrada"); setSubmitting(false); return; }
+
+                const items = cart.map(item => ({
+                  productId: String(item.id),
+                  productName: item.name,
+                  productEmoji: item.image,
+                  quantity: item.qty,
+                  unitPrice: item.price.toFixed(2),
+                  total: (item.price * item.qty).toFixed(2),
+                }));
+
+                const res = await fetch("/api/orders/create", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    storeId,
+                    type: deliveryType,
+                    paymentMethod,
+                    items,
+                    subtotal: cartTotal.toFixed(2),
+                    deliveryFee: "0",
+                    total: cartTotal.toFixed(2),
+                    addressSnapshot: {
+                      street: address.street,
+                      number: address.number,
+                      neighborhood: address.neighborhood,
+                      city: address.city,
+                      state: "SP",
+                      zip: "",
+                    },
+                    estimatedDelivery: new Date(Date.now() + (deliveryType === "delivery" ? 40 : 20) * 60000).toISOString(),
+                  }),
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                  setOrderNumber(data.order.number);
+                  clearCart();
+                  setConfirmed(true);
+                } else {
+                  setOrderError(data.error || "Erro ao criar pedido");
+                }
+              } catch {
+                setOrderError("Erro de conexão");
+              } finally {
+                setSubmitting(false);
+              }
+            }}
+            disabled={submitting}
             className="flex-1 h-11 rounded-2xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow hover:scale-[1.01] active:scale-[0.99] transition-transform"
           >
-            Confirmar pedido
+            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Confirmar pedido"}
           </Button>
         )}
       </div>

@@ -37,6 +37,13 @@ interface DashboardStats {
   averageTicket: number;
 }
 
+interface ChartData {
+  revenueData: { name: string; valor: number }[];
+  ordersData: { name: string; pedidos: number }[];
+  monthlySales: { name: string; vendas: number }[];
+  stockMovement: { name: string; entrada: number; saida: number }[];
+}
+
 interface RecentOrder {
   id: string;
   customer: string;
@@ -57,6 +64,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
+  const [chartData, setChartData] = useState<ChartData>({ revenueData: [], ordersData: [], monthlySales: [], stockMovement: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -91,6 +99,20 @@ function DashboardPage() {
         status: o.status,
         time: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
       })) || []);
+
+      // Fetch chart data
+      try {
+        const chartRes = await fetch(`/api/dashboard/charts?storeId=${storeId}`);
+        const chartDataResp = await chartRes.json();
+        if (chartRes.ok) {
+          setChartData({
+            revenueData: chartDataResp.revenueData || [],
+            ordersData: chartDataResp.ordersData || [],
+            monthlySales: chartDataResp.monthlySales || [],
+            stockMovement: chartDataResp.stockMovement || [],
+          });
+        }
+      } catch {}
     } catch (err) {
       setError("Erro de conexão");
     } finally {
@@ -162,7 +184,7 @@ function DashboardPage() {
             <CardContent>
               <div className="h-[220px]">
                 <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
-                  <RevenueChart />
+                  <RevenueChart data={chartData.revenueData} />
                 </Suspense>
               </div>
             </CardContent>
@@ -182,7 +204,7 @@ function DashboardPage() {
             <CardContent>
               <div className="h-[220px]">
                 <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
-                  <OrdersChart />
+                  <OrdersChart data={chartData.ordersData} />
                 </Suspense>
               </div>
             </CardContent>

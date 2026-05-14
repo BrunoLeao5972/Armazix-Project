@@ -8,16 +8,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { name: "Jan", receita: 18500, despesa: 8200 },
-  { name: "Fev", receita: 22000, despesa: 9100 },
-  { name: "Mar", receita: 19800, despesa: 8800 },
-  { name: "Abr", receita: 24500, despesa: 10200 },
-  { name: "Mai", receita: 28450, despesa: 11500 },
-  { name: "Jun", receita: 26000, despesa: 10800 },
-];
+interface CashFlowChartProps {
+  data?: { name: string; receita: number; despesa: number }[];
+}
 
-export default function CashFlowChart() {
+export default function CashFlowChart({ data = [] }: CashFlowChartProps) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={data}>

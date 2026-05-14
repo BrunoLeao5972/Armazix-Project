@@ -19,7 +19,26 @@ import {
   updateUserDataHandler,
   checkStoreSlugHandler,
   updateStoreSlugHandler,
+  getFinancialStatsHandler,
+  getDeliveryOrdersHandler,
+  getCouponsHandler,
+  getDashboardChartDataHandler,
 } from "./api/stock-handler";
+import {
+  createProductHandler,
+  listProductsHandler,
+  updateProductHandler,
+  deleteProductHandler,
+  createCategoryHandler,
+  listCategoriesHandler,
+  deleteCategoryHandler,
+  createOrderHandler,
+  listOrdersHandler,
+  updateOrderStatusHandler,
+  createCouponHandler,
+  listCustomersHandler,
+  createCustomerHandler,
+} from "./api/crud-handler";
 
 type ApiHandler = (request: Request) => Promise<Response>;
 
@@ -38,6 +57,15 @@ const postRoutes: Record<string, ApiHandler> = {
   "/api/user/verify-email-change": verifyEmailChangeHandler,
   "/api/user/update-password": updateUserPasswordHandler,
   "/api/user/update-data": updateUserDataHandler,
+  "/api/products/create": createProductHandler,
+  "/api/products/update": updateProductHandler,
+  "/api/products/delete": deleteProductHandler,
+  "/api/categories/create": createCategoryHandler,
+  "/api/categories/delete": deleteCategoryHandler,
+  "/api/orders/create": createOrderHandler,
+  "/api/orders/update-status": updateOrderStatusHandler,
+  "/api/coupons/create": createCouponHandler,
+  "/api/customers/create": createCustomerHandler,
 };
 
 const getRoutes: Record<string, ApiHandler> = {
@@ -50,6 +78,14 @@ const getRoutes: Record<string, ApiHandler> = {
   "/api/store/business-hours": getBusinessHoursHandler,
   "/api/user/get": getUserDataHandler,
   "/api/store/check-slug": checkStoreSlugHandler,
+  "/api/financial/stats": getFinancialStatsHandler,
+  "/api/delivery/orders": getDeliveryOrdersHandler,
+  "/api/coupons/list": getCouponsHandler,
+  "/api/dashboard/charts": getDashboardChartDataHandler,
+  "/api/products/list": listProductsHandler,
+  "/api/categories/list": listCategoriesHandler,
+  "/api/orders/list": listOrdersHandler,
+  "/api/customers/list": listCustomersHandler,
 };
 
 export async function handleApiRequest(request: Request): Promise<Response> {

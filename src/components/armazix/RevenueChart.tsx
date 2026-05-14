@@ -8,17 +8,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { name: "Seg", valor: 1200 },
-  { name: "Ter", valor: 1800 },
-  { name: "Qua", valor: 1400 },
-  { name: "Qui", valor: 2200 },
-  { name: "Sex", valor: 2800 },
-  { name: "Sáb", valor: 3200 },
-  { name: "Dom", valor: 1900 },
-];
+interface RevenueChartProps {
+  data?: { name: string; valor: number }[];
+}
 
-export default function RevenueChart() {
+export default function RevenueChart({ data = [] }: RevenueChartProps) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={data}>

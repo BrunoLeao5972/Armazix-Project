@@ -44,6 +44,10 @@ interface LowStockItem {
   minStock: number;
 }
 
+interface StockChartData {
+  stockMovement: { name: string; entrada: number; saida: number }[];
+}
+
 const typeConfig: Record<string, { label: string; icon: React.ElementType; color: string; bgColor: string }> = {
   entrada: { label: "Entrada", icon: ArrowUpCircle, color: "text-primary", bgColor: "bg-primary/15" },
   saida: { label: "Saída", icon: ArrowDownCircle, color: "text-blue-600", bgColor: "bg-blue-500/15" },
@@ -54,6 +58,7 @@ function StockPage() {
   const [stats, setStats] = useState<StockStats | null>(null);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
+  const [chartData, setChartData] = useState<StockChartData>({ stockMovement: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -81,6 +86,15 @@ function StockPage() {
       setStats(data.stats);
       setMovements(data.movements || []);
       setLowStock(data.lowStock || []);
+
+      // Fetch chart data
+      try {
+        const chartRes = await fetch(`/api/dashboard/charts?storeId=${storeId}`);
+        const chartResp = await chartRes.json();
+        if (chartRes.ok) {
+          setChartData({ stockMovement: chartResp.stockMovement || [] });
+        }
+      } catch {}
     } catch (err) {
       setError("Erro de conexão");
     } finally {
@@ -179,7 +193,7 @@ function StockPage() {
         <CardContent>
           <div className="h-[200px]">
             <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
-              <StockMovementChart />
+              <StockMovementChart data={chartData.stockMovement} />
             </Suspense>
           </div>
         </CardContent>

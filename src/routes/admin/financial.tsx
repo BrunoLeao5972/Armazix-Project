@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   DollarSign,
@@ -9,6 +9,7 @@ import {
   CreditCard,
   Banknote,
   MoreHorizontal,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,22 +24,92 @@ export const Route = createFileRoute("/admin/financial")({
   }),
 });
 
-const cashFlowData: { name: string; receita: number; despesa: number }[] = [];
-const paymentMethods: { name: string; value: number; color: string }[] = [];
-const recentTransactions: { id: number; desc: string; type: string; value: string; date: string }[] = [];
-const accountsPayable: { desc: string; value: string; due: string; status: string }[] = [];
-const accountsReceivable: { desc: string; value: string; due: string; status: string }[] = [];
+interface FinancialStats {
+  revenue: number;
+  expenses: number;
+  profit: number;
+  margin: string;
+}
+
+interface Transaction {
+  id: string;
+  desc: string;
+  type: string;
+  value: string;
+  date: string;
+}
 
 function FinancialPage() {
+  const [stats, setStats] = useState<FinancialStats | null>(null);
+  const [cashFlow, setCashFlow] = useState<{ name: string; receita: number; despesa: number }[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<{ name: string; value: number; color: string }[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+  const [accountsPayable, setAccountsPayable] = useState<{ desc: string; value: string; due: string; status: string }[]>([]);
+  const [accountsReceivable, setAccountsReceivable] = useState<{ desc: string; value: string; due: string; status: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const storeId = localStorage.getItem("storeId");
+    if (!storeId) {
+      setLoading(false);
+      setError("Loja não encontrada");
+      return;
+    }
+    fetchFinancialData(storeId);
+  }, []);
+
+  const fetchFinancialData = async (storeId: string) => {
+    try {
+      const res = await fetch(`/api/financial/stats?storeId=${storeId}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Erro ao carregar dados");
+        return;
+      }
+      setStats(data.stats);
+      setCashFlow(data.cashFlow || []);
+      setPaymentMethods(data.paymentMethods || []);
+      setRecentTransactions(data.recentTransactions || []);
+      setAccountsPayable(data.accountsPayable || []);
+      setAccountsReceivable(data.accountsReceivable || []);
+    } catch {
+      setError("Erro de conexão");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return `R$ ${value.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".")}`;
+  };
+
+  if (loading) {
+    return (
+      <div className="h-[60vh] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground">{error}</p>
+          <Button variant="outline" className="mt-4" onClick={() => window.location.reload()}>
+            Tentar novamente
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      className="space-y-6 animate-in fade-in duration-300"
-    >
+    <div className="space-y-6 animate-in fade-in duration-300">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Financeiro</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Fluxo de caixa, contas e indicadores
-        </p>
+        <p className="text-sm text-muted-foreground mt-1">Fluxo de caixa, contas e indicadores</p>
       </div>
 
       {/* KPI Cards */}
@@ -49,11 +120,8 @@ function FinancialPage() {
               <span className="grid place-items-center w-8 h-8 rounded-lg bg-primary/15">
                 <DollarSign className="w-4 h-4 text-primary" />
               </span>
-              <span className="flex items-center gap-0.5 text-xs font-semibold text-primary">
-                <ArrowUpRight className="w-3 h-3" />+12%
-              </span>
             </div>
-            <div className="text-2xl font-bold">R$ 0</div>
+            <div className="text-2xl font-bold">{formatCurrency(stats?.revenue || 0)}</div>
             <div className="text-xs text-muted-foreground">Receita do mês</div>
           </CardContent>
         </Card>
@@ -63,11 +131,8 @@ function FinancialPage() {
               <span className="grid place-items-center w-8 h-8 rounded-lg bg-blue-500/15">
                 <TrendingDown className="w-4 h-4 text-blue-600" />
               </span>
-              <span className="flex items-center gap-0.5 text-xs font-semibold text-destructive">
-                <ArrowDownRight className="w-3 h-3" />+8%
-              </span>
             </div>
-            <div className="text-2xl font-bold">R$ 0</div>
+            <div className="text-2xl font-bold">{formatCurrency(stats?.expenses || 0)}</div>
             <div className="text-xs text-muted-foreground">Despesas do mês</div>
           </CardContent>
         </Card>
@@ -78,7 +143,7 @@ function FinancialPage() {
                 <TrendingUp className="w-4 h-4 text-primary" />
               </span>
             </div>
-            <div className="text-2xl font-bold text-gradient-primary">R$ 0</div>
+            <div className="text-2xl font-bold text-gradient-primary">{formatCurrency(stats?.profit || 0)}</div>
             <div className="text-xs text-muted-foreground">Lucro líquido</div>
           </CardContent>
         </Card>
@@ -89,7 +154,7 @@ function FinancialPage() {
                 <CreditCard className="w-4 h-4 text-purple-600" />
               </span>
             </div>
-            <div className="text-2xl font-bold">0%</div>
+            <div className="text-2xl font-bold">{stats?.margin || "0%"}</div>
             <div className="text-xs text-muted-foreground">Margem de lucro</div>
           </CardContent>
         </Card>
@@ -109,7 +174,7 @@ function FinancialPage() {
           <CardContent>
             <div className="h-[220px]">
               <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
-                <CashFlowChart />
+                <CashFlowChart data={cashFlow} />
               </Suspense>
             </div>
           </CardContent>
@@ -122,7 +187,7 @@ function FinancialPage() {
           <CardContent>
             <div className="h-[160px]">
               <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
-                <PaymentMethodsChart />
+                <PaymentMethodsChart data={paymentMethods} />
               </Suspense>
             </div>
             <div className="space-y-2 mt-2">
@@ -142,12 +207,14 @@ function FinancialPage() {
 
       {/* Transactions + Accounts */}
       <div className="grid lg:grid-cols-3 gap-4">
-        {/* Recent Transactions */}
         <Card className="lg:col-span-2 rounded-2xl border-border/50 shadow-soft">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">Transações recentes</CardTitle>
           </CardHeader>
           <CardContent>
+            {recentTransactions.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">Nenhuma transação recente</div>
+            ) : (
             <div className="space-y-1">
               {recentTransactions.map((t) => (
                 <div key={t.id} className="flex items-center justify-between py-2.5 px-3 rounded-xl hover:bg-secondary/50 transition-colors">
@@ -172,10 +239,10 @@ function FinancialPage() {
                 </div>
               ))}
             </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Accounts */}
         <div className="space-y-4">
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-3">
@@ -185,6 +252,9 @@ function FinancialPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {accountsPayable.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground text-sm">Nenhuma conta a pagar</div>
+              ) : (
               <div className="space-y-2.5">
                 {accountsPayable.map((a) => (
                   <div key={a.desc} className="flex items-center justify-between">
@@ -200,6 +270,7 @@ function FinancialPage() {
                   </div>
                 ))}
               </div>
+              )}
             </CardContent>
           </Card>
 
@@ -211,6 +282,9 @@ function FinancialPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {accountsReceivable.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground text-sm">Nenhuma conta a receber</div>
+              ) : (
               <div className="space-y-2.5">
                 {accountsReceivable.map((a) => (
                   <div key={a.desc} className="flex items-center justify-between">
@@ -226,6 +300,7 @@ function FinancialPage() {
                   </div>
                 ))}
               </div>
+              )}
             </CardContent>
           </Card>
         </div>

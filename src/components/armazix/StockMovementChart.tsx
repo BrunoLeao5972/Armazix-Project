@@ -8,17 +8,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { name: "Seg", entrada: 80, saida: 45 },
-  { name: "Ter", entrada: 50, saida: 30 },
-  { name: "Qua", entrada: 70, saida: 55 },
-  { name: "Qui", entrada: 90, saida: 40 },
-  { name: "Sex", entrada: 60, saida: 50 },
-  { name: "Sáb", entrada: 40, saida: 65 },
-  { name: "Dom", entrada: 30, saida: 25 },
-];
+interface StockMovementChartProps {
+  data?: { name: string; entrada: number; saida: number }[];
+}
 
-export default function StockMovementChart() {
+export default function StockMovementChart({ data = [] }: StockMovementChartProps) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data}>

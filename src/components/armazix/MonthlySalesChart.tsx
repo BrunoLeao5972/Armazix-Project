@@ -8,16 +8,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const data = [
-  { name: "Jan", vendas: 18500 },
-  { name: "Fev", vendas: 22000 },
-  { name: "Mar", vendas: 19800 },
-  { name: "Abr", vendas: 24500 },
-  { name: "Mai", vendas: 28450 },
-  { name: "Jun", vendas: 26000 },
-];
+interface MonthlySalesChartProps {
+  data?: { name: string; vendas: number }[];
+}
 
-export default function MonthlySalesChart() {
+export default function MonthlySalesChart({ data = [] }: MonthlySalesChartProps) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={data}>
