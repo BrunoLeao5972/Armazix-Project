@@ -11,18 +11,15 @@ export async function logoutHandler(request: Request, auth?: { userId?: string }
     }, request);
   }
 
-  // Clear auth cookies
-  const clearTokenCookie = "armazix_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0";
-  const clearCsrfCookie = "csrf_token=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
+  const responseHeaders = new Headers({ "content-type": "application/json" });
+  responseHeaders.append("set-cookie", "armazix_token=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+  responseHeaders.append("set-cookie", "csrf_token=; Path=/; Secure; SameSite=Strict; Max-Age=0");
 
   return new Response(JSON.stringify({
     success: true,
     message: "Logout realizado com sucesso",
   }), {
     status: 200,
-    headers: {
-      "content-type": "application/json",
-      "set-cookie": [clearTokenCookie, clearCsrfCookie].join(", "),
-    },
+    headers: responseHeaders,
   });
 }

@@ -123,7 +123,7 @@ function LoginPage() {
             <div className="grid grid-cols-3 gap-3">
               <PreviewCard icon={TrendingUp} label="Vendas" value="R$ 4.280" color="text-primary" />
               <PreviewCard icon={Package} label="Pedidos" value="47" color="text-blue-500" />
-              <PreviewCard icon={BarChart3} label="Ticket" value="R$ 91" color="text-amber-500" />
+              <PreviewCard icon={BarChart3} label="Ticket Médio" value="R$ 89,90" color="text-amber-500" />
             </div>
             <div className="h-2 rounded-full bg-secondary overflow-hidden">
               <motion.div
@@ -156,7 +156,7 @@ function LoginPage() {
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 1.3, duration: 0.5 }}
-            className="absolute left-0 lg:-left-20 -bottom-2 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60 z-10"
+            className="absolute left-0 lg:-left-20 -bottom-23 glass rounded-2xl p-3 pr-4 shadow-soft border border-border/60 z-10"
           >
             <div className="text-xs text-muted-foreground">Venda via PIX</div>
             <div className="text-lg font-bold text-gradient-primary">R$ 1.249,00</div>

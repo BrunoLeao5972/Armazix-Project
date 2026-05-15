@@ -94,6 +94,10 @@ export async function loginHandler(request: Request): Promise<Response> {
     status: "success",
   }, request);
 
+  const responseHeaders = new Headers({ "content-type": "application/json" });
+  responseHeaders.append("set-cookie", `armazix_token=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${7 * 24 * 60 * 60}`);
+  responseHeaders.append("set-cookie", createCsrfCookie(csrfToken));
+
   return new Response(JSON.stringify({
     success: true,
     token,
@@ -106,12 +110,6 @@ export async function loginHandler(request: Request): Promise<Response> {
     },
   }), {
     status: 200,
-    headers: {
-      "content-type": "application/json",
-      "set-cookie": [
-        `armazix_token=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${7 * 24 * 60 * 60}`,
-        createCsrfCookie(csrfToken),
-      ].join(", "),
-    },
+    headers: responseHeaders,
   });
 }

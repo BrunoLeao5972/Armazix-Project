@@ -1,9 +1,10 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { hashPassword, findUserByEmail, createVerificationCode, validatePasswordPolicy } from "@/lib/auth";
+import { hashPassword, findUserByEmail, createVerificationCode, validatePasswordPolicy, signJWT } from "@/lib/auth";
 import { sendVerificationEmail } from "@/lib/auth/email";
 import { sanitizeString } from "@/lib/validation/schemas";
 import { logAudit, AuditActions } from "@/lib/audit";
+import { generateCsrfToken, createCsrfCookie } from "@/lib/middleware/csrf";
 
 const { users, stores, storeUsers } = schema;
 
@@ -117,12 +118,25 @@ export async function registerHandler(request: Request): Promise<Response> {
     status: "success",
   }, request);
 
+  // Sign JWT so the user is immediately logged in
+  const secret = process.env.JWT_SECRET!;
+  const token = await signJWT(
+    { userId: user.id, email: user.email, role: user.role, storeId: store.id },
+    secret,
+  );
+
+  const csrfToken = generateCsrfToken();
+
+  const responseHeaders = new Headers({ "content-type": "application/json" });
+  responseHeaders.append("set-cookie", `armazix_token=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${7 * 24 * 60 * 60}`);
+  responseHeaders.append("set-cookie", createCsrfCookie(csrfToken));
+
   return new Response(JSON.stringify({
     success: true,
-    message: "Usuário cadastrado com sucesso. Verifique seu email.",
-    userId: user.id,
+    csrfToken,
+    user: { id: user.id, name: user.name, email: user.email, role: user.role },
   }), {
     status: 201,
-    headers: { "content-type": "application/json" },
+    headers: responseHeaders,
   });
 }

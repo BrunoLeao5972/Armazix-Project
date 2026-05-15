@@ -15,7 +15,6 @@ import {
   FileText,
   Check,
   Loader2,
-  Upload,
   Palette,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -59,10 +58,13 @@ function RegisterPage() {
   // Step 1
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [emailChecking, setEmailChecking] = useState(false);
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Step 2
   const [storeName, setStoreName] = useState("");
@@ -120,6 +122,7 @@ function RegisterPage() {
   };
 
   const [cepLoading, setCepLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleCepChange = async (v: string) => {
     const formatted = formatCEP(v);
@@ -128,13 +131,13 @@ function RegisterPage() {
     if (raw.length === 8) {
       setCepLoading(true);
       try {
-        const res = await fetch(`https://viacep.com.br/ws/${raw}/json/`);
+        const res = await fetch(`/api/validate-cep?cep=${raw}`);
         const data = await res.json();
-        if (!data.erro) {
-          setStreet(data.logradouro || "");
-          setNeighborhood(data.bairro || "");
-          setCity(data.localidade || "");
-          setState(data.uf || "");
+        if (res.ok) {
+          setStreet(data.street || "");
+          setNeighborhood(data.neighborhood || "");
+          setCity(data.city || "");
+          setState(data.state || "");
         }
       } catch (error) {
         console.error("Error fetching CEP:", error);
@@ -144,7 +147,47 @@ function RegisterPage() {
     }
   };
 
+  const validateStep = (s: number): boolean => {
+    const e: Record<string, string> = {};
+    if (s === 1) {
+      if (!name.trim()) e.name = "Nome é obrigatório";
+      if (!email.trim()) e.email = "Email é obrigatório";
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) e.email = "Email inválido";
+      else if (emailError) e.email = emailError;
+      if (phone.replace(/\D/g, "").length < 10) e.phone = "Informe um número de WhatsApp válido";
+      const pwOk = [
+        password.length >= 8,
+        /[A-Z]/.test(password),
+        /[a-z]/.test(password),
+        /[0-9]/.test(password),
+        /[^A-Za-z0-9]/.test(password),
+      ].every(Boolean);
+      if (!pwOk) e.password = "A senha não atende aos requisitos de segurança";
+      if (confirmPassword !== password) e.confirmPassword = "As senhas não coincidem";
+    }
+    if (s === 2) {
+      if (!storeName.trim()) e.storeName = "Nome da loja é obrigatório";
+      if (!category) e.category = "Selecione uma categoria";
+    }
+    if (s === 3) {
+      const digits = docNumber.replace(/\D/g, "");
+      if (docType === "cpf" && digits.length !== 11) e.docNumber = "CPF inválido";
+      if (docType === "cnpj" && digits.length !== 14) e.docNumber = "CNPJ inválido";
+    }
+    if (s === 4) {
+      if (cep.replace(/\D/g, "").length !== 8) e.cep = "CEP inválido";
+      if (!street.trim()) e.street = "Rua é obrigatória";
+      if (!number.trim()) e.number = "Número é obrigatório";
+      if (!neighborhood.trim()) e.neighborhood = "Bairro é obrigatório";
+      if (!city.trim()) e.city = "Cidade é obrigatória";
+      if (state.trim().length !== 2) e.state = "Estado inválido";
+    }
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
   const nextStep = () => {
+    if (!validateStep(step)) return;
     if (step < 5) {
       setLoading(true);
       setTimeout(() => {
@@ -184,7 +227,10 @@ function RegisterPage() {
         setLoading(false);
         return;
       }
-      navigate({ to: "/verify-email", search: { email } });
+      if (data.csrfToken) {
+        localStorage.setItem("csrf_token", data.csrfToken);
+      }
+      navigate({ to: "/admin" });
     } catch {
       alert("Erro de conexão. Tente novamente.");
     } finally {
@@ -260,39 +306,58 @@ function RegisterPage() {
                   subtitle="Informe seus dados para criar a conta"
                 >
                   <div className="space-y-4">
-                    <Field label="Nome completo" icon={User}>
+                    <Field label="Nome completo" icon={User} error={errors.name}>
                       <Input
                         placeholder="Seu nome"
                         value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="pl-10 h-11 rounded-xl"
+                        onChange={(e) => { setName(e.target.value); setErrors(p => ({ ...p, name: "" })); }}
+                        className={`pl-10 h-11 rounded-xl ${errors.name ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                       />
                     </Field>
-                    <Field label="Email" icon={Mail}>
-                      <Input
-                        type="email"
-                        placeholder="seu@email.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="pl-10 h-11 rounded-xl"
-                      />
+                    <Field label="Email" icon={Mail} error={emailError || errors.email}>
+                      <div className="relative">
+                        <Input
+                          type="email"
+                          placeholder="seu@email.com"
+                          value={email}
+                          onChange={(e) => { setEmail(e.target.value); setEmailError(""); setErrors(p => ({ ...p, email: "" })); }}
+                          onBlur={async () => {
+                            const trimmed = email.trim();
+                            if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
+                            setEmailChecking(true);
+                            try {
+                              const res = await fetch(`/api/auth/check-email?email=${encodeURIComponent(trimmed)}`);
+                              const data = await res.json();
+                              if (!data.available) setEmailError("Este email já está cadastrado");
+                            } catch { /* ignore */ } finally {
+                              setEmailChecking(false);
+                            }
+                          }}
+                          className={`pl-10 h-11 rounded-xl ${emailError || errors.email ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                        />
+                        {emailChecking && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
                     </Field>
-                    <Field label="WhatsApp" icon={Phone}>
+                    <Field label="WhatsApp" icon={Phone} error={errors.phone}>
                       <Input
                         placeholder="(11) 99999-9999"
                         value={phone}
-                        onChange={(e) => setPhone(formatPhone(e.target.value))}
-                        className="pl-10 h-11 rounded-xl"
+                        onChange={(e) => { setPhone(formatPhone(e.target.value)); setErrors(p => ({ ...p, phone: "" })); }}
+                        className={`pl-10 h-11 rounded-xl ${errors.phone ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                       />
                     </Field>
-                    <Field label="Senha" icon={Lock}>
+                    <Field label="Senha" icon={Lock} error={errors.password}>
                       <div className="relative">
                         <Input
                           type={showPassword ? "text" : "password"}
                           placeholder="Mínimo 8 caracteres"
                           value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="pl-10 pr-10 h-11 rounded-xl"
+                          onChange={(e) => { setPassword(e.target.value); setErrors(p => ({ ...p, password: "" })); }}
+                          className={`pl-10 pr-10 h-11 rounded-xl ${errors.password ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                         />
                         <button
                           type="button"
@@ -302,15 +367,46 @@ function RegisterPage() {
                           {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
                       </div>
+                      {password.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          <p className="text-xs text-muted-foreground font-medium">Critérios de segurança:</p>
+                          {[
+                            { label: "Mínimo 8 caracteres", ok: password.length >= 8 },
+                            { label: "Letra maiúscula", ok: /[A-Z]/.test(password) },
+                            { label: "Letra minúscula", ok: /[a-z]/.test(password) },
+                            { label: "Número", ok: /[0-9]/.test(password) },
+                            { label: "Caractere especial (!@#$...)", ok: /[^A-Za-z0-9]/.test(password) },
+                          ].map(({ label, ok }) => (
+                            <div key={label} className={`flex items-center gap-1.5 text-xs ${ok ? "text-primary" : "text-muted-foreground"}`}>
+                              <span className={`w-3 h-3 rounded-full flex-shrink-0 ${ok ? "bg-primary" : "bg-border"}`} />
+                              {label}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </Field>
-                    <Field label="Confirmar senha" icon={Lock}>
-                      <Input
-                        type="password"
-                        placeholder="Repita a senha"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="pl-10 h-11 rounded-xl"
-                      />
+                    <Field label="Confirmar senha" icon={Lock} error={!confirmPassword ? errors.confirmPassword : undefined}>
+                      <div className="relative">
+                        <Input
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder="Repita a senha"
+                          value={confirmPassword}
+                          onChange={(e) => { setConfirmPassword(e.target.value); setErrors(p => ({ ...p, confirmPassword: "" })); }}
+                          className={`pl-10 pr-10 h-11 rounded-xl ${errors.confirmPassword && !confirmPassword ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      {confirmPassword.length > 0 && (
+                        <p className={`mt-1.5 text-xs ${confirmPassword === password ? "text-primary" : "text-red-500"}`}>
+                          {confirmPassword === password ? "✓ Senhas coincidem" : "✗ Senhas não coincidem"}
+                        </p>
+                      )}
                     </Field>
                   </div>
                 </StepWrapper>
@@ -322,12 +418,12 @@ function RegisterPage() {
                   subtitle="Como sua loja vai aparecer para os clientes"
                 >
                   <div className="space-y-4">
-                    <Field label="Nome da loja" icon={Store}>
+                    <Field label="Nome da loja" icon={Store} error={errors.storeName}>
                       <Input
                         placeholder="Ex: Mercadinho do João"
                         value={storeName}
-                        onChange={(e) => setStoreName(e.target.value)}
-                        className="pl-10 h-11 rounded-xl"
+                        onChange={(e) => { setStoreName(e.target.value); setErrors(p => ({ ...p, storeName: "" })); }}
+                        className={`pl-10 h-11 rounded-xl ${errors.storeName ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                       />
                     </Field>
                     <div className="space-y-2">
@@ -337,7 +433,7 @@ function RegisterPage() {
                           <button
                             key={cat}
                             type="button"
-                            onClick={() => setCategory(cat)}
+                            onClick={() => { setCategory(cat); setErrors(p => ({ ...p, category: "" })); }}
                             className={`px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                               category === cat
                                 ? "bg-primary text-primary-foreground shadow-glow"
@@ -348,6 +444,7 @@ function RegisterPage() {
                           </button>
                         ))}
                       </div>
+                      {errors.category && <p className="text-xs text-red-500">{errors.category}</p>}
                     </div>
                     <div className="space-y-2">
                       <Label>Descrição curta</Label>
@@ -376,22 +473,7 @@ function RegisterPage() {
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-2">
-                        <Label>Logo</Label>
-                        <label className="flex items-center justify-center h-20 rounded-xl border-2 border-dashed border-border hover:border-primary/40 transition-colors cursor-pointer">
-                          <Upload className="w-5 h-5 text-muted-foreground" />
-                          <input type="file" className="hidden" accept="image/*" />
-                        </label>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Banner</Label>
-                        <label className="flex items-center justify-center h-20 rounded-xl border-2 border-dashed border-border hover:border-primary/40 transition-colors cursor-pointer">
-                          <Upload className="w-5 h-5 text-muted-foreground" />
-                          <input type="file" className="hidden" accept="image/*" />
-                        </label>
-                      </div>
-                    </div>
+                    <p className="text-xs text-muted-foreground pt-1">💡 Logo e banner podem ser configurados depois nas <strong>Configurações</strong> do painel.</p>
                   </div>
                 </StepWrapper>
               )}
@@ -436,12 +518,12 @@ function RegisterPage() {
                         </button>
                       </div>
                     </div>
-                    <Field label={docType === "cpf" ? "CPF" : "CNPJ"} icon={FileText}>
+                    <Field label={docType === "cpf" ? "CPF" : "CNPJ"} icon={FileText} error={errors.docNumber}>
                       <Input
                         placeholder={docType === "cpf" ? "000.000.000-00" : "00.000.000/0001-00"}
                         value={docNumber}
-                        onChange={(e) => handleDocChange(e.target.value)}
-                        className="pl-10 h-11 rounded-xl"
+                        onChange={(e) => { handleDocChange(e.target.value); setErrors(p => ({ ...p, docNumber: "" })); }}
+                        className={`pl-10 h-11 rounded-xl ${errors.docNumber ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                       />
                     </Field>
                     {docType === "cnpj" && (
@@ -465,13 +547,13 @@ function RegisterPage() {
                   subtitle="Onde sua loja fica localizada"
                 >
                   <div className="space-y-4">
-                    <Field label="CEP" icon={MapPin}>
+                    <Field label="CEP" icon={MapPin} error={errors.cep}>
                       <div className="relative">
                         <Input
                           placeholder="00000-000"
                           value={cep}
-                          onChange={(e) => handleCepChange(e.target.value)}
-                          className="pl-10 h-11 rounded-xl"
+                          onChange={(e) => { handleCepChange(e.target.value); setErrors(p => ({ ...p, cep: "" })); }}
+                          className={`pl-10 h-11 rounded-xl ${errors.cep ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                           disabled={cepLoading}
                         />
                         {cepLoading && (
@@ -486,9 +568,10 @@ function RegisterPage() {
                       <Input
                         placeholder="Nome da rua"
                         value={street}
-                        onChange={(e) => setStreet(e.target.value)}
-                        className="h-11 rounded-xl"
+                        onChange={(e) => { setStreet(e.target.value); setErrors(p => ({ ...p, street: "" })); }}
+                        className={`h-11 rounded-xl ${errors.street ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                       />
+                      {errors.street && <p className="text-xs text-red-500">{errors.street}</p>}
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       <div className="space-y-2">
@@ -496,9 +579,10 @@ function RegisterPage() {
                         <Input
                           placeholder="123"
                           value={number}
-                          onChange={(e) => setNumber(e.target.value)}
-                          className="h-11 rounded-xl"
+                          onChange={(e) => { setNumber(e.target.value); setErrors(p => ({ ...p, number: "" })); }}
+                          className={`h-11 rounded-xl ${errors.number ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                         />
+                        {errors.number && <p className="text-xs text-red-500">{errors.number}</p>}
                       </div>
                       <div className="col-span-2 space-y-2">
                         <Label>Complemento</Label>
@@ -515,9 +599,10 @@ function RegisterPage() {
                       <Input
                         placeholder="Bairro"
                         value={neighborhood}
-                        onChange={(e) => setNeighborhood(e.target.value)}
-                        className="h-11 rounded-xl"
+                        onChange={(e) => { setNeighborhood(e.target.value); setErrors(p => ({ ...p, neighborhood: "" })); }}
+                        className={`h-11 rounded-xl ${errors.neighborhood ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                       />
+                      {errors.neighborhood && <p className="text-xs text-red-500">{errors.neighborhood}</p>}
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       <div className="col-span-2 space-y-2">
@@ -525,19 +610,21 @@ function RegisterPage() {
                         <Input
                           placeholder="Cidade"
                           value={city}
-                          onChange={(e) => setCity(e.target.value)}
-                          className="h-11 rounded-xl"
+                          onChange={(e) => { setCity(e.target.value); setErrors(p => ({ ...p, city: "" })); }}
+                          className={`h-11 rounded-xl ${errors.city ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                         />
+                        {errors.city && <p className="text-xs text-red-500">{errors.city}</p>}
                       </div>
                       <div className="space-y-2">
                         <Label>Estado</Label>
                         <Input
                           placeholder="UF"
                           value={state}
-                          onChange={(e) => setState(e.target.value)}
-                          className="h-11 rounded-xl"
+                          onChange={(e) => { setState(e.target.value); setErrors(p => ({ ...p, state: "" })); }}
+                          className={`h-11 rounded-xl ${errors.state ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                           maxLength={2}
                         />
+                        {errors.state && <p className="text-xs text-red-500">{errors.state}</p>}
                       </div>
                     </div>
                   </div>
@@ -593,13 +680,7 @@ function RegisterPage() {
                         </span>
                       )}
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="h-11 rounded-xl font-medium"
-                      onClick={handleFinish}
-                    >
-                      Configurar produtos depois
-                    </Button>
+
                   </motion.div>
                 </div>
               )}
@@ -611,8 +692,7 @@ function RegisterPage() {
             <div className="flex items-center justify-between mt-8">
               <Button
                 variant="ghost"
-                onClick={prevStep}
-                disabled={step === 1}
+                onClick={step === 1 ? () => navigate({ to: "/login" }) : prevStep}
                 className="gap-1.5"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -661,16 +741,19 @@ function StepWrapper({
 function Field({
   label,
   icon: Icon,
+  error,
   children,
 }: {
   label: string;
   icon: React.ElementType;
+  error?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-2">
       <Label>{label}</Label>
       <div className="relative">{children}</div>
+      {error && <p className="text-xs text-red-500">{error}</p>}
     </div>
   );
 }

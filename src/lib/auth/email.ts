@@ -1,8 +1,10 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const FROM = "ARMAZIX <naoresponda@armazix.com.br>";
+
+function getResend() {
+  return new Resend(process.env.RESEND_API_KEY);
+}
 
 // ─── Email verification ─────────────────────────────────────────
 export async function sendVerificationEmail(
@@ -10,7 +12,7 @@ export async function sendVerificationEmail(
   code: string,
   name: string,
 ) {
-  return resend.emails.send({
+  return getResend().emails.send({
     from: FROM,
     to: email,
     subject: "Verifique seu email — ARMAZIX",
@@ -24,7 +26,7 @@ export async function sendPasswordResetEmail(
   code: string,
   name: string,
 ) {
-  return resend.emails.send({
+  return getResend().emails.send({
     from: FROM,
     to: email,
     subject: "Recuperar senha — ARMAZIX",

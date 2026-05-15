@@ -464,7 +464,7 @@ export async function getUserDataHandler(request: Request, auth?: { userId?: str
 
   try {
     const [user] = await db
-      .select({ id: users.id, name: users.name, email: users.email, phone: users.phone, role: users.role, emailVerified: users.emailVerified })
+      .select({ id: users.id, name: users.name, email: users.email, phone: users.phone, role: users.role, emailVerified: users.emailVerified, avatarUrl: users.avatarUrl })
       .from(users)
       .where(eq(users.id, userId));
 
@@ -493,15 +493,16 @@ export async function updateUserDataHandler(request: Request, auth?: { userId?: 
     return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
   }
 
-  const body = await request.json() as { name?: string; phone?: string };
+  const body = await request.json() as { name?: string; phone?: string; avatarUrl?: string | null };
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
   try {
-    const updates: Record<string, string> = {};
+    const updates: Record<string, string | null> = {};
     if (body.name) updates.name = body.name;
     if (body.phone) updates.phone = body.phone;
+    if (body.avatarUrl !== undefined) updates.avatarUrl = body.avatarUrl ?? null;
 
     await db.update(users).set(updates).where(eq(users.id, userId));
 

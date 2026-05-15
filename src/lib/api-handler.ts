@@ -1,4 +1,6 @@
 import { registerHandler } from "./api/auth/register-handler";
+import { checkEmailHandler } from "./api/auth/check-email-handler";
+import { refreshCsrfHandler } from "./api/auth/refresh-csrf-handler";
 import { verifyEmailHandler } from "./api/auth/verify-email-handler";
 import { loginHandler } from "./api/auth/login-handler";
 import { logoutHandler } from "./api/auth/logout-handler";
@@ -41,7 +43,7 @@ import {
   createCustomerHandler,
 } from "./api/crud-handler";
 import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
-import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler } from "./api/subscription-handler";
+import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler, createPixPaymentHandler, pixWebhookHandler } from "./api/subscription-handler";
 import { requireAuth, AuthContext } from "./middleware/auth";
 import { rateLimit, createRateLimitResponse } from "./middleware/rate-limit";
 import { withSecurityHeaders } from "./middleware/security-headers";
@@ -60,9 +62,12 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/orders/create": createOrderHandler, // Público para checkout da loja
   "/api/payments/mp-webhook": mpWebhookHandler, // Webhook do MercadoPago
   "/api/subscriptions/mp-webhook": subscriptionWebhookHandler, // Webhook de assinaturas
+  "/api/subscriptions/pix-webhook": pixWebhookHandler, // Webhook PIX avulso
 };
 
 const publicGetRoutes: Record<string, ApiHandler> = {
+  "/api/auth/check-email": checkEmailHandler,
+  "/api/auth/refresh-csrf": refreshCsrfHandler,
   "/api/store/get": getStoreHandler,
   "/api/store/check-slug": checkStoreSlugHandler,
   "/api/validate-cep": validateCepHandler,
@@ -92,6 +97,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/payments/mp-checkout": createMpCheckoutHandler,
   "/api/payments/mp-token": saveMpTokenHandler,
   "/api/subscriptions/create": createSubscriptionHandler,
+  "/api/subscriptions/create-pix": createPixPaymentHandler,
 };
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
@@ -119,6 +125,7 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/auth/reset-password": "reset-password",
   "/api/payments/mp-webhook": "webhook",
   "/api/subscriptions/mp-webhook": "webhook",
+  "/api/subscriptions/pix-webhook": "webhook",
 };
 
 async function getRequestBodyStoreId(_request: Request): Promise<string | null> {

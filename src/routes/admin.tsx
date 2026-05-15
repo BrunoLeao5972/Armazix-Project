@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
+import { createFileRoute, Link, Outlet, useRouter, useNavigate } from "@tanstack/react-router";
 import {
   ShoppingBag,
   LayoutDashboard,
@@ -24,7 +24,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { api } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -62,6 +63,47 @@ function AdminLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const router = useRouter();
   const pathname = router.state.location.pathname;
+  const navigate = useNavigate();
+
+  const [userName, setUserName] = useState("");
+  const [userInitials, setUserInitials] = useState("");
+  const [userAvatar, setUserAvatar] = useState<string | null>(null);
+  const [userPlan, setUserPlan] = useState("Free");
+
+  useEffect(() => {
+    api.get("/api/user/get").then(async (res) => {
+      if (res.ok) {
+        const data = await res.json() as { user?: { name?: string; avatarUrl?: string } };
+        const name = data.user?.name || "";
+        if (name) {
+          setUserName(name);
+          const words = name.trim().split(/\s+/);
+          const initials = words.length >= 2
+            ? words[0][0] + words[words.length - 1][0]
+            : words[0].slice(0, 2);
+          setUserInitials(initials.toUpperCase());
+        }
+        if (data.user?.avatarUrl) setUserAvatar(data.user.avatarUrl);
+      }
+    }).catch(() => {});
+
+    const storeId = localStorage.getItem("storeId");
+    if (storeId) {
+      fetch(`/api/subscriptions/status?storeId=${storeId}`)
+        .then(r => r.json())
+        .then((data: { plan?: string }) => {
+          const labels: Record<string, string> = { free: "Free", start: "Start", pro: "Pro", full: "Full" };
+          if (data.plan) setUserPlan(labels[data.plan] || "Free");
+        }).catch(() => {});
+    }
+  }, []);
+
+  const handleLogout = async () => {
+    try { await api.post("/api/auth/logout", {}); } catch { /* ignore */ }
+    localStorage.removeItem("csrf_token");
+    localStorage.removeItem("storeId");
+    navigate({ to: "/login" });
+  };
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -109,13 +151,14 @@ function AdminLayout() {
         </nav>
         <Separator className="opacity-50" />
         <div className="p-3">
-          <Link
-            to="/login"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
           >
             <LogOut className="w-5 h-5 shrink-0" />
             {!collapsed && <span>Sair</span>}
-          </Link>
+          </button>
         </div>
       </aside>
 
@@ -163,14 +206,14 @@ function AdminLayout() {
             </nav>
             <Separator className="opacity-50" />
             <div className="p-3">
-              <Link
-                to="/login"
-                onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+              <button
+                type="button"
+                onClick={() => { setMobileOpen(false); handleLogout(); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
               >
                 <LogOut className="w-5 h-5" />
                 <span>Sair</span>
-              </Link>
+              </button>
             </div>
           </aside>
         </>
@@ -209,23 +252,24 @@ function AdminLayout() {
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-xl hover:bg-secondary transition-colors">
                   <Avatar className="w-8 h-8">
+                    {userAvatar && <AvatarImage src={userAvatar} alt={userName} />}
                     <AvatarFallback className="bg-primary/15 text-primary text-xs font-bold">
-                      JS
+                      {userInitials || "?"}
                     </AvatarFallback>
                   </Avatar>
                   <div className="hidden sm:block text-left">
-                    <div className="text-sm font-medium leading-tight">João Silva</div>
-                    <div className="text-[11px] text-muted-foreground">Plano Pro</div>
+                    <div className="text-sm font-medium leading-tight">{userName || "..."}</div>
+                    <div className="text-[11px] text-muted-foreground">Plano {userPlan}</div>
                   </div>
                   <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48 rounded-xl">
-                <DropdownMenuItem className="rounded-lg">Meu perfil</DropdownMenuItem>
-                <DropdownMenuItem className="rounded-lg">Minha loja</DropdownMenuItem>
-                <DropdownMenuItem className="rounded-lg">Plano e cobrança</DropdownMenuItem>
+                <DropdownMenuItem className="rounded-lg cursor-pointer" onClick={() => navigate({ to: "/admin/settings", search: { tab: "perfil" } })}>Meu perfil</DropdownMenuItem>
+                <DropdownMenuItem className="rounded-lg cursor-pointer" onClick={() => navigate({ to: "/admin/settings" })}>Minha loja</DropdownMenuItem>
+                <DropdownMenuItem className="rounded-lg cursor-pointer" onClick={() => navigate({ to: "/admin/settings", search: { tab: "senha" } })}>Redefinir senha</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="rounded-lg text-destructive">Sair</DropdownMenuItem>
+                <DropdownMenuItem className="rounded-lg cursor-pointer text-destructive" onClick={handleLogout}>Sair</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
