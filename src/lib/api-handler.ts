@@ -3,6 +3,7 @@ import { checkEmailHandler } from "./api/auth/check-email-handler";
 import { refreshCsrfHandler } from "./api/auth/refresh-csrf-handler";
 import { verifyEmailHandler } from "./api/auth/verify-email-handler";
 import { loginHandler } from "./api/auth/login-handler";
+import { mockLoginHandler } from "./api/auth/mock-login-handler";
 import { logoutHandler } from "./api/auth/logout-handler";
 import { forgotPasswordHandler } from "./api/auth/forgot-password-handler";
 import { resetPasswordHandler } from "./api/auth/reset-password-handler";
@@ -60,6 +61,7 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/auth/forgot-password": forgotPasswordHandler,
   "/api/auth/reset-password": resetPasswordHandler,
   "/api/auth/resend-verification": resendVerificationHandler,
+  "/api/auth/mock-login": mockLoginHandler,
   "/api/orders/create": createOrderHandler, // Público para checkout da loja
   "/api/payments/mp-webhook": mpWebhookHandler, // Webhook do MercadoPago
   "/api/subscriptions/mp-webhook": subscriptionWebhookHandler, // Webhook de assinaturas

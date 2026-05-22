@@ -36,6 +36,27 @@ function LoginPage() {
   const [needsVerification, setNeedsVerification] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState("");
 
+  const handleMockLogin = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth/mock-login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: "dev123" }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Erro no mock login"); return; }
+      if (data.csrfToken) localStorage.setItem("csrf_token", data.csrfToken);
+      if (data.storeId) localStorage.setItem("storeId", data.storeId);
+      navigate({ to: "/admin/dashboard" });
+    } catch {
+      setError("Erro de conexão.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -302,7 +323,21 @@ function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-8 text-center">
+          {import.meta.env.DEV && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={handleMockLogin}
+                disabled={loading}
+                className="w-full h-10 rounded-xl border border-dashed border-amber-500/50 bg-amber-500/5 text-amber-600 text-sm font-medium hover:bg-amber-500/10 transition-colors flex items-center justify-center gap-2"
+              >
+                🛠️ Entrar como dev (mock)
+              </button>
+              <p className="text-center text-[11px] text-muted-foreground mt-1.5">Visível apenas em ambiente local</p>
+            </div>
+          )}
+
+          <div className="mt-6 text-center">
             <p className="text-sm text-muted-foreground">
               Ainda não tem conta?{" "}
               <Link

@@ -1,179 +1,608 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { api } from "@/lib/api-client";
-import { Search, Plus, MoreHorizontal, Mail, Phone, Loader2 } from "lucide-react";
+import {
+  Search, Plus, MoreHorizontal, Mail, Phone, Loader2,
+  User, MapPin, FileText, Check, X, RefreshCw,
+  Users, ChevronDown, Instagram, Edit, Trash2, FileDown,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/admin/customers")({
   component: CustomersPage,
-  head: () => ({
-    meta: [{ title: "Clientes — ARMAZIX" }],
-  }),
+  head: () => ({ meta: [{ title: "Clientes — ARMAZIX" }] }),
 });
 
+// ─── Types ────────────────────────────────────────────────────────
 interface Customer {
   id: string;
   name: string;
   email: string | null;
   phone: string | null;
-  ordersCount: number;
-  totalSpent: string;
-  since: string;
+  cpf: string | null;
+  ordersCount?: number;
+  totalSpent?: string;
+  createdAt?: string;
 }
 
+interface CustomerForm {
+  type: "pf" | "pj";
+  name: string;
+  cpf: string;
+  birthdate: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  instagram: string;
+  cep: string;
+  street: string;
+  number: string;
+  complement: string;
+  neighborhood: string;
+  city: string;
+  state: string;
+  notes: string;
+}
+
+const EMPTY: CustomerForm = {
+  type: "pf", name: "", cpf: "", birthdate: "",
+  phone: "", whatsapp: "", email: "", instagram: "",
+  cep: "", street: "", number: "", complement: "",
+  neighborhood: "", city: "", state: "", notes: "",
+};
+
+const BR_STATES = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS",
+  "MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
+
+// ─── Masks ────────────────────────────────────────────────────────
+const maskPhone = (v: string) => {
+  const d = v.replace(/\D/g, "").substring(0, 11);
+  if (d.length <= 10) return d.replace(/^(\d{2})(\d{4})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "");
+  return d.replace(/^(\d{2})(\d{5})(\d{0,4})/, "($1) $2-$3").replace(/-$/, "");
+};
+const maskCPF  = (v: string) => v.replace(/\D/g, "").substring(0, 11).replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/, "$1.$2.$3-$4").replace(/-$/, "");
+const maskCNPJ = (v: string) => v.replace(/\D/g, "").substring(0, 14).replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{0,2})/, "$1.$2.$3/$4-$5").replace(/-$/, "");
+const maskCEP  = (v: string) => v.replace(/\D/g, "").substring(0, 8).replace(/(\d{5})(\d{0,3})/, "$1-$2").replace(/-$/, "");
+
+// ─── Helpers ─────────────────────────────────────────────────────
+function initials(name: string) {
+  return name.split(" ").filter(Boolean).slice(0, 2).map(n => n[0].toUpperCase()).join("");
+}
+
+// ─── Toast ────────────────────────────────────────────────────────
+function Toast({ msg, type }: { msg: string; type: "success" | "error" }) {
+  return (
+    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-lg text-sm font-medium animate-in slide-in-from-bottom-4 duration-200 ${type === "success" ? "bg-emerald-600 text-white" : "bg-destructive text-white"}`}>
+      {type === "success" ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+      {msg}
+    </div>
+  );
+}
+
+// ─── Field ────────────────────────────────────────────────────────
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-medium">{label}</Label>
+        {hint && <span className="text-[11px] text-muted-foreground">{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ─── Customer Form Modal ──────────────────────────────────────────
+function CustomerFormModal({
+  open, onClose, onSaved, editing,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: (c: Customer, isNew: boolean) => void;
+  editing: Customer | null;
+}) {
+  const [form, setForm] = useState<CustomerForm>(EMPTY);
+  const [saving, setSaving] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
+  const [tab, setTab] = useState<"basic" | "contact" | "address" | "notes">("basic");
+
+  useEffect(() => {
+    if (editing) {
+      setForm({ ...EMPTY, name: editing.name, email: editing.email || "", phone: maskPhone(editing.phone || ""), cpf: editing.cpf ? maskCPF(editing.cpf) : "" });
+    } else {
+      setForm(EMPTY);
+    }
+    setTab("basic");
+  }, [editing, open]);
+
+  const set = (k: keyof CustomerForm, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const lookupCEP = async (cep: string) => {
+    const raw = cep.replace(/\D/g, "");
+    if (raw.length !== 8) return;
+    setCepLoading(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${raw}/json/`);
+      const d = await res.json();
+      if (!d.erro) {
+        setForm(f => ({ ...f, street: d.logradouro || "", neighborhood: d.bairro || "", city: d.localidade || "", state: d.uf || "" }));
+      }
+    } catch {} finally { setCepLoading(false); }
+  };
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name,
+        email: form.email || undefined,
+        phone: form.phone.replace(/\D/g, "") || undefined,
+        cpf: form.cpf.replace(/\D/g, "") || undefined,
+      };
+      const res = await api.post("/api/customers/create", payload);
+      const data = await res.json();
+      if (res.ok && (data.success || data.customer)) {
+        onSaved(data.customer, true);
+        onClose();
+      }
+    } finally { setSaving(false); }
+  };
+
+  const TABS = [
+    { id: "basic",   label: "Dados",     icon: User },
+    { id: "contact", label: "Contato",   icon: Phone },
+    { id: "address", label: "Endereço",  icon: MapPin },
+    { id: "notes",   label: "Notas",     icon: FileText },
+  ] as const;
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="rounded-2xl max-w-2xl p-0 overflow-hidden max-h-[90vh] flex flex-col">
+        <DialogHeader className="px-6 pt-5 pb-0">
+          <DialogTitle className="text-lg font-bold">
+            {editing ? "Editar cliente" : "Novo cliente"}
+          </DialogTitle>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {editing ? "Atualize as informações do cliente" : "Preencha os dados para cadastrar"}
+          </p>
+        </DialogHeader>
+
+        {/* Tabs */}
+        <div className="flex gap-1 px-6 pt-4 border-b border-border/50 overflow-x-auto no-scrollbar">
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-xl whitespace-nowrap transition-colors border-b-2 -mb-px
+                ${tab === t.id ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              <t.icon className="w-3.5 h-3.5" />
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+
+          {/* ── Dados ── */}
+          {tab === "basic" && (
+            <>
+              {/* Tipo PF/PJ */}
+              <div className="flex gap-2 p-1 bg-secondary/40 rounded-xl w-fit">
+                {(["pf", "pj"] as const).map(t => (
+                  <button key={t} type="button" onClick={() => set("type", t)}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${form.type === t ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                    {t === "pf" ? "Pessoa Física" : "Pessoa Jurídica"}
+                  </button>
+                ))}
+              </div>
+
+              <Field label="Nome completo *">
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input autoFocus placeholder={form.type === "pf" ? "Ex: Maria da Silva" : "Razão Social"}
+                    value={form.name} onChange={e => set("name", e.target.value)} className="h-10 rounded-xl pl-9" />
+                </div>
+              </Field>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label={form.type === "pf" ? "CPF" : "CNPJ"}>
+                  <Input placeholder={form.type === "pf" ? "000.000.000-00" : "00.000.000/0000-00"}
+                    value={form.cpf}
+                    onChange={e => set("cpf", form.type === "pf" ? maskCPF(e.target.value) : maskCNPJ(e.target.value))}
+                    className="h-10 rounded-xl" />
+                </Field>
+                {form.type === "pf" && (
+                  <Field label="Data de nascimento">
+                    <Input type="date" value={form.birthdate} onChange={e => set("birthdate", e.target.value)} className="h-10 rounded-xl" />
+                  </Field>
+                )}
+              </div>
+
+              {/* Status toggle */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20">
+                <div>
+                  <p className="text-sm font-medium">Cliente ativo</p>
+                  <p className="text-xs text-muted-foreground">Aparece nas buscas e pedidos</p>
+                </div>
+                <div className="w-11 h-6 rounded-full bg-primary relative shrink-0">
+                  <span className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow translate-x-5 transition-transform duration-200" />
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── Contato ── */}
+          {tab === "contact" && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Telefone">
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input placeholder="(11) 99999-9999" value={form.phone}
+                      onChange={e => set("phone", maskPhone(e.target.value))} className="h-10 rounded-xl pl-9" />
+                  </div>
+                </Field>
+                <Field label="WhatsApp">
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-emerald-500" />
+                    <Input placeholder="(11) 99999-9999" value={form.whatsapp}
+                      onChange={e => set("whatsapp", maskPhone(e.target.value))} className="h-10 rounded-xl pl-9" />
+                  </div>
+                </Field>
+              </div>
+
+              <Field label="E-mail">
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input type="email" placeholder="cliente@email.com" value={form.email}
+                    onChange={e => set("email", e.target.value)} className="h-10 rounded-xl pl-9" />
+                </div>
+              </Field>
+
+              <Field label="Instagram">
+                <div className="relative">
+                  <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input placeholder="@usuario" value={form.instagram}
+                    onChange={e => set("instagram", e.target.value)} className="h-10 rounded-xl pl-9" />
+                </div>
+              </Field>
+            </>
+          )}
+
+          {/* ── Endereço ── */}
+          {tab === "address" && (
+            <>
+              <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
+                <Field label="CEP">
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input placeholder="00000-000" value={form.cep}
+                      onChange={e => set("cep", maskCEP(e.target.value))}
+                      onBlur={e => lookupCEP(e.target.value)}
+                      className="h-10 rounded-xl pl-9" />
+                  </div>
+                </Field>
+                <Button type="button" variant="outline" size="sm"
+                  onClick={() => lookupCEP(form.cep)}
+                  disabled={cepLoading}
+                  className="h-10 rounded-xl gap-1.5">
+                  {cepLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  Buscar
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-[1fr_120px] gap-3">
+                <Field label="Rua / Logradouro">
+                  <Input placeholder="Rua das Flores" value={form.street}
+                    onChange={e => set("street", e.target.value)} className="h-10 rounded-xl" />
+                </Field>
+                <Field label="Número">
+                  <Input placeholder="123" value={form.number}
+                    onChange={e => set("number", e.target.value)} className="h-10 rounded-xl" />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Complemento">
+                  <Input placeholder="Apto 4B" value={form.complement}
+                    onChange={e => set("complement", e.target.value)} className="h-10 rounded-xl" />
+                </Field>
+                <Field label="Bairro">
+                  <Input placeholder="Centro" value={form.neighborhood}
+                    onChange={e => set("neighborhood", e.target.value)} className="h-10 rounded-xl" />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-[1fr_100px] gap-3">
+                <Field label="Cidade">
+                  <Input placeholder="São Paulo" value={form.city}
+                    onChange={e => set("city", e.target.value)} className="h-10 rounded-xl" />
+                </Field>
+                <Field label="Estado">
+                  <div className="relative">
+                    <select value={form.state} onChange={e => set("state", e.target.value)}
+                      className="w-full h-10 px-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring transition">
+                      <option value="">UF</option>
+                      {BR_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                  </div>
+                </Field>
+              </div>
+            </>
+          )}
+
+          {/* ── Notas ── */}
+          {tab === "notes" && (
+            <Field label="Observações internas" hint={`${form.notes.length}/500`}>
+              <textarea
+                placeholder="Preferências, histórico relevante, notas de atendimento..."
+                value={form.notes} maxLength={500}
+                onChange={e => set("notes", e.target.value)}
+                rows={6}
+                className="w-full px-3 py-2.5 text-sm rounded-xl border border-input bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring transition"
+              />
+            </Field>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-border/50 bg-surface flex items-center justify-between gap-3">
+          <button type="button" onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Cancelar
+          </button>
+          <Button onClick={handleSave} disabled={saving || !form.name.trim()}
+            className="h-10 px-6 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {editing ? "Salvar alterações" : "Criar cliente"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────
 function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [newName, setNewName] = useState("");
-  const [newEmail, setNewEmail] = useState("");
-  const [newPhone, setNewPhone] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<Customer | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
-  useEffect(() => {
-    const storeId = localStorage.getItem("storeId");
-    if (storeId) fetchCustomers(storeId);
-    else setLoading(false);
+  const showToast = useCallback((msg: string, type: "success" | "error") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
   }, []);
 
-  const fetchCustomers = async (storeId: string) => {
+  const fetchCustomers = useCallback(async () => {
+    const storeId = localStorage.getItem("storeId");
+    if (!storeId) { setLoading(false); return; }
     try {
       const res = await fetch(`/api/customers/list?storeId=${storeId}`);
       const data = await res.json();
       if (res.ok) setCustomers(data.customers || []);
     } catch {} finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
+
+  const handleSaved = (customer: Customer, isNew: boolean) => {
+    setCustomers(prev => isNew ? [customer, ...prev] : prev.map(c => c.id === customer.id ? customer : c));
+    showToast(isNew ? "Cliente criado com sucesso!" : "Cliente atualizado!", "success");
   };
 
-  const handleCreate = async () => {
-    if (!newName) return;
-    const storeId = localStorage.getItem("storeId");
-    if (!storeId) return;
-    setCreating(true);
-    try {
-      const res = await api.post("/api/customers/create", { storeId, name: newName, email: newEmail || undefined, phone: newPhone || undefined });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setCustomers(prev => [...prev, { ...data.customer, ordersCount: 0, totalSpent: "R$ 0,00", since: new Date().toLocaleDateString("pt-BR", { month: "short", year: "numeric" }) }]);
-        setNewName(""); setNewEmail(""); setNewPhone("");
-        setDialogOpen(false);
-      }
-    } catch {} finally { setCreating(false); }
-  };
+  const openCreate = () => { setEditing(null); setModalOpen(true); };
+  const openEdit   = (c: Customer) => { setEditing(c); setModalOpen(true); };
 
   const filtered = customers.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.email || "").toLowerCase().includes(search.toLowerCase())
+    (c.email || "").toLowerCase().includes(search.toLowerCase()) ||
+    (c.phone || "").includes(search)
   );
 
+  const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString("pt-BR", { month: "short", year: "numeric" }) : "—";
+
+  const exportPDF = () => {
+    const rows = filtered.map(c => {
+      const addr = [c as any].map((x: any) => [
+        x.street && x.number ? `${x.street}, ${x.number}` : "",
+        x.complement || "",
+        x.neighborhood || "",
+        x.city && x.state ? `${x.city} — ${x.state}` : (x.city || ""),
+        x.cep ? `CEP ${x.cep}` : "",
+      ].filter(Boolean).join(", "))[0] || "—";
+      return `<tr>
+        <td>${c.name}</td>
+        <td>${c.phone ? maskPhone(c.phone) : "—"}</td>
+        <td>${c.email || "—"}</td>
+        <td>${addr}</td>
+      </tr>`;
+    }).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>Relatório de Clientes — ARMAZIX</title>
+      <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 32px; }
+        h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+        p.sub { color: #666; font-size: 11px; margin-bottom: 24px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #f3f4f6; text-align: left; padding: 9px 12px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; border-bottom: 2px solid #e5e7eb; color: #555; }
+        td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+        tr:hover td { background: #f9fafb; }
+        .footer { margin-top: 28px; font-size: 10px; color: #aaa; text-align: right; }
+        @media print { body { padding: 16px; } }
+      </style></head><body>
+      <h1>Relatório de Clientes</h1>
+      <p class="sub">Gerado em ${new Date().toLocaleString("pt-BR")} &mdash; ${filtered.length} cliente(s)</p>
+      <table>
+        <thead><tr><th>Nome</th><th>Telefone</th><th>E-mail</th><th>Endereço</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="footer">ARMAZIX</div>
+    </body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); }, 400);
+  };
+
   if (loading) {
-    return <div className="h-[60vh] flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+    return (
+      <div className="space-y-5 animate-in fade-in duration-300">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-7 w-32 bg-secondary rounded-xl animate-pulse" />
+            <div className="h-4 w-24 bg-secondary rounded-xl animate-pulse" />
+          </div>
+          <div className="h-9 w-32 bg-secondary rounded-xl animate-pulse" />
+        </div>
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-[72px] bg-secondary rounded-2xl animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
+    <div className="space-y-5 animate-in fade-in duration-300">
+
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Clientes</h1>
-          <p className="text-sm text-muted-foreground mt-1">{customers.length} clientes cadastrados</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {customers.length} cliente{customers.length !== 1 ? "s" : ""} cadastrado{customers.length !== 1 ? "s" : ""}
+          </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2">
-              <Plus className="w-4 h-4" /> Novo cliente
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="rounded-2xl max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-bold">Novo cliente</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-2">
-              <div className="space-y-2">
-                <Label>Nome</Label>
-                <Input placeholder="Ex: Maria Silva" value={newName} onChange={e => setNewName(e.target.value)} className="h-11 rounded-xl" />
-              </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input placeholder="email@exemplo.com" value={newEmail} onChange={e => setNewEmail(e.target.value)} className="h-11 rounded-xl" />
-              </div>
-              <div className="space-y-2">
-                <Label>Telefone</Label>
-                <Input placeholder="(11) 99999-9999" value={newPhone} onChange={e => setNewPhone(e.target.value)} className="h-11 rounded-xl" />
-              </div>
-              <Button onClick={handleCreate} disabled={creating || !newName} className="w-full h-11 rounded-xl bg-gradient-primary text-primary-foreground font-semibold">
-                {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Criar cliente"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="rounded-xl h-9"
+            onClick={() => { setLoading(true); fetchCustomers(); }}>
+            <RefreshCw className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportPDF} disabled={filtered.length === 0}
+            className="rounded-xl gap-1.5 h-9">
+            <FileDown className="w-3.5 h-3.5" /> PDF
+          </Button>
+          <Button onClick={openCreate}
+            className="h-9 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2">
+            <Plus className="w-4 h-4" /> Novo cliente
+          </Button>
+        </div>
       </div>
 
+      {/* Search */}
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input placeholder="Buscar clientes..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-10 rounded-xl" />
+        <Input placeholder="Buscar por nome, e-mail ou telefone..." value={search}
+          onChange={e => setSearch(e.target.value)} className="pl-9 h-9 rounded-xl" />
       </div>
 
+      {/* Empty state */}
       {filtered.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground text-sm">Nenhum cliente cadastrado</div>
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
+            <Users className="w-8 h-8 text-muted-foreground" />
+          </div>
+          <h3 className="font-semibold">{search ? "Nenhum resultado" : "Nenhum cliente ainda"}</h3>
+          <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+            {search ? `Não encontramos clientes para "${search}"` : "Comece cadastrando seu primeiro cliente"}
+          </p>
+          {!search && (
+            <Button onClick={openCreate} className="mt-5 h-9 rounded-xl bg-gradient-primary text-primary-foreground gap-2">
+              <Plus className="w-4 h-4" /> Cadastrar primeiro cliente
+            </Button>
+          )}
+        </div>
       ) : (
-      <div className="space-y-2">
-        {filtered.map(customer => (
-          <Card key={customer.id} className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-shadow">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Avatar className="w-10 h-10">
-                    <AvatarFallback className="bg-primary/15 text-primary text-sm font-bold">
-                      {customer.name.split(" ").map(n => n[0]).join("")}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <div className="text-sm font-semibold">{customer.name}</div>
-                    {customer.email && <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5"><span className="flex items-center gap-1"><Mail className="w-3 h-3" />{customer.email}</span></div>}
-                    {customer.phone && <div className="flex items-center gap-1 text-xs text-muted-foreground"><Phone className="w-3 h-3" />{customer.phone}</div>}
+
+        /* List */
+        <div className="space-y-2">
+          {filtered.map(c => (
+            <Card key={c.id}
+              className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-all cursor-pointer group"
+              onClick={() => openEdit(c)}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between gap-3">
+
+                  {/* Avatar + info */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar className="w-10 h-10 shrink-0">
+                      <AvatarFallback className="bg-primary/15 text-primary text-sm font-bold">
+                        {initials(c.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate">{c.name}</p>
+                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                        {c.email && (
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Mail className="w-3 h-3" />{c.email}
+                          </span>
+                        )}
+                        {c.phone && (
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Phone className="w-3 h-3" />{maskPhone(c.phone)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right side */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="hidden sm:block text-right">
+                      <p className="text-sm font-bold">{c.totalSpent || "R$ 0,00"}</p>
+                      <p className="text-xs text-muted-foreground">{c.ordersCount ?? 0} pedidos</p>
+                    </div>
+                    <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-secondary text-muted-foreground">
+                      Desde {fmtDate(c.createdAt)}
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+                        <Button variant="ghost" size="icon" className="w-8 h-8 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="rounded-xl">
+                        <DropdownMenuItem className="rounded-lg gap-2" onClick={e => { e.stopPropagation(); openEdit(c); }}>
+                          <Edit className="w-3.5 h-3.5" /> Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="rounded-lg gap-2 text-destructive focus:text-destructive"
+                          onClick={e => e.stopPropagation()}>
+                          <Trash2 className="w-3.5 h-3.5" /> Remover
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right hidden sm:block">
-                    <div className="text-sm font-bold">{customer.totalSpent}</div>
-                    <div className="text-xs text-muted-foreground">{customer.ordersCount} pedidos</div>
-                  </div>
-                  <Badge variant="secondary" className="rounded-full text-[11px]">Desde {customer.since}</Badge>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="w-8 h-8 rounded-lg"><MoreHorizontal className="w-4 h-4" /></Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="rounded-xl">
-                      <DropdownMenuItem className="rounded-lg">Ver perfil</DropdownMenuItem>
-                      <DropdownMenuItem className="rounded-lg">Editar</DropdownMenuItem>
-                      <DropdownMenuItem className="rounded-lg text-destructive">Remover</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
+
+      <CustomerFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSaved={handleSaved}
+        editing={editing}
+      />
+
+      {toast && <Toast msg={toast.msg} type={toast.type} />}
     </div>
   );
 }

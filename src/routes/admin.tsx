@@ -115,8 +115,8 @@ function AdminLayout() {
       >
         <div className="h-16 flex items-center justify-between px-4">
           <Link to="/admin/dashboard" className="flex items-center gap-2.5 font-bold text-lg">
-            <span className="grid place-items-center w-9 h-9 rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow shrink-0">
-              <ShoppingBag className="w-5 h-5" />
+            <span className="grid place-items-center w-9 h-9 rounded-2xl shrink-0 overflow-hidden">
+              <img src="/logo.png" alt="ARMAZIX" className="w-full h-full object-contain" />
             </span>
             {!collapsed && <span>ARMAZIX</span>}
           </Link>
@@ -174,8 +174,8 @@ function AdminLayout() {
           >
             <div className="h-16 flex items-center justify-between px-4">
               <Link to="/admin/dashboard" className="flex items-center gap-2.5 font-bold text-lg" onClick={() => setMobileOpen(false)}>
-                <span className="grid place-items-center w-9 h-9 rounded-2xl bg-gradient-primary text-primary-foreground shadow-glow">
-                  <ShoppingBag className="w-5 h-5" />
+                <span className="grid place-items-center w-9 h-9 rounded-2xl overflow-hidden">
+                  <img src="/logo.png" alt="ARMAZIX" className="w-full h-full object-contain" />
                 </span>
                 ARMAZIX
               </Link>

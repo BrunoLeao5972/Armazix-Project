@@ -25,7 +25,7 @@ export async function requireAuth(request: Request): Promise<AuthContext | Respo
     );
   }
 
-  const payload = await verifyJWT(token, process.env.JWT_SECRET!);
+  const payload = await verifyJWT(token, process.env.JWT_SECRET || "dev-secret-mock");
   
   if (!payload) {
     return new Response(
@@ -79,6 +79,11 @@ export async function requireStoreAccess(
       JSON.stringify({ error: "Sem acesso a esta loja" }),
       { status: 403, headers: { "content-type": "application/json" } }
     );
+  }
+
+  // Mock user bypass — only in development
+  if (process.env.NODE_ENV === "development" && auth.userId === "mock-user-001" && jwtStoreId === "mock-store-001") {
+    return { ...auth, storeId: jwtStoreId, storeRole: "owner" };
   }
 
   const dbUrl = process.env.DATABASE_URL!;

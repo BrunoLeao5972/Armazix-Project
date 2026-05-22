@@ -141,6 +141,14 @@ export async function getDashboardStatsHandler(
     );
   }
 
+  // Mock store bypass — return empty stats without hitting DB
+  if (process.env.NODE_ENV === "development" && storeId === "mock-store-001") {
+    return new Response(JSON.stringify({
+      stats: { totalOrders: 0, pendingOrders: 0, completedOrders: 0, cancelledOrders: 0, revenue: 0, productsCount: 0, lowStockProducts: 0, customersCount: 0, averageTicket: 0 },
+      recentOrders: [],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+
   const dbUrl = process.env.DATABASE_URL!;
   const db = await createTenantDb(dbUrl, storeId);
 
@@ -237,6 +245,21 @@ export async function getUserStoreHandler(request: Request, auth?: AuthContext):
   }
 
   const userId = auth.userId;
+
+  // Mock user bypass — only in development
+  if (process.env.NODE_ENV === "development" && userId === "mock-user-001") {
+    return new Response(JSON.stringify({
+      store: {
+        id: "mock-store-001",
+        name: "Loja Demo",
+        slug: "demo",
+        plan: "full",
+        primaryColor: "#7c3aed",
+        deliveryEstimate: "30-45 min",
+        active: true,
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);

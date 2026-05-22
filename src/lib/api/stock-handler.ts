@@ -781,6 +781,17 @@ export async function getDashboardChartDataHandler(request: Request, auth?: Auth
     });
   }
 
+  // Mock store bypass — return empty chart data without hitting DB
+  if (process.env.NODE_ENV === "development" && storeId === "mock-store-001") {
+    const days = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+    return new Response(JSON.stringify({
+      revenueData: days.map(name => ({ name, valor: 0 })),
+      ordersData: days.map(name => ({ name, pedidos: 0 })),
+      monthlySales: Array.from({ length: 6 }, (_, i) => ({ name: `Mês ${i + 1}`, vendas: 0 })),
+      stockMovement: Array.from({ length: 6 }, (_, i) => ({ name: `Mês ${i + 1}`, entrada: 0, saida: 0 })),
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+
   const dbUrl = process.env.DATABASE_URL!;
   const db = await createTenantDb(dbUrl, storeId);
 

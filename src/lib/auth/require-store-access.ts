@@ -39,6 +39,11 @@ export async function requireStoreAccess(
     throw new Error("Unauthorized: No storeId in auth context");
   }
 
+  // Mock user bypass — only in development
+  if (process.env.NODE_ENV === "development" && auth.userId === "mock-user-001" && auth.storeId === "mock-store-001") {
+    return { userId: auth.userId, storeId: auth.storeId };
+  }
+
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) {
     throw new Error("Database configuration error");
@@ -77,6 +82,11 @@ export async function requireStoreOwner(
 
   if (!auth?.storeId) {
     throw new Error("Unauthorized: No storeId in auth context");
+  }
+
+  // Mock user bypass — only in development
+  if (process.env.NODE_ENV === "development" && auth.userId === "mock-user-001" && auth.storeId === "mock-store-001") {
+    return { userId: auth.userId, storeId: auth.storeId };
   }
 
   const dbUrl = process.env.DATABASE_URL;

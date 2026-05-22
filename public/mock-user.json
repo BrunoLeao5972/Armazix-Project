@@ -1,0 +1,17 @@
+{
+  "id": "mock-user-001",
+  "name": "Bruno (Dev)",
+  "email": "dev@armazix.com",
+  "password": "dev123",
+  "role": "owner",
+  "emailVerified": true,
+  "active": true,
+  "store": {
+    "id": "mock-store-001",
+    "name": "Loja Demo",
+    "slug": "demo",
+    "plan": "full",
+    "primaryColor": "#7c3aed",
+    "deliveryEstimate": "30-45 min"
+  }
+}
