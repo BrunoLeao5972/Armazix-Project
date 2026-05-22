@@ -118,6 +118,29 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   return brandedErrorResponse();
 }
 
+// ============================================================================
+// SUBDOMAIN RESOLVER
+// Detects loja slug from subdomain: slug.armazix.com.br
+// Injects x-store-slug header so store routes can resolve the tenant.
+// ============================================================================
+const MAIN_DOMAINS = ["armazix.com.br", "armazix.workers.dev", "localhost"];
+
+function extractStoreSlug(hostname: string): string | null {
+  for (const domain of MAIN_DOMAINS) {
+    if (hostname === domain) return null;
+    if (hostname.endsWith(`.${domain}`)) {
+      const sub = hostname.slice(0, hostname.length - domain.length - 1);
+      // Only single-level subdomains (no www, no nested)
+      if (sub && !sub.includes(".") && sub !== "www" && sub !== "api") {
+        return sub;
+      }
+    }
+  }
+  return null;
+}
+
+const IS_DEV = import.meta.env.DEV;
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
@@ -125,17 +148,35 @@ export default {
     // Intercept API routes before TanStack Start
     if (url.pathname.startsWith("/api/")) {
       const response = await handleApiRequest(request);
-      return addSecurityHeaders(response);
+      return IS_DEV ? response : addSecurityHeaders(response);
+    }
+
+    // Detect subdomain slug and rewrite to /store if needed
+    const storeSlug = extractStoreSlug(url.hostname);
+    let resolvedRequest = request;
+
+    if (storeSlug) {
+      // Rewrite URL to /store/* preserving the path
+      const newPath = url.pathname === "/" ? "/store" : `/store${url.pathname === "/store" ? "" : url.pathname}`;
+      const newUrl = new URL(newPath + url.search, url.origin);
+      const headers = new Headers(request.headers);
+      headers.set("x-store-slug", storeSlug);
+      resolvedRequest = new Request(newUrl.toString(), {
+        method: request.method,
+        headers,
+        body: request.body,
+        redirect: request.redirect,
+      });
     }
 
     try {
       const handler = await getServerEntry();
-      const response = await handler.fetch(request, env, ctx);
+      const response = await handler.fetch(resolvedRequest, env, ctx);
       const normalizedResponse = await normalizeCatastrophicSsrResponse(response);
-      return addSecurityHeaders(normalizedResponse);
+      return IS_DEV ? normalizedResponse : addSecurityHeaders(normalizedResponse);
     } catch (error) {
       console.error(error);
-      return addSecurityHeaders(brandedErrorResponse());
+      return IS_DEV ? brandedErrorResponse() : addSecurityHeaders(brandedErrorResponse());
     }
   },
 };

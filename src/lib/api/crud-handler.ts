@@ -3,7 +3,7 @@ import { schema } from "@/lib/db";
 import { eq, desc, sql, and } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 
-const { products, categories, orders, orderItems, coupons, customers, stores } = schema;
+const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions } = schema;
 
 // ─── Create Product ──────────────────────────────────────────────
 export async function createProductHandler(request: Request, auth?: AuthContext): Promise<Response> {
@@ -85,6 +85,21 @@ export async function listProductsHandler(request: Request): Promise<Response> {
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
+
+  // Fetch additions for a specific product
+  const productId = url.searchParams.get("productId");
+  const fetchAdditions = url.searchParams.get("additions") === "true";
+  if (productId && fetchAdditions) {
+    try {
+      const additionRows = await db.select().from(productAdditions)
+        .where(eq(productAdditions.productId, productId))
+        .orderBy(productAdditions.position);
+      return new Response(JSON.stringify({ additions: additionRows }), { status: 200, headers: { "content-type": "application/json" } });
+    } catch (error) {
+      console.error("List additions error:", error);
+      return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+    }
+  }
 
   try {
     const storeProducts = await db.select().from(products).where(eq(products.storeId, storeId));
@@ -675,5 +690,54 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
   } catch (error) {
     console.error("Create customer error:", error);
     return new Response(JSON.stringify({ error: "Failed to create customer" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── Validate Public Coupon (storefront, no auth) ───────────────
+export async function validatePublicCouponHandler(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const storeId = url.searchParams.get("storeId");
+  const code = url.searchParams.get("code");
+  const orderValue = parseFloat(url.searchParams.get("orderValue") || "0");
+
+  if (!storeId || !code) {
+    return new Response(JSON.stringify({ error: "storeId e code são obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
+  }
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+
+  try {
+    const coupon = await db.query.coupons.findFirst({
+      where: and(eq(coupons.storeId, storeId), eq(coupons.code, code.toUpperCase())),
+    });
+
+    if (!coupon || !coupon.active) {
+      return new Response(JSON.stringify({ error: "Cupom inválido ou expirado" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+
+    if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) {
+      return new Response(JSON.stringify({ error: "Cupom expirado" }), { status: 400, headers: { "content-type": "application/json" } });
+    }
+
+    const minOrder = parseFloat(coupon.minOrderValue || "0");
+    if (orderValue > 0 && orderValue < minOrder) {
+      return new Response(JSON.stringify({ error: `Pedido mínimo de R$ ${minOrder.toFixed(2).replace(".", ",")} para este cupom` }), { status: 400, headers: { "content-type": "application/json" } });
+    }
+
+    const discountValue = coupon.type === "percent"
+      ? (orderValue * parseFloat(coupon.discount || "0")) / 100
+      : parseFloat(coupon.discount || "0");
+
+    return new Response(JSON.stringify({
+      valid: true,
+      code: coupon.code,
+      type: coupon.type,
+      discount: coupon.discount,
+      discountValue: Math.min(discountValue, orderValue).toFixed(2),
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  } catch (error) {
+    console.error("Validate coupon error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
   }
 }

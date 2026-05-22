@@ -16,6 +16,12 @@ import {
   Check,
   Loader2,
   Palette,
+  CreditCard,
+  Zap,
+  Package,
+  Smartphone,
+  TrendingUp,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +40,8 @@ const STEPS = [
   { id: 2, title: "Sua Loja", icon: Store },
   { id: 3, title: "Dados Fiscais", icon: FileText },
   { id: 4, title: "Endereço", icon: MapPin },
-  { id: 5, title: "Pronto!", icon: Check },
+  { id: 5, title: "Plano", icon: CreditCard },
+  { id: 6, title: "Pronto!", icon: Check },
 ];
 
 const CATEGORIES = [
@@ -188,7 +195,7 @@ function RegisterPage() {
 
   const nextStep = () => {
     if (!validateStep(step)) return;
-    if (step < 5) {
+    if (step < 6) {
       setLoading(true);
       setTimeout(() => {
         setLoading(false);
@@ -632,63 +639,46 @@ function RegisterPage() {
               )}
 
               {step === 5 && (
-                <div className="text-center py-8">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.2 }}
-                    className="grid place-items-center w-20 h-20 mx-auto rounded-full bg-gradient-primary text-primary-foreground shadow-glow mb-6"
-                  >
-                    <Check className="w-10 h-10" />
-                  </motion.div>
-                  <motion.h2
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 }}
-                    className="text-2xl font-bold tracking-tight"
-                  >
-                    Sua loja está pronta! 🎉
-                  </motion.h2>
-                  <motion.p
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.5 }}
-                    className="mt-2 text-muted-foreground"
-                  >
-                    Tudo configurado. Comece a vender agora mesmo.
-                  </motion.p>
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.6 }}
-                    className="mt-8 flex flex-col gap-3"
-                  >
-                    <Button
-                      onClick={handleFinish}
-                      disabled={loading}
-                      className="h-12 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow hover:scale-[1.01] active:scale-[0.99] transition-transform"
-                    >
-                      {loading ? (
-                        <span className="flex items-center gap-2">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Preparando painel...
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2">
-                          Acessar painel
-                          <ArrowRight className="w-4 h-4" />
-                        </span>
-                      )}
-                    </Button>
-
-                  </motion.div>
-                </div>
+                <StepWrapper
+                  title="Escolha seu plano"
+                  subtitle="Comece grátis, sem cartão de crédito"
+                >
+                  <div className="space-y-3">
+                    {[
+                      { id: "free",  label: "Free",  desc: "Até 5 produtos · Gratuito",    price: "Grátis",       highlight: false },
+                      { id: "start", label: "Start", desc: "Até 30 produtos · R$ 19,90/mês", price: "R$ 19,90/mês", highlight: false },
+                      { id: "pro",   label: "Pro",   desc: "Até 70 produtos · R$ 39,90/mês", price: "R$ 39,90/mês", highlight: true  },
+                      { id: "full",  label: "Full",  desc: "Ilimitado · R$ 79,90/mês",       price: "R$ 79,90/mês", highlight: false },
+                    ].map((plan) => (
+                      <button
+                        key={plan.id}
+                        type="button"
+                        onClick={() => nextStep()}
+                        className={`w-full flex items-center justify-between p-4 rounded-xl border-2 text-left transition-colors hover:border-primary/60 ${
+                          plan.highlight ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/30"
+                        }`}
+                      >
+                        <div>
+                          <div className="font-semibold text-sm flex items-center gap-2">
+                            {plan.label}
+                            {plan.highlight && <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary text-primary-foreground font-bold">Popular</span>}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{plan.desc}</div>
+                        </div>
+                        <div className="text-sm font-bold shrink-0 ml-4">{plan.price}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center mt-4">
+                    Todos os planos com 30 dias grátis. Cancele quando quiser.
+                  </p>
+                </StepWrapper>
               )}
             </motion.div>
           </AnimatePresence>
 
           {/* Navigation buttons */}
-          {step < 5 && (
+          {step < 6 && (
             <div className="flex items-center justify-between mt-8">
               <Button
                 variant="ghost"

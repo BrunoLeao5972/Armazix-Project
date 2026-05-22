@@ -29,7 +29,7 @@ export function Hero() {
           </p>
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
             <a
-              href="#cta"
+              href="/register"
               className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full bg-gradient-primary text-primary-foreground font-semibold shadow-glow hover:scale-[1.02] active:scale-[0.99] transition-transform"
             >
               Comece agora, é grátis

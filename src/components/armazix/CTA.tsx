@@ -17,7 +17,7 @@ export function CTA() {
             </p>
             <div className="mt-8 flex justify-center">
               <a
-                href="#"
+                href="/register"
                 className="inline-flex items-center gap-2 px-7 py-4 rounded-full bg-gradient-primary text-primary-foreground font-semibold shadow-glow hover:scale-[1.02] active:scale-[0.99] transition-transform"
               >
                 Criar minha loja ARMAZIX

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Flame } from "lucide-react";
+import { Check, Flame, Monitor } from "lucide-react";
 
 type Plan = {
   name: string;
@@ -30,8 +30,8 @@ const plans: Plan[] = [
     features: [
       "Catálogo com até 5 produtos",
       "Integração com WhatsApp",
-      "Controle de estoque manual",
-      "Relatórios básicos",
+      "Controle de estoque automático",
+      "Relatórios de vendas, lucro e desempenho",
       "Suporte normal",
     ],
     cta: "Começar grátis",
@@ -51,7 +51,7 @@ const plans: Plan[] = [
       "Integração com WhatsApp",
       "Controle de estoque automático",
       "Alertas de estoque baixo",
-      "Relatórios básicos",
+      "Relatórios de vendas, lucro e desempenho",
       "Suporte normal",
     ],
     optional: { title: "Ponto de Venda", desc: "Terminal para loja física" },
@@ -84,8 +84,8 @@ const plans: Plan[] = [
   {
     name: "Full",
     badge: "Premium",
-    tagline: "A partir de R$ 2,99/dia",
-    price: "R$ 89,90",
+    tagline: "A partir de R$ 3,33/dia",
+    price: "R$ 99,90",
     period: "/mês",
     capacity: "Produtos ilimitados",
     description:
@@ -97,9 +97,9 @@ const plans: Plan[] = [
       "Alertas de estoque baixo",
       "Relatórios avançados",
       "Multiusuário",
+      "Ponto de Venda incluso",
       "Suporte prioritário",
     ],
-    optional: { title: "Ponto de Venda", desc: "Terminal para loja física" },
     cta: "Assinar agora",
     footer: "Liberdade total para operações em crescimento.",
   },
@@ -203,28 +203,31 @@ export function Pricing() {
 
               {p.optional && (
                 <div
-                  className={`rounded-2xl p-4 mb-6 border ${
-                    p.highlighted
-                      ? "border-background/15 bg-background/5"
-                      : "border-dashed border-border bg-secondary/40"
+                  className={`rounded-2xl mb-6 overflow-hidden border transition-all duration-200 ${
+                    pdv[p.name]
+                      ? p.highlighted
+                        ? "border-primary-glow/50 shadow-glow/20"
+                        : "border-primary/40"
+                      : p.highlighted
+                        ? "border-background/15"
+                        : "border-border"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div
-                        className={`text-[11px] font-semibold uppercase tracking-wide ${
-                          p.highlighted ? "text-background/60" : "text-muted-foreground"
-                        }`}
-                      >
-                        Opcional
-                      </div>
-                      <div className="mt-1 text-sm font-semibold">{p.optional.title}</div>
-                      <div
-                        className={`text-xs ${
-                          p.highlighted ? "text-background/60" : "text-muted-foreground"
-                        }`}
-                      >
-                        {p.optional.desc}
+                  {/* Header row */}
+                  <div className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                    p.highlighted ? "bg-background/5" : "bg-secondary/50"
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      <Monitor className={`w-4 h-4 shrink-0 ${
+                        pdv[p.name]
+                          ? p.highlighted ? "text-primary-glow" : "text-primary"
+                          : p.highlighted ? "text-background/40" : "text-muted-foreground"
+                      }`} />
+                      <div>
+                        <span className="text-sm font-semibold">{p.optional.title}</span>
+                        <span className={`ml-2 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                          p.highlighted ? "bg-background/10 text-background/60" : "bg-border text-muted-foreground"
+                        }`}>Opcional</span>
                       </div>
                     </div>
                     <Toggle
@@ -234,11 +237,25 @@ export function Pricing() {
                       label={`Ativar ${p.optional.title} no plano ${p.name}`}
                     />
                   </div>
+                  {/* Price row */}
+                  <div className={`flex items-center justify-center px-4 py-2 ${
+                    pdv[p.name]
+                      ? p.highlighted ? "bg-primary/10" : "bg-primary/5"
+                      : p.highlighted ? "bg-background/3" : "bg-background/50"
+                  }`}>
+                    <span className={`text-sm font-bold tabular-nums ${
+                      pdv[p.name]
+                        ? p.highlighted ? "text-primary-glow" : "text-primary"
+                        : p.highlighted ? "text-background/30" : "text-foreground/30"
+                    }`}>
+                      + R$ 50<span className="text-xs font-normal opacity-75">/mês</span>
+                    </span>
+                  </div>
                 </div>
               )}
 
               <a
-                href="#cta"
+                href="/register"
                 className={`mt-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-full font-semibold transition-transform hover:scale-[1.02] active:scale-[0.99] ${
                   p.highlighted
                     ? "bg-gradient-primary text-primary-foreground shadow-glow"

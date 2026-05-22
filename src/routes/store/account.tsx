@@ -1,15 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { User, Package, Heart, MapPin, Tag, ChevronRight, Clock, Star, Loader2 } from "lucide-react";
+import { User, Package, Heart, MapPin, Tag, ChevronRight, Clock, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { useStore } from "../store";
 
 export const Route = createFileRoute("/store/account")({
   component: AccountPage,
-  head: () => ({
-    meta: [{ title: "Minha conta — Mercado do Zé" }],
-  }),
 });
 
 interface OrderData { id: string; number: number; status: string; total: string; createdAt: string; items: { productName: string }[]; }
@@ -26,18 +22,16 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 function AccountPage() {
   const [orders, setOrders] = useState<OrderData[]>([]);
   const [loading, setLoading] = useState(true);
-  const { favorites } = useStore();
+  const { store, favorites } = useStore();
 
   useEffect(() => {
-    const storeId = localStorage.getItem("storeId");
-    if (storeId) {
-      fetch(`/api/orders/list?storeId=${storeId}`)
-        .then(r => r.json())
-        .then(d => { if (d.orders) setOrders(d.orders); })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    } else { setLoading(false); }
-  }, []);
+    if (!store?.id) { setLoading(false); return; }
+    fetch(`/api/orders/list?storeId=${store.id}`)
+      .then(r => r.json())
+      .then(d => { if (d.orders) setOrders(d.orders); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [store?.id]);
 
   const recentOrders = orders.slice(0, 5);
 

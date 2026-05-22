@@ -5,13 +5,14 @@ import { requireStoreAccess, AuthContext } from "@/lib/auth/require-store-access
 
 const { stores, storeUsers, orders, products, customers } = schema;
 
-// ─── Get Store by ID ────────────────────────────────────────────
+// ─── Get Store by ID or Slug ─────────────────────────────────────
 export async function getStoreHandler(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const storeId = url.searchParams.get("id");
+  const slug = url.searchParams.get("slug");
 
-  if (!storeId) {
-    return new Response(JSON.stringify({ error: "Store ID required" }), {
+  if (!storeId && !slug) {
+    return new Response(JSON.stringify({ error: "Store ID or slug required" }), {
       status: 400,
       headers: { "content-type": "application/json" },
     });
@@ -22,7 +23,8 @@ export async function getStoreHandler(request: Request): Promise<Response> {
 
   try {
     const store = await db.query.stores.findFirst({
-      where: eq(stores.id, storeId),
+      where: storeId ? eq(stores.id, storeId) : eq(stores.slug, slug!),
+      with: { banners: { where: (b, { eq }) => eq(b.active, true), orderBy: (b, { asc }) => [asc(b.position)] } },
     });
 
     if (!store) {
@@ -33,7 +35,6 @@ export async function getStoreHandler(request: Request): Promise<Response> {
     }
 
     // SECURITY: Never expose sensitive payment/billing fields to public consumers.
-    // These fields are internal and only needed by authenticated store management routes.
     const { mpAccessToken: _mpToken, plan: _plan, planStatus: _planStatus,
             planExpiresAt: _planExpiry, mpSubscriptionId: _subId, ...publicStoreData } = store;
 

@@ -41,6 +41,7 @@ import {
   createCouponHandler,
   listCustomersHandler,
   createCustomerHandler,
+  validatePublicCouponHandler,
 } from "./api/crud-handler";
 import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
 import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler, createPixPaymentHandler, pixWebhookHandler } from "./api/subscription-handler";
@@ -73,6 +74,7 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/validate-cep": validateCepHandler,
   "/api/products/list": listProductsHandler, // Público para vitrine
   "/api/categories/list": listCategoriesHandler, // Público para vitrine
+  "/api/coupons/validate": validatePublicCouponHandler, // Público para vitrine
 };
 
 // Rotas protegidas (requerem autenticação)

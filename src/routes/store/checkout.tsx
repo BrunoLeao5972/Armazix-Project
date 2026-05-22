@@ -1,31 +1,72 @@
-import { useState } from "react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { MapPin, Truck, Package, CreditCard, Smartphone, Banknote, CheckCircle2, ChevronRight, ChevronLeft, Loader2, ShoppingBag } from "lucide-react";
+import { useState, useEffect } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { MapPin, Truck, Package, CreditCard, Smartphone, Banknote, CheckCircle2, ChevronRight, ChevronLeft, Loader2, ShoppingBag, Tag, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { useStore } from "../store";
+import { formatPrice } from "@/lib/store-context";
 
 export const Route = createFileRoute("/store/checkout")({
   component: CheckoutPage,
-  head: () => ({
-    meta: [{ title: "Checkout — Mercado do Zé" }],
-  }),
 });
 
 const STEPS = ["Endereço", "Entrega", "Pagamento", "Confirmação"];
 
 function CheckoutPage() {
-  const navigate = useNavigate();
   const [step, setStep] = useState(0);
-  const { cart, cartTotal, clearCart } = useStore();
-  const [address, setAddress] = useState({ street: "Rua das Flores", number: "120", neighborhood: "Centro", city: "São Paulo" });
+  const { store, cart, cartTotal, clearCart } = useStore();
+  const [address, setAddress] = useState({ zip: "", street: "", number: "", complement: "", neighborhood: "", city: "", state: "" });
+  const [cepLoading, setCepLoading] = useState(false);
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [orderNumber, setOrderNumber] = useState<number | null>(null);
   const [orderError, setOrderError] = useState("");
+  const [couponCode, setCouponCode] = useState("");
+  const [couponDiscount, setCouponDiscount] = useState(0);
+  const [couponError, setCouponError] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponApplied, setCouponApplied] = useState("");
+
+  const storeDeliveryFee = deliveryType === "delivery" ? parseFloat(store?.deliveryFee || "0") : 0;
+  const orderTotal = cartTotal + storeDeliveryFee - couponDiscount;
+
+  // CEP autocomplete
+  const handleCepChange = async (cep: string) => {
+    const clean = cep.replace(/\D/g, "");
+    setAddress(a => ({ ...a, zip: clean }));
+    if (clean.length === 8) {
+      setCepLoading(true);
+      try {
+        const res = await fetch(`/api/validate-cep?cep=${clean}`);
+        const data = await res.json();
+        if (data.logradouro) {
+          setAddress(a => ({ ...a, street: data.logradouro, neighborhood: data.bairro || a.neighborhood, city: data.localidade || a.city, state: data.uf || a.state }));
+        }
+      } catch {} finally { setCepLoading(false); }
+    }
+  };
+
+  // Coupon validation via public endpoint
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim() || !store?.id) return;
+    setCouponLoading(true);
+    setCouponError("");
+    try {
+      const res = await fetch(
+        `/api/coupons/validate?storeId=${store.id}&code=${encodeURIComponent(couponCode.trim())}&orderValue=${cartTotal.toFixed(2)}`
+      );
+      const data = await res.json();
+      if (!res.ok) { setCouponError(data.error || "Cupom inválido"); return; }
+      setCouponDiscount(parseFloat(data.discountValue));
+      setCouponApplied(data.code);
+    } catch { setCouponError("Erro ao validar cupom"); }
+    finally { setCouponLoading(false); }
+  };
+
+  const removeCoupon = () => { setCouponDiscount(0); setCouponApplied(""); setCouponCode(""); setCouponError(""); };
 
   if (cart.length === 0 && !confirmed) {
     return (
@@ -81,17 +122,54 @@ function CheckoutPage() {
       {step === 0 && (
         <div className="space-y-4">
           <h2 className="text-lg font-bold">Endereço de entrega</h2>
-          <div className="p-4 rounded-2xl bg-surface border border-border/40 space-y-3">
-            <div className="flex items-start gap-3">
-              <MapPin className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold">{address.street}, {address.number}</p>
-                <p className="text-xs text-muted-foreground">{address.neighborhood} — {address.city}</p>
+          <div className="space-y-3">
+            {/* CEP */}
+            <div className="relative">
+              <label className="text-xs font-medium text-muted-foreground">CEP</label>
+              <div className="relative mt-1">
+                <input
+                  value={address.zip}
+                  onChange={e => handleCepChange(e.target.value)}
+                  placeholder="00000-000"
+                  maxLength={9}
+                  className="w-full h-11 rounded-xl border border-border/50 bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                {cepLoading && <Loader2 className="absolute right-3 top-3 w-4 h-4 animate-spin text-muted-foreground" />}
               </div>
             </div>
-            <Button variant="outline" size="sm" className="rounded-xl text-xs">
-              Alterar endereço
-            </Button>
+            {/* Street + Number */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground">Rua</label>
+                <input value={address.street} onChange={e => setAddress(a => ({ ...a, street: e.target.value }))} placeholder="Rua das Flores" className="w-full h-11 rounded-xl border border-border/50 bg-surface px-3 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Número</label>
+                <input value={address.number} onChange={e => setAddress(a => ({ ...a, number: e.target.value }))} placeholder="123" className="w-full h-11 rounded-xl border border-border/50 bg-surface px-3 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+            </div>
+            {/* Complement + Neighborhood */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Complemento</label>
+                <input value={address.complement} onChange={e => setAddress(a => ({ ...a, complement: e.target.value }))} placeholder="Apto, Bloco..." className="w-full h-11 rounded-xl border border-border/50 bg-surface px-3 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Bairro</label>
+                <input value={address.neighborhood} onChange={e => setAddress(a => ({ ...a, neighborhood: e.target.value }))} placeholder="Centro" className="w-full h-11 rounded-xl border border-border/50 bg-surface px-3 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+            </div>
+            {/* City + State */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground">Cidade</label>
+                <input value={address.city} onChange={e => setAddress(a => ({ ...a, city: e.target.value }))} placeholder="São Paulo" className="w-full h-11 rounded-xl border border-border/50 bg-surface px-3 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">UF</label>
+                <input value={address.state} onChange={e => setAddress(a => ({ ...a, state: e.target.value }))} placeholder="SP" maxLength={2} className="w-full h-11 rounded-xl border border-border/50 bg-surface px-3 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -113,7 +191,9 @@ function CheckoutPage() {
                 <p className="text-sm font-semibold">Delivery</p>
                 <p className="text-xs text-muted-foreground">30-50 minutos</p>
               </div>
-              <span className="text-sm font-bold text-primary">Grátis</span>
+              <span className="text-sm font-bold text-primary">
+                {storeDeliveryFee === 0 ? "Grátis" : `R$ ${formatPrice(storeDeliveryFee)}`}
+              </span>
             </button>
             <button
               onClick={() => setDeliveryType("pickup")}
@@ -130,6 +210,37 @@ function CheckoutPage() {
               </div>
               <span className="text-sm font-bold text-primary">Grátis</span>
             </button>
+          </div>
+
+          {/* Coupon */}
+          <div className="mt-4">
+            <h3 className="text-sm font-bold mb-2">Cupom de desconto</h3>
+            {couponApplied ? (
+              <div className="flex items-center justify-between p-3 rounded-xl bg-primary/5 border border-primary/20">
+                <div className="flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-semibold text-primary">{couponApplied}</span>
+                  <span className="text-xs text-muted-foreground">−R$ {formatPrice(couponDiscount)}</span>
+                </div>
+                <button onClick={removeCoupon} className="text-muted-foreground hover:text-destructive transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  value={couponCode}
+                  onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                  onKeyDown={e => e.key === "Enter" && handleApplyCoupon()}
+                  placeholder="Código do cupom"
+                  className="flex-1 h-10 rounded-xl border border-border/50 bg-surface px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <Button variant="outline" onClick={handleApplyCoupon} disabled={couponLoading} className="h-10 rounded-xl px-4 shrink-0">
+                  {couponLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Aplicar"}
+                </Button>
+              </div>
+            )}
+            {couponError && <p className="text-xs text-destructive mt-1">{couponError}</p>}
           </div>
         </div>
       )}
@@ -175,31 +286,48 @@ function CheckoutPage() {
           <div className="p-4 rounded-2xl bg-surface border border-border/40 space-y-3">
             {cart.map((item) => (
               <div key={item.id} className="flex items-center gap-2">
-                <span className="text-lg">{item.image}</span>
+                <div className="w-10 h-10 rounded-lg bg-secondary/30 flex items-center justify-center shrink-0 overflow-hidden">
+                  {item.image
+                    ? <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                    : <span className="text-lg">{item.emoji || "📦"}</span>
+                  }
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{item.name}</p>
-                  <p className="text-xs text-muted-foreground">{item.qty}x</p>
+                  {item.additions && item.additions.length > 0 && (
+                    <p className="text-[10px] text-muted-foreground truncate">{item.additions.map(a => a.name).join(", ")}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">{item.qty}x · R$ {formatPrice(item.price)}</p>
                 </div>
-                <span className="text-sm font-bold">R$ {(item.price * item.qty).toFixed(2).replace(".", ",")}</span>
+                <span className="text-sm font-bold">R$ {formatPrice(item.price * item.qty)}</span>
               </div>
             ))}
-            <div className="border-t border-border/50 pt-2 space-y-1">
+            <div className="border-t border-border/50 pt-2 space-y-1.5">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span>R$ {cartTotal.toFixed(2).replace(".", ",")}</span>
+                <span>R$ {formatPrice(cartTotal)}</span>
               </div>
+              {couponDiscount > 0 && (
+                <div className="flex justify-between text-sm text-primary">
+                  <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {couponApplied}</span>
+                  <span>−R$ {formatPrice(couponDiscount)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Entrega ({deliveryType === "delivery" ? "Delivery" : "Retirada"})</span>
-                <span className="text-primary font-medium">Grátis</span>
+                {storeDeliveryFee === 0
+                  ? <span className="text-primary font-medium">Grátis</span>
+                  : <span>R$ {formatPrice(storeDeliveryFee)}</span>
+                }
               </div>
-              <div className="flex justify-between text-base font-bold pt-1">
+              <div className="flex justify-between text-base font-bold pt-1 border-t border-border/50">
                 <span>Total</span>
-                <span>R$ {cartTotal.toFixed(2).replace(".", ",")}</span>
+                <span>R$ {formatPrice(orderTotal)}</span>
               </div>
             </div>
-            <div className="border-t border-border/50 pt-2 space-y-1.5 text-xs text-muted-foreground">
-              <p>📍 {address.street}, {address.number}</p>
-              <p>🚚 {deliveryType === "delivery" ? "Delivery — 30-50 min" : "Retirada — 20 min"}</p>
+            <div className="border-t border-border/50 pt-2 space-y-1 text-xs text-muted-foreground">
+              {deliveryType === "delivery" && address.street && <p>📍 {address.street}, {address.number} — {address.neighborhood}, {address.city}</p>}
+              <p>🚚 {deliveryType === "delivery" ? `Delivery · ${store?.deliveryEstimate || "30-50 min"}` : "Retirada — pronto em 20 min"}</p>
               <p>💳 {paymentMethod === "pix" ? "PIX (na entrega)" : paymentMethod === "card" ? "Cartão de crédito" : paymentMethod === "mercadopago" ? "Mercado Pago" : "Dinheiro"}</p>
             </div>
           </div>
@@ -216,7 +344,10 @@ function CheckoutPage() {
         {step < 3 ? (
           <Button
             onClick={() => setStep(step + 1)}
-            disabled={step === 2 && !paymentMethod}
+            disabled={
+              (step === 0 && deliveryType === "delivery" && (!address.street || !address.number)) ||
+              (step === 2 && !paymentMethod)
+            }
             className="flex-1 h-11 rounded-2xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
           >
             Continuar <ChevronRight className="w-4 h-4 ml-1" />
@@ -228,17 +359,27 @@ function CheckoutPage() {
               setSubmitting(true);
               setOrderError("");
               try {
-                const storeId = localStorage.getItem("storeId");
+                const storeId = store?.id || localStorage.getItem("storeId");
                 if (!storeId) { setOrderError("Loja não encontrada"); setSubmitting(false); return; }
 
                 const items = cart.map(item => ({
-                  productId: String(item.id),
+                  productId: item.id,
                   productName: item.name,
-                  productEmoji: item.image,
+                  productEmoji: item.emoji || item.image || "📦",
                   quantity: item.qty,
                   unitPrice: item.price.toFixed(2),
+                  additionsTotal: item.additions ? item.additions.reduce((s, a) => s + a.price, 0).toFixed(2) : "0",
                   total: (item.price * item.qty).toFixed(2),
+                  additionsSnapshot: item.additions || [],
+                  notes: item.obs || undefined,
                 }));
+
+                const addressSnapshot = deliveryType === "delivery" ? {
+                  street: address.street, number: address.number,
+                  neighborhood: address.neighborhood, city: address.city,
+                  state: address.state || "SP", zip: address.zip,
+                  complement: address.complement || undefined,
+                } : undefined;
 
                 // ── Mercado Pago Checkout Pro ─────────────────────
                 if (paymentMethod === "mercadopago") {
@@ -247,16 +388,10 @@ function CheckoutPage() {
                     type: deliveryType,
                     items,
                     subtotal: cartTotal.toFixed(2),
-                    deliveryFee: "0",
-                    total: cartTotal.toFixed(2),
-                    addressSnapshot: {
-                      street: address.street,
-                      number: address.number,
-                      neighborhood: address.neighborhood,
-                      city: address.city,
-                      state: "SP",
-                      zip: "",
-                    },
+                    deliveryFee: storeDeliveryFee.toFixed(2),
+                    discount: couponDiscount.toFixed(2),
+                    total: orderTotal.toFixed(2),
+                    addressSnapshot,
                     estimatedDelivery: new Date(Date.now() + (deliveryType === "delivery" ? 40 : 20) * 60000).toISOString(),
                   }, { skipCsrf: true });
                   const data = await res.json();
@@ -278,16 +413,10 @@ function CheckoutPage() {
                   paymentMethod,
                   items,
                   subtotal: cartTotal.toFixed(2),
-                  deliveryFee: "0",
-                  total: cartTotal.toFixed(2),
-                  addressSnapshot: {
-                    street: address.street,
-                    number: address.number,
-                    neighborhood: address.neighborhood,
-                    city: address.city,
-                    state: "SP",
-                    zip: "",
-                  },
+                  deliveryFee: storeDeliveryFee.toFixed(2),
+                  discount: couponDiscount.toFixed(2),
+                  total: orderTotal.toFixed(2),
+                  addressSnapshot,
                   estimatedDelivery: new Date(Date.now() + (deliveryType === "delivery" ? 40 : 20) * 60000).toISOString(),
                 }, { skipCsrf: true });
                 const data = await res.json();

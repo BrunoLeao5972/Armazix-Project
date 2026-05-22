@@ -3,10 +3,10 @@ import { Link } from "@tanstack/react-router";
 import { Menu, X } from "lucide-react";
 
 const links = [
+  { href: "#categorias",     label: "Categorias" },
   { href: "#funcionalidades", label: "Funcionalidades" },
-  { href: "#categorias", label: "Categorias" },
-  { href: "#relatorios", label: "Relatórios" },
-  { href: "#precos", label: "Preços" },
+  { href: "#relatorios",     label: "Relatórios" },
+  { href: "#precos",         label: "Preços" },
 ];
 
 export function Navbar() {

@@ -1,14 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Package, Clock, ChefHat, Truck, CheckCircle2, MapPin, Phone, Loader2 } from "lucide-react";
+import { Package, Clock, ChefHat, Truck, CheckCircle2, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
+import { useStore } from "../store";
 
 export const Route = createFileRoute("/store/order/$orderId")({
   component: OrderTrackingPage,
-  head: () => ({
-    meta: [{ title: "Pedido — Mercado do Zé" }],
-  }),
 });
 
 interface OrderItem { productName: string; productEmoji: string | null; quantity: number; unitPrice: string; total: string; }
@@ -35,24 +32,21 @@ function OrderTrackingPage() {
   const { orderId } = Route.useParams();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [loading, setLoading] = useState(true);
+  const { store } = useStore();
 
   useEffect(() => {
-    const storeId = localStorage.getItem("storeId");
-    if (storeId) {
-      fetch(`/api/orders/list?storeId=${storeId}`)
-        .then(r => r.json())
-        .then(d => {
-          if (d.orders) {
-            const found = d.orders.find((o: OrderData) => o.id === orderId || o.orderId === orderId);
-            setOrder(found || null);
-          }
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
-  }, [orderId]);
+    if (!store?.id) { setLoading(false); return; }
+    fetch(`/api/orders/list?storeId=${store.id}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.orders) {
+          const found = d.orders.find((o: OrderData) => o.id === orderId || o.orderId === orderId);
+          setOrder(found || null);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [orderId, store?.id]);
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
 

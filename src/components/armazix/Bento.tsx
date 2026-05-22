@@ -1,4 +1,4 @@
-import { BarChart3, MessageCircle, Package, AlertTriangle, LineChart } from "lucide-react";
+import { BarChart3, Package, AlertTriangle, LineChart } from "lucide-react";
 
 export function Bento() {
   return (
@@ -30,7 +30,7 @@ export function Bento() {
 
           {/* Medium 1 */}
           <div className="md:col-span-2 rounded-4xl bg-gradient-primary text-primary-foreground p-8 shadow-ambient min-h-[200px] flex flex-col justify-between">
-            <MessageCircle className="w-8 h-8" />
+            <img src="/Logo Wpp.png" alt="WhatsApp" className="w-10 h-10 object-contain" />
             <div>
               <h3 className="text-xl font-bold">Integração com WhatsApp</h3>
               <p className="text-sm opacity-90 mt-1">
