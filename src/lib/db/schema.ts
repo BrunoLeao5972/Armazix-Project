@@ -91,19 +91,29 @@ export const bannersRelations = relations(banners, ({ one }) => ({
 export const categories = pgTable("categories", {
   id: uuid("id").defaultRandom().primaryKey(),
   storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  parentId: uuid("parent_id"),
   name: varchar("name", { length: 80 }).notNull(),
+  slug: varchar("slug", { length: 100 }),
   emoji: varchar("emoji", { length: 10 }),
   color: varchar("color", { length: 7 }),
   imageUrl: text("image_url"),
   position: integer("position").default(0),
   active: boolean("active").default(true),
+  showInMenu: boolean("show_in_menu").default(true),
+  featured: boolean("featured").default(false),
+  analytic: boolean("analytic").default(false),
+  metaTitle: varchar("meta_title", { length: 120 }),
+  metaDescription: varchar("meta_description", { length: 320 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("categories_store_idx").on(t.storeId),
+  index("categories_parent_idx").on(t.parentId),
 ]);
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
   store: one(stores, { fields: [categories.storeId], references: [stores.id] }),
+  parent: one(categories, { fields: [categories.parentId], references: [categories.id], relationName: "subcategories" }),
+  children: many(categories, { relationName: "subcategories" }),
   products: many(products),
 }));
 

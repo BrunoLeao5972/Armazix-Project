@@ -141,9 +141,35 @@ function extractStoreSlug(hostname: string): string | null {
 
 const IS_DEV = import.meta.env.DEV;
 
+const SECURITY_TXT = [
+  "Contact: mailto:security@armazix.com.br",
+  "Preferred-Languages: pt-BR, en",
+  "Canonical: https://armazix.com.br/.well-known/security.txt",
+  "Policy: https://armazix.com.br/privacy",
+  "",
+].join("\n");
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
+
+    if (!IS_DEV && url.protocol === "http:") {
+      url.protocol = "https:";
+      return addSecurityHeaders(
+        Response.redirect(url.toString(), 301),
+      );
+    }
+
+    if (url.pathname === "/.well-known/security.txt" || url.pathname === "/security.txt") {
+      return addSecurityHeaders(
+        new Response(SECURITY_TXT, {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "cache-control": "public, max-age=86400",
+          },
+        }),
+      );
+    }
 
     // Intercept API routes before TanStack Start
     if (url.pathname.startsWith("/api/")) {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { createFileRoute, Link, Outlet, useRouter, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   ShoppingBag,
   LayoutDashboard,
@@ -49,7 +49,7 @@ const NAV_ITEMS = [
   { label: "Produtos", icon: Package, href: "/admin/products" },
   { label: "Categorias", icon: Tags, href: "/admin/categories" },
   { label: "Clientes", icon: Users, href: "/admin/customers" },
-  { label: "Estoque", icon: Warehouse, href: "/admin/stock" },
+  { label: "Movimentação", icon: Warehouse, href: "/admin/stock" },
   { label: "Financeiro", icon: DollarSign, href: "/admin/financial" },
   { label: "PDV", icon: Monitor, href: "/admin/pdv" },
   { label: "Delivery", icon: Truck, href: "/admin/delivery" },
@@ -61,8 +61,7 @@ const NAV_ITEMS = [
 function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const router = useRouter();
-  const pathname = router.state.location.pathname;
+  const pathname = useRouterState({ select: s => s.location.pathname });
   const navigate = useNavigate();
 
   const [userName, setUserName] = useState("");

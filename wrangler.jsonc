@@ -4,6 +4,11 @@
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
+  "routes": [
+    { "pattern": "armazix.com.br/*", "zone_name": "armazix.com.br" },
+    { "pattern": "www.armazix.com.br/*", "zone_name": "armazix.com.br" },
+    { "pattern": "*.armazix.com.br/*", "zone_name": "armazix.com.br" }
+  ],
   "vars": {
     "NODE_ENV": "production"
   },

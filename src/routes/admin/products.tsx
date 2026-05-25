@@ -19,6 +19,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export const Route = createFileRoute("/admin/products")({
   component: ProductsPage,
@@ -50,6 +51,9 @@ interface Product {
 interface Category {
   id: string;
   name: string;
+  analytic: boolean;
+  position: number;
+  parentId: string | null;
 }
 
 interface VariationOption {
@@ -241,6 +245,7 @@ function ProductFormModal({
   const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"basic" | "price" | "stock" | "variations">("basic");
+  const [errors, setErrors] = useState<{ categoryId?: string; price?: string }>({});
   const [newCatName, setNewCatName] = useState("");
   const [creatingCat, setCreatingCat] = useState(false);
   const [showNewCat, setShowNewCat] = useState(false);
@@ -295,7 +300,17 @@ function ProductFormModal({
   const margin = calcMargin(form.price, form.costPrice);
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.price) return;
+    const newErrors: { categoryId?: string; price?: string } = {};
+    if (!form.categoryId) newErrors.categoryId = "Selecione uma categoria para o produto.";
+    if (!form.price) newErrors.price = "Informe o preço do produto.";
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      if (newErrors.categoryId) setTab("basic");
+      else if (newErrors.price) setTab("price");
+      return;
+    }
+    setErrors({});
+    if (!form.name.trim()) return;
     setSaving(true);
     try {
       const payload = {
@@ -386,18 +401,46 @@ function ProductFormModal({
               </Field>
 
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Categoria">
+                <Field label="Categoria *">
                   <div className="space-y-1.5">
                     <div className="flex gap-2">
                       <div className="relative flex-1">
                         <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                         <select
                           value={form.categoryId}
-                          onChange={e => set("categoryId", e.target.value)}
-                          className="w-full h-10 pl-8 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring transition"
+                          onChange={e => { set("categoryId", e.target.value); setErrors(v => ({ ...v, categoryId: undefined })); }}
+                          className={`w-full h-10 pl-8 pr-8 text-sm rounded-xl border bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring transition ${errors.categoryId ? "border-destructive ring-1 ring-destructive" : "border-input"}`}
                         >
                           <option value="">Sem categoria</option>
-                          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          {(() => {
+                            const roots = [...categories]
+                              .filter(c => !c.parentId)
+                              .sort((a, b) => a.position - b.position);
+                            const items: React.ReactNode[] = [];
+                            roots.forEach(root => {
+                              items.push(
+                                <option
+                                  key={root.id}
+                                  value={root.id}
+                                  disabled={root.analytic}
+                                  style={root.analytic ? { fontWeight: "bold", color: "#888" } : {}}
+                                >
+                                  {root.analytic ? `── ${root.name}` : root.name}
+                                </option>
+                              );
+                              const children = [...categories]
+                                .filter(c => c.parentId === root.id)
+                                .sort((a, b) => a.position - b.position);
+                              children.forEach(child => {
+                                items.push(
+                                  <option key={child.id} value={child.id}>
+                                    {`  ${child.name}`}
+                                  </option>
+                                );
+                              });
+                            });
+                            return items;
+                          })()}
                         </select>
                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                       </div>
@@ -410,6 +453,7 @@ function ProductFormModal({
                         <Plus className="w-4 h-4" />
                       </button>
                     </div>
+                    {errors.categoryId && <p className="text-xs text-destructive">{errors.categoryId}</p>}
                     {showNewCat && (
                       <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-150">
                         <Input
@@ -764,6 +808,7 @@ function ProductsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirmDialog();
 
   const showToast = useCallback((msg: string, type: "success" | "error") => {
     setToast({ msg, type });
@@ -790,7 +835,12 @@ function ProductsPage() {
   };
 
   const handleDelete = async (productId: string) => {
-    if (!confirm("Remover este produto?")) return;
+    const ok = await confirmDialog(
+      "Remover produto?",
+      "Esta ação não pode ser desfeita.",
+      "Remover",
+    );
+    if (!ok) return;
     try {
       const res = await api.post("/api/products/delete", { productId });
       if (res.ok) {
@@ -1036,6 +1086,7 @@ function ProductsPage() {
         editing={editing}
       />
 
+      {confirmDialogNode}
       {toast && <Toast msg={toast.msg} type={toast.type} />}
     </div>
   );

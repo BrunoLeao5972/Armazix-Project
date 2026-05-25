@@ -114,6 +114,7 @@ function CustomerFormModal({
   const [saving, setSaving] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [tab, setTab] = useState<"basic" | "contact" | "address" | "notes">("basic");
+  const [errors, setErrors] = useState<{ name?: string }>({});
 
   useEffect(() => {
     if (editing) {
@@ -140,7 +141,12 @@ function CustomerFormModal({
   };
 
   const handleSave = async () => {
-    if (!form.name.trim()) return;
+    if (!form.name.trim()) {
+      setErrors({ name: "O nome do cliente é obrigatório." });
+      setTab("basic");
+      return;
+    }
+    setErrors({});
     setSaving(true);
     try {
       const payload = {
@@ -208,8 +214,11 @@ function CustomerFormModal({
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                   <Input autoFocus placeholder={form.type === "pf" ? "Ex: Maria da Silva" : "Razão Social"}
-                    value={form.name} onChange={e => set("name", e.target.value)} className="h-10 rounded-xl pl-9" />
+                    value={form.name}
+                    onChange={e => { set("name", e.target.value); setErrors(v => ({ ...v, name: undefined })); }}
+                    className={`h-10 rounded-xl pl-9 ${errors.name ? "border-destructive ring-1 ring-destructive" : ""}`} />
                 </div>
+                {errors.name && <p className="text-xs text-destructive mt-1">{errors.name}</p>}
               </Field>
 
               <div className="grid grid-cols-2 gap-4">

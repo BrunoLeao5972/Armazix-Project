@@ -2,22 +2,22 @@
 # Last updated: 2026-05-14
 
 # Contact Information
-Contact: mailto:security@armazix.com
+Contact: mailto:security@armazix.com.br
 
 # Expiration Date
 Expires: 2027-05-14T00:00:00.000Z
 
 # Preferred Languages
-Preferred-Languages: pt, en
+Preferred-Languages: pt-BR, en
 
 # Canonical URL
-Canonical: https://armazix.brunoleao5972.workers.dev/.well-known/security.txt
+Canonical: https://armazix.com.br/.well-known/security.txt
 
 # Policy Page
-Policy: https://armazix.brunoleao5972.workers.dev/security-policy
+Policy: https://armazix.com.br/security-policy
 
 # Acknowledgments
-Acknowledgments: https://armazix.brunoleao5972.workers.dev/security/hall-of-fame
+Acknowledgments: https://armazix.com.br/security/hall-of-fame
 
 # Hiring
-Hiring: https://armazix.brunoleao5972.workers.dev/careers
+Hiring: https://armazix.com.br/careers

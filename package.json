@@ -16,7 +16,7 @@
     "db:studio": "drizzle-kit studio",
     "test": "vitest run",
     "test:security": "vitest run src/lib/__tests__/security.test.ts",
-    "deploy": "wrangler deploy",
+    "deploy": "npm run build && wrangler deploy",
     "deploy:dev": "wrangler dev"
   },
   "dependencies": {

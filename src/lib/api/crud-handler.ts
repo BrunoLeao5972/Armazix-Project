@@ -247,19 +247,36 @@ export async function createCategoryHandler(request: Request, auth?: AuthContext
     });
   }
 
-  const body = await request.json() as { name: string; emoji?: string; color?: string; imageUrl?: string };
+  const body = await request.json() as {
+    name: string; slug?: string; emoji?: string; color?: string; imageUrl?: string;
+    parentId?: string; position?: number; active?: boolean; showInMenu?: boolean;
+    featured?: boolean; analytic?: boolean; metaTitle?: string; metaDescription?: string;
+  };
   if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
+    const autoSlug = (body.slug || body.name)
+      .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
     const [cat] = await db.insert(categories).values({
       storeId,
       name: body.name,
+      slug: autoSlug,
       emoji: body.emoji || null,
       color: body.color || null,
       imageUrl: body.imageUrl || null,
+      parentId: body.parentId || null,
+      position: body.position ?? 0,
+      active: body.active ?? true,
+      showInMenu: body.showInMenu ?? true,
+      featured: body.featured ?? false,
+      analytic: body.analytic ?? false,
+      metaTitle: body.metaTitle || null,
+      metaDescription: body.metaDescription || null,
     }).returning();
 
     return new Response(JSON.stringify({ success: true, category: cat }), { status: 201, headers: { "content-type": "application/json" } });
@@ -279,7 +296,9 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
   const db = createDb(dbUrl);
 
   try {
-    const storeCategories = await db.select().from(categories).where(eq(categories.storeId, storeId));
+    const storeCategories = await db.select().from(categories)
+      .where(eq(categories.storeId, storeId))
+      .orderBy(categories.position, categories.createdAt);
     // Count products per category
     const catsWithCount = await Promise.all(storeCategories.map(async (cat) => {
       const count = await db.select({ count: sql<number>`count(*)` }).from(products).where(and(eq(products.storeId, storeId), eq(products.categoryId, cat.id)));
@@ -289,6 +308,62 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
   } catch (error) {
     console.error("List categories error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── Update Category ──────────────────────────────────────────────
+export async function updateCategoryHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const body = await request.json() as {
+    categoryId: string; name?: string; slug?: string; emoji?: string; color?: string;
+    imageUrl?: string; parentId?: string | null; position?: number; active?: boolean;
+    showInMenu?: boolean; featured?: boolean; analytic?: boolean; metaTitle?: string; metaDescription?: string;
+  };
+  if (!body.categoryId) return new Response(JSON.stringify({ error: "categoryId required" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = await createTenantDb(dbUrl, storeId);
+
+  try {
+    const existing = await db.query.categories.findFirst({
+      where: and(eq(categories.id, body.categoryId), eq(categories.storeId, storeId))
+    });
+    if (!existing) return new Response(JSON.stringify({ error: "Category not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
+
+    const patch: Record<string, unknown> = {};
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.slug !== undefined) {
+      patch.slug = body.slug.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    } else if (body.name !== undefined) {
+      patch.slug = body.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    }
+    if (body.emoji !== undefined) patch.emoji = body.emoji || null;
+    if (body.color !== undefined) patch.color = body.color || null;
+    if (body.imageUrl !== undefined) patch.imageUrl = body.imageUrl || null;
+    if (body.parentId !== undefined) patch.parentId = body.parentId || null;
+    if (body.position !== undefined) patch.position = body.position;
+    if (body.active !== undefined) patch.active = body.active;
+    if (body.showInMenu !== undefined) patch.showInMenu = body.showInMenu;
+    if (body.featured !== undefined) patch.featured = body.featured;
+    if (body.analytic !== undefined) patch.analytic = body.analytic;
+    if (body.metaTitle !== undefined) patch.metaTitle = body.metaTitle || null;
+    if (body.metaDescription !== undefined) patch.metaDescription = body.metaDescription || null;
+
+    const [updated] = await db.update(categories).set(patch).where(and(eq(categories.id, body.categoryId), eq(categories.storeId, storeId))).returning();
+    return new Response(JSON.stringify({ success: true, category: updated }), { status: 200, headers: { "content-type": "application/json" } });
+  } catch (error) {
+    console.error("Update category error:", error);
+    return new Response(JSON.stringify({ error: "Failed to update category" }), { status: 500, headers: { "content-type": "application/json" } });
   }
 }
 
@@ -321,6 +396,11 @@ export async function deleteCategoryHandler(request: Request, auth?: AuthContext
     if (!existingCategory) {
       return new Response(JSON.stringify({ error: "Category not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
     }
+
+    // Limpar parentId das filhas antes de deletar para evitar órfãos
+    await db.update(categories)
+      .set({ parentId: null })
+      .where(and(eq(categories.parentId, body.categoryId), eq(categories.storeId, storeId)));
 
     // IDOR Fix: Include storeId in WHERE clause
     await db.delete(categories).where(and(eq(categories.id, body.categoryId), eq(categories.storeId, storeId)));

@@ -205,19 +205,27 @@ export async function createPixPaymentHandler(request: Request, auth?: AuthConte
     },
   };
 
+  const idempotencyKey = `${storeId}-${body.planId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
   const mpRes = await fetch(`${MP_API}/v1/payments`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
+      "X-Idempotency-Key": idempotencyKey,
     },
     body: JSON.stringify(paymentBody),
   });
 
   if (!mpRes.ok) {
-    const err = await mpRes.text();
-    console.error("MP PIX payment error:", err);
-    return json({ error: "Erro ao criar cobrança PIX no Mercado Pago" }, 502);
+    const errText = await mpRes.text();
+    console.error("MP PIX payment error:", mpRes.status, errText);
+    let detail = "";
+    try {
+      const parsed = JSON.parse(errText) as { message?: string; error?: string; cause?: Array<{ description?: string }> };
+      detail = parsed.message || parsed.error || parsed.cause?.[0]?.description || "";
+    } catch { detail = errText.slice(0, 200); }
+    return json({ error: `Erro ao criar cobrança PIX no Mercado Pago${detail ? `: ${detail}` : ""}` }, 502);
   }
 
   const payment = await mpRes.json() as {
