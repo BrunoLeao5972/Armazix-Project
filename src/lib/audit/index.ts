@@ -5,10 +5,18 @@ const { auditLogs } = schema;
 
 export interface AuditLogEntry {
   userId?: string;
+  /** Snapshot do nome do usuário no momento da ação */
+  nomeUsuario?: string;
   storeId?: string;
   action: string;
+  /** Módulo de origem: FINANCEIRO_RECEBER, FINANCEIRO_PAGAR, VENDAS_PDV… */
+  modulo?: string;
   resourceType?: string;
   resourceId?: string;
+  /** Estado do registro ANTES da alteração (null em criações) */
+  dadosAnteriores?: Record<string, unknown>;
+  /** Estado do registro DEPOIS da alteração (null em exclusões) */
+  dadosNovos?: Record<string, unknown>;
   details?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
@@ -17,15 +25,17 @@ export interface AuditLogEntry {
 }
 
 /**
- * Log an audit event for security and compliance tracking
- * This is fire-and-forget to not block the main request
+ * Registra um evento de auditoria de forma assíncrona (fire-and-forget).
+ * A gravação do log NUNCA bloqueia a resposta ao usuário.
+ *
+ * Regra de imutabilidade: a tabela audit_logs possui um trigger PostgreSQL
+ * (ver migrations/audit_immutability.sql) que lança exceção em qualquer
+ * tentativa de UPDATE ou DELETE — os logs são append-only por design.
  */
 export function logAudit(
   entry: AuditLogEntry,
   request?: Request
 ): void {
-  // Fire-and-forget logging - don't block the request
-  // In production, consider using a queue for high-volume logging
   void (async () => {
     try {
       const dbUrl = process.env.DATABASE_URL;
@@ -36,7 +46,6 @@ export function logAudit(
 
       const db = createDb(dbUrl);
 
-      // Extract IP and User Agent from request if provided
       let ipAddress = entry.ipAddress;
       let userAgent = entry.userAgent;
 
@@ -48,19 +57,22 @@ export function logAudit(
       }
 
       await db.insert(auditLogs).values({
-        userId: entry.userId,
-        storeId: entry.storeId,
-        action: entry.action,
-        resourceType: entry.resourceType,
-        resourceId: entry.resourceId,
-        details: entry.details,
-        ipAddress: ipAddress,
-        userAgent: userAgent,
-        status: entry.status || "success",
-        errorMessage: entry.errorMessage,
+        userId:           entry.userId,
+        nomeUsuario:      entry.nomeUsuario,
+        storeId:          entry.storeId,
+        action:           entry.action,
+        modulo:           entry.modulo,
+        resourceType:     entry.resourceType,
+        resourceId:       entry.resourceId,
+        dadosAnteriores:  entry.dadosAnteriores,
+        dadosNovos:       entry.dadosNovos,
+        details:          entry.details,
+        ipAddress,
+        userAgent,
+        status:           entry.status || "success",
+        errorMessage:     entry.errorMessage,
       });
     } catch (error) {
-      // Never throw from audit logging - just log the error
       console.error("Audit logging failed:", error);
     }
   })();
@@ -144,6 +156,34 @@ export const AuditActions = {
   WEBHOOK_RECEIVED: "WEBHOOK_RECEIVED",
   WEBHOOK_PROCESSED: "WEBHOOK_PROCESSED",
   WEBHOOK_FAILED: "WEBHOOK_FAILED",
+
+  // ── Financeiro — Contas a Receber ──────────────────────────────
+  RECEBER_CRIAR:     "RECEBER_CRIAR",
+  RECEBER_ATUALIZAR: "RECEBER_ATUALIZAR",
+  RECEBER_EXCLUIR:   "RECEBER_EXCLUIR",
+  RECEBER_EFETIVAR:  "RECEBER_EFETIVAR",   // Dar baixa / receber
+  RECEBER_ESTORNAR:  "RECEBER_ESTORNAR",   // Desfazer recebimento
+
+  // ── Financeiro — Contas a Pagar ────────────────────────────────
+  PAGAR_CRIAR:       "PAGAR_CRIAR",
+  PAGAR_ATUALIZAR:   "PAGAR_ATUALIZAR",
+  PAGAR_EXCLUIR:     "PAGAR_EXCLUIR",
+  PAGAR_EFETIVAR:    "PAGAR_EFETIVAR",     // Dar baixa / pagar
+  PAGAR_ESTORNAR:    "PAGAR_ESTORNAR",     // Desfazer pagamento
+
+  // ── Financeiro — Caixa / PDV ───────────────────────────────────
+  CAIXA_ABRIR:       "CAIXA_ABRIR",
+  CAIXA_FECHAR:      "CAIXA_FECHAR",
+  CAIXA_SANGRIA:     "CAIXA_SANGRIA",
+  CAIXA_SUPRIMENTO:  "CAIXA_SUPRIMENTO",
+
+  // ── Estoque ────────────────────────────────────────────────────
+  ESTOQUE_ENTRADA:   "ESTOQUE_ENTRADA",
+  ESTOQUE_SAIDA:     "ESTOQUE_SAIDA",
+  ESTOQUE_AJUSTE:    "ESTOQUE_AJUSTE",
+
+  // ── Configurações ──────────────────────────────────────────────
+  CONFIG_ATUALIZAR:  "CONFIG_ATUALIZAR",
 } as const;
 
 // Resource types for consistency
@@ -160,6 +200,23 @@ export const ResourceTypes = {
   SESSION: "session",
   WEBHOOK: "webhook",
   TENANT: "tenant",
+  // ── Financeiro ─────────────────────────────────────────────────
+  CONTA_RECEBER: "conta_receber",
+  CONTA_PAGAR:   "conta_pagar",
+  LANCAMENTO:    "lancamento",
+  CAIXA:         "caixa",
+} as const;
+
+// Módulos para segmentação dos logs
+export const AuditModulos = {
+  FINANCEIRO_RECEBER:  "FINANCEIRO_RECEBER",
+  FINANCEIRO_PAGAR:    "FINANCEIRO_PAGAR",
+  FINANCEIRO_FLUXO:    "FINANCEIRO_FLUXO",
+  VENDAS_PDV:          "VENDAS_PDV",
+  ESTOQUE:             "ESTOQUE",
+  AUTENTICACAO:        "AUTENTICACAO",
+  CONFIGURACOES:       "CONFIGURACOES",
+  PRODUTOS:            "PRODUTOS",
 } as const;
 
 /**
@@ -202,6 +259,62 @@ export function logSecurityEvent(options: {
       },
       status: "denied",
       errorMessage: `${action}: jwt=${jwtStoreId ?? "none"} requested=${requestedStoreId ?? "none"}`,
+    },
+    request
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// logFinanceiro — helper tipado para eventos do módulo financeiro
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Registra uma ação financeira com snapshot before/after para trilha de auditoria.
+ *
+ * Exemplo de uso — atualização de valor em Contas a Pagar:
+ * ```ts
+ * logFinanceiro({
+ *   action:           AuditActions.PAGAR_ATUALIZAR,
+ *   modulo:           AuditModulos.FINANCEIRO_PAGAR,
+ *   resourceType:     ResourceTypes.CONTA_PAGAR,
+ *   resourceId:       conta.id,
+ *   userId:           auth.userId,
+ *   nomeUsuario:      auth.userName,
+ *   storeId:          auth.storeId,
+ *   dadosAnteriores:  contaOriginal,   // estado antes do PUT
+ *   dadosNovos:       contaAtualizada, // estado depois do PUT
+ * }, request);
+ * ```
+ */
+export function logFinanceiro(
+  opts: {
+    action: string;
+    modulo: string;
+    resourceType: string;
+    resourceId?: string;
+    userId?: string;
+    nomeUsuario?: string;
+    storeId?: string;
+    dadosAnteriores?: Record<string, unknown>;
+    dadosNovos?: Record<string, unknown>;
+    status?: "success" | "failure" | "denied";
+    errorMessage?: string;
+  },
+  request?: Request
+): void {
+  logAudit(
+    {
+      userId:          opts.userId,
+      nomeUsuario:     opts.nomeUsuario,
+      storeId:         opts.storeId,
+      action:          opts.action,
+      modulo:          opts.modulo,
+      resourceType:    opts.resourceType,
+      resourceId:      opts.resourceId,
+      dadosAnteriores: opts.dadosAnteriores,
+      dadosNovos:      opts.dadosNovos,
+      status:          opts.status ?? "success",
+      errorMessage:    opts.errorMessage,
     },
     request
   );

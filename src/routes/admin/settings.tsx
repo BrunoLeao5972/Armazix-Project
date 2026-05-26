@@ -32,7 +32,13 @@ import {
   RefreshCw,
   AlertCircle,
   QrCode,
+  ShieldAlert,
+  Search,
+  ChevronDown,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -377,7 +383,7 @@ function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4 sm:grid-cols-7 rounded-xl">
+        <TabsList className="grid w-full grid-cols-4 sm:grid-cols-8 rounded-xl">
           <TabsTrigger value="geral" className="rounded-lg">Geral</TabsTrigger>
           <TabsTrigger value="horarios" className="rounded-lg">Horários</TabsTrigger>
           <TabsTrigger value="personalizacao" className="rounded-lg">Aparência</TabsTrigger>
@@ -385,6 +391,7 @@ function SettingsPage() {
           <TabsTrigger value="senha" className="rounded-lg">Senha</TabsTrigger>
           <TabsTrigger value="perfil" className="rounded-lg">Perfil</TabsTrigger>
           <TabsTrigger value="planos" className="rounded-lg">Planos</TabsTrigger>
+          <TabsTrigger value="auditoria" className="rounded-lg">Auditoria</TabsTrigger>
         </TabsList>
 
         <TabsContent value="geral" className="mt-6 space-y-6">
@@ -956,6 +963,10 @@ function SettingsPage() {
 
         <TabsContent value="planos" className="mt-6">
           <PlansSection />
+        </TabsContent>
+
+        <TabsContent value="auditoria" className="mt-6">
+          <AuditoriaSection />
         </TabsContent>
       </Tabs>
 
@@ -1837,4 +1848,222 @@ function PixModal({ data, onClose }: { data: PixPaymentData; onClose: () => void
   );
 }
 
+// ─── Auditoria Section ────────────────────────────────────────────
+type ModuloAudit = "FINANCEIRO_RECEBER" | "FINANCEIRO_PAGAR" | "FINANCEIRO_FLUXO" | "VENDAS_PDV" | "ESTOQUE" | "AUTENTICACAO" | "CONFIGURACOES";
+type StatusAudit = "success" | "failure" | "denied";
+interface LogAudit {
+  id: string; data_hora: string; nome_usuario: string; acao: string;
+  modulo: ModuloAudit; recurso_id: string; recurso_tipo: string;
+  status: StatusAudit; ip_origem: string; dispositivo: string;
+  dados_anteriores: Record<string, unknown> | null;
+  dados_novos: Record<string, unknown> | null;
+}
 
+const MOCK_AUDIT: LogAudit[] = [
+  { id:"al1",  data_hora:"25/05/2026 14:32", nome_usuario:"Admin",        acao:"RECEBER_EFETIVAR",  modulo:"FINANCEIRO_RECEBER", recurso_id:"r1",       recurso_tipo:"conta_receber", status:"success", ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{status:"pendente",valorRecebido:0},    dados_novos:{status:"pago",valorRecebido:450} },
+  { id:"al2",  data_hora:"25/05/2026 14:15", nome_usuario:"Admin",        acao:"PAGAR_CRIAR",       modulo:"FINANCEIRO_PAGAR",   recurso_id:"p8",       recurso_tipo:"conta_pagar",   status:"success", ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:null,                                   dados_novos:{fornecedor:"Contabilidade Souza",valor:600} },
+  { id:"al3",  data_hora:"25/05/2026 13:55", nome_usuario:"Carlos Silva", acao:"LOGIN_SUCESSO",     modulo:"AUTENTICACAO",       recurso_id:"u2",       recurso_tipo:"user",          status:"success", ip_origem:"201.17.44.8",  dispositivo:"Safari / macOS",   dados_anteriores:null,                                   dados_novos:null },
+  { id:"al4",  data_hora:"25/05/2026 11:02", nome_usuario:"Admin",        acao:"PAGAR_EXCLUIR",     modulo:"FINANCEIRO_PAGAR",   recurso_id:"p3",       recurso_tipo:"conta_pagar",   status:"denied",  ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{status:"vencido",origem:"Manual"},     dados_novos:null },
+  { id:"al5",  data_hora:"24/05/2026 10:15", nome_usuario:"Admin",        acao:"ESTOQUE_ENTRADA",   modulo:"ESTOQUE",             recurso_id:"prod-12",  recurso_tipo:"product",       status:"success", ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{estoque:8},                            dados_novos:{estoque:50} },
+  { id:"al6",  data_hora:"24/05/2026 09:00", nome_usuario:"Carlos Silva", acao:"RECEBER_ATUALIZAR", modulo:"FINANCEIRO_RECEBER", recurso_id:"r2",       recurso_tipo:"conta_receber", status:"success", ip_origem:"201.17.44.8",  dispositivo:"Chrome / Windows", dados_anteriores:{obs:""},                               dados_novos:{obs:"Desconto fidelidade"} },
+  { id:"al7",  data_hora:"23/05/2026 16:45", nome_usuario:"Sistema",      acao:"PAGAR_EFETIVAR",    modulo:"FINANCEIRO_PAGAR",   recurso_id:"p6",       recurso_tipo:"conta_pagar",   status:"success", ip_origem:"system",       dispositivo:"Sistema Armazix",  dados_anteriores:{status:"pendente",valorPago:0},        dados_novos:{status:"pago",valorPago:8500} },
+  { id:"al8",  data_hora:"23/05/2026 08:00", nome_usuario:"Admin",        acao:"LOGIN_FALHA",       modulo:"AUTENTICACAO",       recurso_id:"u-unknown",recurso_tipo:"user",          status:"failure", ip_origem:"45.83.10.234", dispositivo:"Firefox / Linux",  dados_anteriores:null,                                   dados_novos:null },
+  { id:"al9",  data_hora:"22/05/2026 17:30", nome_usuario:"Admin",        acao:"CONFIG_ATUALIZAR",  modulo:"CONFIGURACOES",      recurso_id:"store-1",  recurso_tipo:"store",         status:"success", ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{deliveryFee:"5.00"},                   dados_novos:{deliveryFee:"8.00"} },
+  { id:"al10", data_hora:"22/05/2026 14:00", nome_usuario:"Admin",        acao:"RECEBER_EXCLUIR",   modulo:"FINANCEIRO_RECEBER", recurso_id:"r9-del",   recurso_tipo:"conta_receber", status:"denied",  ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{status:"pago",origem:"Venda"},         dados_novos:null },
+];
+
+const MODULOS_AUDIT: ModuloAudit[] = ["FINANCEIRO_RECEBER","FINANCEIRO_PAGAR","FINANCEIRO_FLUXO","VENDAS_PDV","ESTOQUE","AUTENTICACAO","CONFIGURACOES"];
+const STATUS_AUDIT_LIST: StatusAudit[] = ["success","failure","denied"];
+
+function StatusAuditBadge({ status }: { status: StatusAudit }) {
+  const map: Record<StatusAudit, { label: string; cls: string }> = {
+    success: { label: "Sucesso", cls: "bg-emerald-50 text-emerald-700" },
+    failure: { label: "Falha",   cls: "bg-rose-50 text-rose-700"      },
+    denied:  { label: "Negado",  cls: "bg-amber-50 text-amber-700"    },
+  };
+  const { label, cls } = map[status];
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${cls}`}>{label}</span>;
+}
+
+function ModuloBadge({ modulo }: { modulo: ModuloAudit }) {
+  const map: Record<ModuloAudit, string> = {
+    FINANCEIRO_RECEBER: "bg-emerald-500/10 text-emerald-700",
+    FINANCEIRO_PAGAR:   "bg-indigo-500/10 text-indigo-700",
+    FINANCEIRO_FLUXO:   "bg-blue-500/10 text-blue-700",
+    VENDAS_PDV:         "bg-violet-500/10 text-violet-700",
+    ESTOQUE:            "bg-amber-500/10 text-amber-700",
+    AUTENTICACAO:       "bg-slate-200 text-slate-700",
+    CONFIGURACOES:      "bg-pink-500/10 text-pink-700",
+  };
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${map[modulo]}`}>{modulo.replace(/_/g, " ")}</span>;
+}
+
+function AuditoriaSection() {
+  const [filterModulo, setFilterModulo] = useState<ModuloAudit | "TODOS">("TODOS");
+  const [filterStatus, setFilterStatus] = useState<StatusAudit | "todos">("todos");
+  const [search,       setSearch]       = useState("");
+  const [expanded,     setExpanded]     = useState<string | null>(null);
+  const [dataInicio,   setDataInicio]   = useState("");
+  const [dataFim,      setDataFim]      = useState("");
+
+  const filtered = useMemo(() => MOCK_AUDIT.filter(l => {
+    if (filterModulo !== "TODOS" && l.modulo !== filterModulo) return false;
+    if (filterStatus !== "todos" && l.status !== filterStatus) return false;
+    if (search && !l.nome_usuario.toLowerCase().includes(search.toLowerCase())
+      && !l.acao.toLowerCase().includes(search.toLowerCase())
+      && !l.recurso_id.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }), [filterModulo, filterStatus, search]);
+
+  const kpis = useMemo(() => ({
+    total:   MOCK_AUDIT.length,
+    success: MOCK_AUDIT.filter(l => l.status === "success").length,
+    failure: MOCK_AUDIT.filter(l => l.status === "failure").length,
+    denied:  MOCK_AUDIT.filter(l => l.status === "denied").length,
+  }), []);
+
+  return (
+    <div className="space-y-6">
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Total de Eventos", value: kpis.total,   icon: CheckCircle2,  bg: "bg-slate-100",  fg: "text-slate-600"   },
+          { label: "Bem-sucedidos",    value: kpis.success, icon: Check,         bg: "bg-emerald-50", fg: "text-emerald-600" },
+          { label: "Com Falha",        value: kpis.failure, icon: AlertTriangle, bg: "bg-rose-50",    fg: "text-rose-600"    },
+          { label: "Acesso Negado",    value: kpis.denied,  icon: ShieldAlert,   bg: "bg-amber-50",   fg: "text-amber-600"   },
+        ].map(k => (
+          <Card key={k.label} className="rounded-2xl border-border/50">
+            <CardContent className="p-3">
+              <div className={`w-8 h-8 rounded-xl ${k.bg} grid place-items-center mb-2`}>
+                <k.icon className={`w-4 h-4 ${k.fg}`} />
+              </div>
+              <div className="text-xl font-bold tracking-tight">{k.value}</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">{k.label}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Filtros */}
+      <Card className="rounded-2xl border-border/50">
+        <CardContent className="p-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            <div className="flex flex-col gap-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Módulo</p>
+              <div className="relative">
+                <select value={filterModulo} onChange={e => setFilterModulo(e.target.value as ModuloAudit | "TODOS")}
+                  className="w-full h-10 px-3 pr-8 text-sm rounded-xl bg-secondary/40 border border-input appearance-none focus:outline-none focus:ring-2 focus:ring-ring/30 cursor-pointer">
+                  <option value="TODOS">Todos os Módulos</option>
+                  {MODULOS_AUDIT.map(m => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</p>
+              <div className="relative">
+                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as StatusAudit | "todos")}
+                  className="w-full h-10 px-3 pr-8 text-sm rounded-xl bg-secondary/40 border border-input appearance-none focus:outline-none focus:ring-2 focus:ring-ring/30 cursor-pointer">
+                  <option value="todos">Todos</option>
+                  {STATUS_AUDIT_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Período</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)}
+                  className="h-10 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+                <Input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)}
+                  className="h-10 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+              </div>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Usuário, ação ou recurso..."
+                className="pl-10 h-10 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Aviso imutabilidade */}
+      <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+        <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+        <p className="text-xs text-amber-800 leading-relaxed">
+          <span className="font-bold">Logs de auditoria são imutáveis.</span> Esta tabela é append-only — nenhum registro pode ser editado ou excluído.
+          Um trigger PostgreSQL (<code className="font-mono bg-amber-100 px-1 rounded">trg_audit_logs_imutavel</code>) bloqueia
+          qualquer tentativa de UPDATE ou DELETE diretamente no banco.
+        </p>
+      </div>
+
+      {/* Tabela */}
+      <div>
+        <p className="text-sm text-muted-foreground px-1 mb-3">{filtered.length} de {MOCK_AUDIT.length} eventos</p>
+        <Card className="rounded-2xl border-border/50 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/40 border-b border-border/40">
+                <tr>
+                  {["Data/Hora","Usuário","Ação","Módulo","Recurso","Status","IP","Dispositivo",""].map(h => (
+                    <th key={h} className="text-left px-3 py-2.5 text-[11px] font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/30">
+                {filtered.length === 0
+                  ? <tr><td colSpan={9} className="py-10 text-center text-sm text-muted-foreground">Nenhum evento encontrado</td></tr>
+                  : filtered.map(l => (
+                    <>
+                      <tr key={l.id} onClick={() => setExpanded(expanded === l.id ? null : l.id)}
+                        className={`transition-colors cursor-pointer ${
+                          l.status === "denied"  ? "bg-amber-50/40 hover:bg-amber-50" :
+                          l.status === "failure" ? "bg-rose-50/40 hover:bg-rose-50"   :
+                          "hover:bg-secondary/20"
+                        }`}>
+                        <td className="px-3 py-2.5 text-xs font-mono text-muted-foreground whitespace-nowrap">{l.data_hora}</td>
+                        <td className="px-3 py-2.5 font-medium whitespace-nowrap">{l.nome_usuario}</td>
+                        <td className="px-3 py-2.5 text-xs font-mono text-slate-600 whitespace-nowrap">{l.acao}</td>
+                        <td className="px-3 py-2.5"><ModuloBadge modulo={l.modulo} /></td>
+                        <td className="px-3 py-2.5 text-xs font-mono text-muted-foreground whitespace-nowrap">{l.recurso_id}</td>
+                        <td className="px-3 py-2.5"><StatusAuditBadge status={l.status} /></td>
+                        <td className="px-3 py-2.5 text-xs font-mono text-muted-foreground whitespace-nowrap">{l.ip_origem}</td>
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{l.dispositivo}</td>
+                        <td className="px-3 py-2.5">
+                          <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${expanded === l.id ? "rotate-180" : ""}`} />
+                        </td>
+                      </tr>
+                      {expanded === l.id && (
+                        <tr key={`${l.id}-d`} className="bg-secondary/30">
+                          <td colSpan={9} className="px-4 py-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Dados Anteriores</p>
+                                {l.dados_anteriores
+                                  ? <pre className="text-[11px] font-mono bg-slate-100 text-slate-700 p-2.5 rounded-xl overflow-auto max-h-32">{JSON.stringify(l.dados_anteriores, null, 2)}</pre>
+                                  : <span className="text-xs text-muted-foreground italic">—</span>}
+                              </div>
+                              <div>
+                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Dados Novos</p>
+                                {l.dados_novos
+                                  ? <pre className="text-[11px] font-mono bg-slate-100 text-slate-700 p-2.5 rounded-xl overflow-auto max-h-32">{JSON.stringify(l.dados_novos, null, 2)}</pre>
+                                  : <span className="text-xs text-muted-foreground italic">—</span>}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}

@@ -436,23 +436,35 @@ export const verificationCodesRelations = relations(verificationCodes, ({ one })
 }));
 
 // ─── AUDIT LOGS (Security & Compliance) ─────────────────────────
+// IMUTABILIDADE: Esta tabela só aceita INSERT.
+// Um trigger no banco (ver migrations/audit_immutability.sql) bloqueia
+// qualquer UPDATE ou DELETE diretamente no banco de dados.
 export const auditLogs = pgTable("audit_logs", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  // Snapshot do nome no momento da ação — preservado mesmo se usuário for excluído
+  nomeUsuario: varchar("nome_usuario", { length: 120 }),
   storeId: uuid("store_id").references(() => stores.id, { onDelete: "set null" }),
-  action: varchar("action", { length: 50 }).notNull(), // e.g., "LOGIN", "CREATE_PRODUCT", "UPDATE_ORDER"
-  resourceType: varchar("resource_type", { length: 50 }), // e.g., "product", "order", "user"
-  resourceId: varchar("resource_id", { length: 100 }), // UUID of the affected resource
-  details: jsonb("details").$type<Record<string, unknown>>(), // Additional context
-  ipAddress: varchar("ip_address", { length: 45 }), // Client IP
-  userAgent: text("user_agent"), // Client user agent
-  status: varchar("status", { length: 20 }).default("success"), // "success" | "failure" | "denied"
-  errorMessage: text("error_message"), // If status is failure
+  action: varchar("action", { length: 80 }).notNull(),
+  // Módulo de origem: FINANCEIRO_RECEBER, FINANCEIRO_PAGAR, VENDAS_PDV, etc.
+  modulo: varchar("modulo", { length: 60 }),
+  resourceType: varchar("resource_type", { length: 50 }),
+  resourceId: varchar("resource_id", { length: 100 }),
+  // Estado do registro ANTES da alteração (null em criações)
+  dadosAnteriores: jsonb("dados_anteriores").$type<Record<string, unknown>>(),
+  // Estado do registro DEPOIS da alteração (null em exclusões)
+  dadosNovos: jsonb("dados_novos").$type<Record<string, unknown>>(),
+  details: jsonb("details").$type<Record<string, unknown>>(),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  status: varchar("status", { length: 20 }).default("success"),
+  errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("audit_logs_user_idx").on(t.userId),
   index("audit_logs_store_idx").on(t.storeId),
   index("audit_logs_action_idx").on(t.action),
+  index("audit_logs_modulo_idx").on(t.modulo),
   index("audit_logs_created_at_idx").on(t.createdAt),
   index("audit_logs_resource_idx").on(t.resourceType, t.resourceId),
 ]);

@@ -31,9 +31,23 @@ export const Route = createFileRoute("/admin/orders")({
   }),
 });
 
+interface OrderCustomer {
+  id: string;
+  name: string | null;
+  email?: string | null;
+  phone?: string | null;
+}
+interface OrderItem {
+  id: string;
+  productName: string;
+  quantity: number;
+  unitPrice: string;
+  total: string;
+}
 interface Order {
   id: string;
   orderId: string;
+  number: number;
   customer: string;
   items: string[];
   total: string;
@@ -78,7 +92,35 @@ function OrdersPage() {
     try {
       const res = await fetch(`/api/orders/list?storeId=${storeId}`);
       const data = await res.json();
-      if (res.ok) setOrders(data.orders || []);
+      if (res.ok) {
+        const normalized: Order[] = (data.orders || []).map((o: {
+          id: string;
+          number: number;
+          status: string;
+          type: string;
+          paymentMethod: string | null;
+          total: string;
+          date?: string;
+          customer: OrderCustomer | null;
+          items: OrderItem[];
+          addressSnapshot: { street?: string; number?: string; neighborhood?: string } | null;
+        }) => ({
+          id: `#${o.number}`,
+          orderId: o.id,
+          number: o.number,
+          customer: o.customer?.name || "Cliente não identificado",
+          items: o.items.map(i => `${i.quantity}x ${i.productName}`),
+          total: `R$ ${parseFloat(o.total).toFixed(2).replace(".", ",")}`,
+          payment: o.paymentMethod || "",
+          status: o.status,
+          time: o.date || "",
+          address: o.addressSnapshot
+            ? `${o.addressSnapshot.street || ""}, ${o.addressSnapshot.number || ""} — ${o.addressSnapshot.neighborhood || ""}`
+            : o.type === "pickup" ? "Retirada no local" : "",
+          type: o.type,
+        }));
+        setOrders(normalized);
+      }
     } catch {} finally { setLoading(false); }
   };
 
