@@ -1900,7 +1900,6 @@ function ModuloBadge({ modulo }: { modulo: ModuloAudit }) {
 
 function AuditoriaSection() {
   const [filterModulo, setFilterModulo] = useState<ModuloAudit | "TODOS">("TODOS");
-  const [filterStatus, setFilterStatus] = useState<StatusAudit | "todos">("todos");
   const [search,       setSearch]       = useState("");
   const [expanded,     setExpanded]     = useState<string | null>(null);
   const [dataInicio,   setDataInicio]   = useState("");
@@ -1908,83 +1907,55 @@ function AuditoriaSection() {
 
   const filtered = useMemo(() => MOCK_AUDIT.filter(l => {
     if (filterModulo !== "TODOS" && l.modulo !== filterModulo) return false;
-    if (filterStatus !== "todos" && l.status !== filterStatus) return false;
     if (search && !l.nome_usuario.toLowerCase().includes(search.toLowerCase())
-      && !l.acao.toLowerCase().includes(search.toLowerCase())
-      && !l.recurso_id.toLowerCase().includes(search.toLowerCase())) return false;
+      && !l.acao.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [filterModulo, filterStatus, search]);
+  }), [filterModulo, search]);
 
   const kpis = useMemo(() => ({
-    total:   MOCK_AUDIT.length,
-    success: MOCK_AUDIT.filter(l => l.status === "success").length,
-    failure: MOCK_AUDIT.filter(l => l.status === "failure").length,
-    denied:  MOCK_AUDIT.filter(l => l.status === "denied").length,
+    total: MOCK_AUDIT.length,
   }), []);
 
   return (
     <div className="space-y-6">
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: "Total de Eventos", value: kpis.total,   icon: CheckCircle2,  bg: "bg-slate-100",  fg: "text-slate-600"   },
-          { label: "Bem-sucedidos",    value: kpis.success, icon: Check,         bg: "bg-emerald-50", fg: "text-emerald-600" },
-          { label: "Com Falha",        value: kpis.failure, icon: AlertTriangle, bg: "bg-rose-50",    fg: "text-rose-600"    },
-          { label: "Acesso Negado",    value: kpis.denied,  icon: ShieldAlert,   bg: "bg-amber-50",   fg: "text-amber-600"   },
-        ].map(k => (
-          <Card key={k.label} className="rounded-2xl border-border/50">
-            <CardContent className="p-3">
-              <div className={`w-8 h-8 rounded-xl ${k.bg} grid place-items-center mb-2`}>
-                <k.icon className={`w-4 h-4 ${k.fg}`} />
-              </div>
-              <div className="text-xl font-bold tracking-tight">{k.value}</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">{k.label}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
       {/* Filtros */}
       <Card className="rounded-2xl border-border/50">
-        <CardContent className="p-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-            <div className="flex flex-col gap-1.5">
+        <CardContent className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+            {/* Módulo */}
+            <div className="flex flex-col gap-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Módulo</p>
               <div className="relative">
                 <select value={filterModulo} onChange={e => setFilterModulo(e.target.value as ModuloAudit | "TODOS")}
-                  className="w-full h-10 px-3 pr-8 text-sm rounded-xl bg-secondary/40 border border-input appearance-none focus:outline-none focus:ring-2 focus:ring-ring/30 cursor-pointer">
+                  className="w-full h-11 px-3 pr-8 text-sm rounded-xl bg-secondary/40 border border-input appearance-none focus:outline-none focus:ring-2 focus:ring-ring/30 cursor-pointer">
                   <option value="TODOS">Todos os Módulos</option>
                   {MODULOS_AUDIT.map(m => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
                 </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</p>
-              <div className="relative">
-                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as StatusAudit | "todos")}
-                  className="w-full h-10 px-3 pr-8 text-sm rounded-xl bg-secondary/40 border border-input appearance-none focus:outline-none focus:ring-2 focus:ring-ring/30 cursor-pointer">
-                  <option value="todos">Todos</option>
-                  {STATUS_AUDIT_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
+
+            {/* Período */}
+            <div className="flex flex-col gap-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Período</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <Input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)}
-                  className="h-10 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+                  className="h-11 w-full rounded-xl text-sm bg-secondary/40 border-input" />
                 <Input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)}
-                  className="h-10 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+                  className="h-11 w-full rounded-xl text-sm bg-secondary/40 border-input" />
               </div>
             </div>
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-              <Input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Usuário, ação ou recurso..."
-                className="pl-10 h-10 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+
+            {/* Busca */}
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Buscar</p>
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <Input value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Usuário ou ação..."
+                  className="pl-10 h-11 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+              </div>
             </div>
           </div>
         </CardContent>
@@ -1994,9 +1965,8 @@ function AuditoriaSection() {
       <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
         <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
         <p className="text-xs text-amber-800 leading-relaxed">
-          <span className="font-bold">Logs de auditoria são imutáveis.</span> Esta tabela é append-only — nenhum registro pode ser editado ou excluído.
-          Um trigger PostgreSQL (<code className="font-mono bg-amber-100 px-1 rounded">trg_audit_logs_imutavel</code>) bloqueia
-          qualquer tentativa de UPDATE ou DELETE diretamente no banco.
+          <span className="font-bold">Registros protegidos.</span> Os logs de auditoria não podem ser alterados ou excluídos.
+          Isso garante a segurança e integridade do histórico de atividades da sua loja.
         </p>
       </div>
 
@@ -2008,50 +1978,67 @@ function AuditoriaSection() {
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 border-b border-border/40">
                 <tr>
-                  {["Data/Hora","Usuário","Ação","Módulo","Recurso","Status","IP","Dispositivo",""].map(h => (
+                  {["Quando","Quem","O que","Onde",""].map(h => (
                     <th key={h} className="text-left px-3 py-2.5 text-[11px] font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30">
                 {filtered.length === 0
-                  ? <tr><td colSpan={9} className="py-10 text-center text-sm text-muted-foreground">Nenhum evento encontrado</td></tr>
+                  ? <tr><td colSpan={5} className="py-10 text-center text-sm text-muted-foreground">Nenhum evento encontrado</td></tr>
                   : filtered.map(l => (
                     <>
                       <tr key={l.id} onClick={() => setExpanded(expanded === l.id ? null : l.id)}
-                        className={`transition-colors cursor-pointer ${
-                          l.status === "denied"  ? "bg-amber-50/40 hover:bg-amber-50" :
-                          l.status === "failure" ? "bg-rose-50/40 hover:bg-rose-50"   :
-                          "hover:bg-secondary/20"
-                        }`}>
-                        <td className="px-3 py-2.5 text-xs font-mono text-muted-foreground whitespace-nowrap">{l.data_hora}</td>
+                        className="transition-colors cursor-pointer hover:bg-secondary/20">
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{l.data_hora}</td>
                         <td className="px-3 py-2.5 font-medium whitespace-nowrap">{l.nome_usuario}</td>
-                        <td className="px-3 py-2.5 text-xs font-mono text-slate-600 whitespace-nowrap">{l.acao}</td>
+                        <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px]">
+                            {l.acao.replace(/_/g, " ")}
+                          </span>
+                        </td>
                         <td className="px-3 py-2.5"><ModuloBadge modulo={l.modulo} /></td>
-                        <td className="px-3 py-2.5 text-xs font-mono text-muted-foreground whitespace-nowrap">{l.recurso_id}</td>
-                        <td className="px-3 py-2.5"><StatusAuditBadge status={l.status} /></td>
-                        <td className="px-3 py-2.5 text-xs font-mono text-muted-foreground whitespace-nowrap">{l.ip_origem}</td>
-                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{l.dispositivo}</td>
-                        <td className="px-3 py-2.5">
+                        <td className="px-3 py-2.5 w-10">
                           <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${expanded === l.id ? "rotate-180" : ""}`} />
                         </td>
                       </tr>
                       {expanded === l.id && (
-                        <tr key={`${l.id}-d`} className="bg-secondary/30">
-                          <td colSpan={9} className="px-4 py-3">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Dados Anteriores</p>
-                                {l.dados_anteriores
-                                  ? <pre className="text-[11px] font-mono bg-slate-100 text-slate-700 p-2.5 rounded-xl overflow-auto max-h-32">{JSON.stringify(l.dados_anteriores, null, 2)}</pre>
-                                  : <span className="text-xs text-muted-foreground italic">—</span>}
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Dados Novos</p>
-                                {l.dados_novos
-                                  ? <pre className="text-[11px] font-mono bg-slate-100 text-slate-700 p-2.5 rounded-xl overflow-auto max-h-32">{JSON.stringify(l.dados_novos, null, 2)}</pre>
-                                  : <span className="text-xs text-muted-foreground italic">—</span>}
-                              </div>
+                        <tr key={`${l.id}-d`} className="bg-secondary/20">
+                          <td colSpan={5} className="px-4 py-4">
+                            <div className="space-y-3">
+                              {(l.dados_anteriores || l.dados_novos) && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {l.dados_anteriores && (
+                                    <div className="space-y-2">
+                                      <p className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider">Antes</p>
+                                      <div className="space-y-1">
+                                        {Object.entries(l.dados_anteriores).map(([k, v]) => (
+                                          <div key={k} className="flex items-center justify-between text-sm py-1 border-b border-border/30 last:border-0">
+                                            <span className="text-muted-foreground">{k}</span>
+                                            <span className="font-mono text-xs bg-rose-50 text-rose-700 px-2 py-0.5 rounded">{String(v)}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {l.dados_novos && (
+                                    <div className="space-y-2">
+                                      <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider">Depois</p>
+                                      <div className="space-y-1">
+                                        {Object.entries(l.dados_novos).map(([k, v]) => (
+                                          <div key={k} className="flex items-center justify-between text-sm py-1 border-b border-border/30 last:border-0">
+                                            <span className="text-muted-foreground">{k}</span>
+                                            <span className="font-mono text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded">{String(v)}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {(!l.dados_anteriores && !l.dados_novos) && (
+                                <p className="text-sm text-muted-foreground italic">Sem alterações de dados para este evento.</p>
+                              )}
                             </div>
                           </td>
                         </tr>

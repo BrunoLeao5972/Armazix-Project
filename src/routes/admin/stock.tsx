@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowUpCircle, ArrowDownCircle, AlertTriangle, Package, TrendingUp, TrendingDown,
   MoreHorizontal, Loader2, Search, Filter, Download, Plus, RefreshCw,
-  ClipboardList, ArrowLeftRight, FileText, BarChart3, Settings2, History,
+  ClipboardList, ArrowLeftRight, ArrowRight, FileText, BarChart3, Settings2, History,
   CheckCircle2, XCircle, Clock, ChevronDown, X, Check, Eye, Pencil,
   Warehouse, Truck, ShoppingBag, Trash2, AlertCircle, Activity,
 } from "lucide-react";
@@ -309,7 +309,13 @@ function SecaoEstoque() {
 }
 
 // ─── SEÇÃO: ENTRADA ───────────────────────────────────────────────
+// Formas de pagamento com baixa automática no financeiro
+const BAIXA_AUTOMATICA = ["Dinheiro", "Pix"];
+
 function SecaoEntrada() {
+  const [showForm, setShowForm] = useState(false);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [alertaBaixa, setAlertaBaixa] = useState<string | null>(null);
   const [items, setItems] = useState<EntryItem[]>([{ product: "", qty: "", cost: "", lot: "", expiry: "" }]);
   const [supplier, setSupplier] = useState("");
   const [nf, setNf] = useState("");
@@ -329,10 +335,129 @@ function SecaoEntrada() {
   const total = items.reduce((s, it) => s + (parseFloat(it.qty || "0") * parseFloat(it.cost || "0")), 0);
   const parcelValue = installments && parseInt(installments) > 0 ? total / parseInt(installments) : total;
 
-  const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 2500); };
+  const resetForm = () => {
+    setItems([{ product: "", qty: "", cost: "", lot: "", expiry: "" }]);
+    setSupplier("");
+    setNf("");
+    setDate(new Date().toISOString().split("T")[0]);
+    setObs("");
+    setPayMethod("Boleto");
+    setInstallments("1");
+    setDueDate("");
+    setSendToFinancial(true);
+    setEditandoId(null);
+  };
+
+  const handleSave = () => {
+    if (editandoId) {
+      // Modo edição: atualiza sem duplicar no financeiro
+      console.log(`[EDITAR ENTRADA] ID: ${editandoId} - Atualizando sem duplicar no financeiro`);
+    } else {
+      // Modo criação: cria novo
+      console.log(`[CRIAR ENTRADA] Nova entrada registrada`);
+    }
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      setShowForm(false);
+      resetForm();
+    }, 2500);
+  };
+
+  const handleEditar = (entrada: Movement) => {
+    // Verifica se a forma de pagamento tem baixa automática
+    const formaPagtoMock = "Dinheiro"; // Na prática viria do registro real
+    const temBaixaAutomatica = BAIXA_AUTOMATICA.includes(formaPagtoMock);
+
+    if (temBaixaAutomatica) {
+      setAlertaBaixa(`Esta entrada foi paga em ${formaPagtoMock} e já foi baixada no financeiro. Para editar, primeiro desfaça a baixa no módulo Financeiro > Contas a Pagar.`);
+      return;
+    }
+
+    // Carrega dados para edição
+    setEditandoId(entrada.id);
+    setSupplier(entrada.note?.includes("NF") ? "" : entrada.note || "");
+    setObs(entrada.note || "");
+    setDate(entrada.date.split(" ")[0].split("/").reverse().join("-"));
+    setItems([{ product: entrada.product, qty: String(entrada.qty), cost: "", lot: "", expiry: "" }]);
+    setShowForm(true);
+  };
+
+  const handleCancelar = () => {
+    setShowForm(false);
+    resetForm();
+  };
+
+  // Lista de últimas entradas
+  const ultimasEntradas = MOCK_MOVEMENTS.filter(m => m.type === "entrada").slice(0, 6);
+
+  if (!showForm) {
+    return (
+      <div className="space-y-5 w-full">
+        {/* Alerta de baixa automática */}
+        {alertaBaixa && (
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 max-w-4xl">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs text-amber-800 leading-relaxed">{alertaBaixa}</p>
+              <div className="flex items-center gap-3 mt-2">
+                <button onClick={() => setAlertaBaixa(null)} className="text-xs font-semibold text-amber-700 hover:text-amber-900">Entendido</button>
+                <a href="/admin/financial" className="text-xs font-semibold text-primary hover:text-primary/80 inline-flex items-center gap-1">
+                  Ir para a conta <ArrowRight className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold">Últimas entradas</h3>
+          <Button onClick={() => setShowForm(true)} className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground">
+            <Plus className="w-4 h-4" /> Adicionar
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {ultimasEntradas.length === 0 ? (
+            <div className="md:col-span-2 xl:col-span-3">
+              <EmptyState icon={ArrowUpCircle} title="Nenhuma entrada" desc="Clique em 'Adicionar' para registrar uma nova entrada." />
+            </div>
+          ) : (
+            ultimasEntradas.map(m => (
+              <Card key={m.id} className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-all h-full">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
+                      <ArrowUpCircle className="w-4.5 h-4.5 text-emerald-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm truncate">{m.product}</span>
+                        <span className="text-xs bg-emerald-500/15 text-emerald-600 px-2 py-0.5 rounded-full shrink-0">Entrada</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                        <span>{m.date}</span>
+                        <span>• {m.user}</span>
+                        {m.note && <span className="truncate">• {m.note}</span>}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                      <span className="font-bold text-sm text-emerald-600">+{m.qty} un</span>
+                      <button onClick={() => handleEditar(m)} className="p-1.5 rounded-lg hover:bg-secondary transition-colors" title="Editar">
+                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                      </button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5 w-full max-w-6xl">
       <Card className="rounded-2xl border-border/50 shadow-soft">
         <CardHeader className="pb-3"><CardTitle className="text-base">Dados da entrada</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -436,15 +561,16 @@ function SecaoEntrada() {
             >
               <span className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 rounded-full bg-white shadow transition-transform ${sendToFinancial ? "translate-x-4.5" : ""}`} />
             </div>
-            <span className="text-sm">Lançar como <strong>despesa</strong> no financeiro (contas a pagar)</span>
+            <span className="text-sm">Lançar no financeiro (contas a pagar)</span>
           </label>
         </CardContent>
       </Card>
 
       <div className="flex gap-3">
+        <Button variant="outline" className="rounded-xl gap-2" onClick={handleCancelar}><ArrowLeftRight className="w-4 h-4 rotate-180" />Voltar</Button>
         <Button variant="outline" className="rounded-xl gap-2"><FileText className="w-4 h-4" />Salvar rascunho</Button>
         <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={handleSave}>
-          {saved ? <><Check className="w-4 h-4" />Confirmado!</> : <><CheckCircle2 className="w-4 h-4" />Confirmar entrada</>}
+          {saved ? <><Check className="w-4 h-4" />{editandoId ? "Atualizado!" : "Confirmado!"}</> : <><CheckCircle2 className="w-4 h-4" />{editandoId ? "Salvar alterações" : "Confirmar entrada"}</>}
         </Button>
       </div>
     </div>
@@ -455,6 +581,9 @@ function SecaoEntrada() {
 const EXIT_TYPES = ["Venda", "Perda", "Uso interno", "Troca", "Avaria"];
 
 function SecaoSaida() {
+  const [showForm, setShowForm] = useState(false);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [alertaBaixa, setAlertaBaixa] = useState<string | null>(null);
   const [items, setItems] = useState<ExitItem[]>([{ product: "", qty: "" }]);
   const [tipo, setTipo] = useState("Venda");
   const [responsavel, setResponsavel] = useState("");
@@ -466,8 +595,122 @@ function SecaoSaida() {
   const setItem = (i: number, k: keyof ExitItem, v: string) =>
     setItems(prev => prev.map((it, idx) => idx === i ? { ...it, [k]: v } : it));
 
+  const resetForm = () => {
+    setItems([{ product: "", qty: "" }]);
+    setTipo("Venda");
+    setResponsavel("");
+    setObs("");
+    setEditandoId(null);
+  };
+
+  const handleSave = () => {
+    if (editandoId) {
+      // Modo edição: atualiza sem duplicar no financeiro
+      console.log(`[EDITAR SAÍDA] ID: ${editandoId} - Atualizando sem duplicar no financeiro`);
+    } else {
+      // Modo criação: cria novo
+      console.log(`[CRIAR SAÍDA] Nova saída registrada`);
+    }
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      setShowForm(false);
+      resetForm();
+    }, 2000);
+  };
+
+  const handleEditar = (saida: Movement) => {
+    // Verifica se a forma de pagamento tem baixa automática (vendas em dinheiro/pix)
+    const formaPagtoMock = "Dinheiro"; // Na prática viria do registro real
+    const temBaixaAutomatica = BAIXA_AUTOMATICA.includes(formaPagtoMock);
+
+    if (temBaixaAutomatica) {
+      setAlertaBaixa(`Esta saída foi recebida em ${formaPagtoMock} e já foi baixada no financeiro (Contas a Receber). Para editar, primeiro desfaça a baixa no módulo Financeiro.`);
+      return;
+    }
+
+    // Carrega dados para edição
+    setEditandoId(saida.id);
+    setObs(saida.note || "");
+    setItems([{ product: saida.product, qty: String(saida.qty) }]);
+    setShowForm(true);
+  };
+
+  const handleCancelar = () => {
+    setShowForm(false);
+    resetForm();
+  };
+
+  // Lista de últimas saídas
+  const ultimasSaidas = MOCK_MOVEMENTS.filter(m => m.type === "saida").slice(0, 6);
+
+  if (!showForm) {
+    return (
+      <div className="space-y-5 w-full">
+        {/* Alerta de baixa automática */}
+        {alertaBaixa && (
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200 max-w-4xl">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-xs text-amber-800 leading-relaxed">{alertaBaixa}</p>
+              <div className="flex items-center gap-3 mt-2">
+                <button onClick={() => setAlertaBaixa(null)} className="text-xs font-semibold text-amber-700 hover:text-amber-900">Entendido</button>
+                <a href="/admin/financial" className="text-xs font-semibold text-primary hover:text-primary/80 inline-flex items-center gap-1">
+                  Ir para a conta <ArrowRight className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold">Últimas saídas</h3>
+          <Button onClick={() => setShowForm(true)} className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground">
+            <Plus className="w-4 h-4" /> Adicionar
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {ultimasSaidas.length === 0 ? (
+            <div className="md:col-span-2 xl:col-span-3">
+              <EmptyState icon={ArrowDownCircle} title="Nenhuma saída" desc="Clique em 'Adicionar' para registrar uma nova saída." />
+            </div>
+          ) : (
+            ultimasSaidas.map(m => (
+              <Card key={m.id} className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-all h-full">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center shrink-0">
+                      <ArrowDownCircle className="w-4.5 h-4.5 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm truncate">{m.product}</span>
+                        <span className="text-xs bg-blue-500/15 text-blue-600 px-2 py-0.5 rounded-full shrink-0">Saída</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                        <span>{m.date}</span>
+                        <span>• {m.user}</span>
+                        {m.note && <span className="truncate">• {m.note}</span>}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                      <span className="font-bold text-sm text-rose-600">-{m.qty} un</span>
+                      <button onClick={() => handleEditar(m)} className="p-1.5 rounded-lg hover:bg-secondary transition-colors" title="Editar">
+                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                      </button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5 w-full max-w-6xl">
       <Card className="rounded-2xl border-border/50 shadow-soft">
         <CardHeader className="pb-3"><CardTitle className="text-base">Dados da saída</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -513,9 +756,12 @@ function SecaoSaida() {
         </CardContent>
       </Card>
 
-      <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2000); }}>
-        {saved ? <><Check className="w-4 h-4" />Registrado!</> : <><ArrowDownCircle className="w-4 h-4" />Confirmar saída</>}
-      </Button>
+      <div className="flex gap-3">
+        <Button variant="outline" className="rounded-xl gap-2" onClick={handleCancelar}><ArrowLeftRight className="w-4 h-4 rotate-180" />Voltar</Button>
+        <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={handleSave}>
+          {saved ? <><Check className="w-4 h-4" />{editandoId ? "Atualizado!" : "Registrado!"}</> : <><ArrowDownCircle className="w-4 h-4" />{editandoId ? "Salvar alterações" : "Confirmar saída"}</>}
+        </Button>
+      </div>
     </div>
   );
 }

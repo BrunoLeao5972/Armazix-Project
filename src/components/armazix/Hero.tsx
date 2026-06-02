@@ -1,6 +1,5 @@
 import { motion } from "framer-motion";
 import { ArrowRight, Star, Zap, Bell } from "lucide-react";
-import heroPhone from "@/assets/hero-phone.png";
 
 export function Hero() {
   return (
@@ -57,7 +56,7 @@ export function Hero() {
         >
           <div className="relative aspect-square">
             <img
-              src={heroPhone}
+              src="/cell.png"
               alt="Dashboard ARMAZIX em iPhone"
               width={1024}
               height={1024}

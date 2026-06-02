@@ -712,7 +712,7 @@ const MOCK_CASHFLOW = [
 // ─────────────────────────────────────────────────
 // HISTÓRICOS ESTRUTURADOS — seed ERP
 // ─────────────────────────────────────────────────
-type NaturezaHist = "RECEITA" | "DESPESA" | "AMBOS";
+type NaturezaHist = "RECEITA" | "DESPESA";
 interface HistoricoFinanceiro {
   id: string;
   codigo: string;
@@ -1560,7 +1560,7 @@ function SecaoReceber() {
                   const nat: NaturezaHist | null =
                     filterStatus.every(s => s === "pago" || s === "parcial") ? "RECEITA" : null;
                   const lista = HISTORICOS.filter(h =>
-                    nat ? h.natureza === nat || h.natureza === "AMBOS" : true
+                    nat ? h.natureza === nat : true
                   );
                   return (
                     <select value={filterHistorico} onChange={e => setFilterHistorico(e.target.value)}
@@ -1964,7 +1964,7 @@ function SecaoPagar() {
               <div className="relative">
                 {(() => {
                   const nat: NaturezaHist = "DESPESA";
-                  const lista = HISTORICOS.filter(h => h.natureza === nat || h.natureza === "AMBOS");
+                  const lista = HISTORICOS.filter(h => h.natureza === nat);
                   return (
                     <select value={filterHistorico} onChange={e => setFilterHistorico(e.target.value)}
                       className="w-full h-10 px-3 pr-8 text-xs rounded-xl bg-secondary/40 border border-input appearance-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:bg-background transition-all cursor-pointer font-mono">
@@ -2654,7 +2654,7 @@ function DreTreeView({
 }) {
   const cor = natureza === "RECEITA" ? "text-emerald-700" : "text-rose-700";
   const bgGrupo = natureza === "RECEITA" ? "bg-emerald-50/60" : "bg-rose-50/60";
-  const filtered = nodes.filter(n => n.historico.natureza === natureza || n.historico.natureza === "AMBOS");
+  const filtered = nodes.filter(n => n.historico.natureza === natureza);
   const totalGeral = filtered.filter(n => n.historico.nivel === 1).reduce((s, n) => s + n.total, 0);
 
   const rowStyle = (nivel: number) =>
@@ -2924,7 +2924,7 @@ function ModalHistorico({
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Natureza</label>
             <div className="flex gap-2">
-              {(["RECEITA", "DESPESA", "AMBOS"] as NaturezaHist[]).map(n => (
+              {(["RECEITA", "DESPESA"] as NaturezaHist[]).map(n => (
                 <button key={n} onClick={() => setNatureza(n)}
                   className={`flex-1 h-9 rounded-xl text-xs font-semibold border transition-all ${
                     natureza === n
@@ -2933,7 +2933,7 @@ function ModalHistorico({
                         : "bg-primary text-primary-foreground border-primary"
                       : "bg-secondary/40 text-muted-foreground border-input hover:bg-secondary"
                   }`}>
-                  {n === "RECEITA" ? "Receita" : n === "DESPESA" ? "Despesa" : "Ambos"}
+                  {n === "RECEITA" ? "Receita" : "Despesa"}
                 </button>
               ))}
             </div>
@@ -3063,18 +3063,13 @@ function SecaoHistoricos() {
 
   const handleExcluir = (h: HistoricoFinanceiro) => {
     setMenuAberto(null);
-    const filhos = lista.filter(x => x.codigo.startsWith(h.codigo) && x.id !== h.id);
-    if (filhos.length > 0) {
-      setBloqueio(`Não é possível excluir "${h.descricao}" pois possui ${filhos.length} sub-histórico(s) vinculado(s). Exclua os filhos primeiro.`);
-      return;
-    }
-    if (emUso(h)) {
-      setBloqueio(`Não é possível excluir "${h.descricao}" pois está vinculado a lançamentos ativos em Contas a Pagar, Receber ou Fluxo de Caixa.`);
-      return;
-    }
-    setLista(prev => prev.filter(x => x.id !== h.id));
-    console.log("[AUDITORIA] CONFIG_HISTORICOS:EXCLUIR", { modulo: "CONFIG_HISTORICOS", dados_anteriores: h, dados_novos: null });
-    showToast(`"${h.descricao}" excluído.`);
+    // Bloqueio total - históricos não podem ser excluídos para preservar integridade dos relatórios
+    setBloqueio(
+      `Não é possível excluir "${h.descricao}". ` +
+      `Históricos são estruturas permanentes do plano de contas e sua exclusão impactaria ` +
+      `na visualização e cálculo de relatórios financeiros como a DRE (Demonstração do Resultado do Exercício). ` +
+      `Se necessário, você pode inativar ou renomear este histórico através da função Editar.`
+    );
   };
 
   const abrirNovo = () => { setEditando(null); setModalAberto(true); };
@@ -3090,8 +3085,7 @@ function SecaoHistoricos() {
     : "bg-primary/10 text-primary";
   const naturezaBadge = (n: NaturezaHist) => n === "RECEITA"
     ? "bg-emerald-50 text-emerald-700"
-    : n === "DESPESA" ? "bg-rose-50 text-rose-700"
-    : "bg-secondary text-muted-foreground";
+    : "bg-rose-50 text-rose-700";
 
   return (
     <div className="space-y-5">
@@ -3158,7 +3152,7 @@ function SecaoHistoricos() {
                     </td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium ${naturezaBadge(h.natureza)}`}>
-                        {h.natureza === "RECEITA" ? "Receita" : h.natureza === "DESPESA" ? "Despesa" : "Ambos"}
+                        {h.natureza === "RECEITA" ? "Receita" : "Despesa"}
                       </span>
                     </td>
                     <td className="px-4 py-2.5">
@@ -3260,7 +3254,6 @@ function ModuloBadge({ modulo }: { modulo: ModuloAudit }) {
 function SecaoAuditoria() {
   const [logs] = useState<LogAudit[]>(MOCK_AUDIT);
   const [filterModulo,  setFilterModulo]  = useState<ModuloAudit | "TODOS">("TODOS");
-  const [filterStatus,  setFilterStatus]  = useState<StatusAudit | "todos">("todos");
   const [search,        setSearch]        = useState("");
   const [expanded,      setExpanded]      = useState<string | null>(null);
   const [dataInicio,    setDataInicio]     = useState("");
@@ -3268,18 +3261,13 @@ function SecaoAuditoria() {
 
   const filtered = useMemo(() => logs.filter(l => {
     if (filterModulo !== "TODOS" && l.modulo !== filterModulo) return false;
-    if (filterStatus !== "todos" && l.status !== filterStatus) return false;
     if (search && !l.nome_usuario.toLowerCase().includes(search.toLowerCase())
-      && !l.acao.toLowerCase().includes(search.toLowerCase())
-      && !l.recurso_id.toLowerCase().includes(search.toLowerCase())) return false;
+      && !l.acao.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [logs, filterModulo, filterStatus, search]);
+  }), [logs, filterModulo, search]);
 
   const kpis = useMemo(() => ({
-    total:   logs.length,
-    success: logs.filter(l => l.status === "success").length,
-    failure: logs.filter(l => l.status === "failure").length,
-    denied:  logs.filter(l => l.status === "denied").length,
+    total: logs.length,
   }), [logs]);
 
   return (
@@ -3287,22 +3275,15 @@ function SecaoAuditoria() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: "Total de Eventos",   value: kpis.total,   icon: CheckCircle2,   bg: "bg-slate-100",     fg: "text-slate-600"   },
-          { label: "Bem-sucedidos",       value: kpis.success, icon: Check,          bg: "bg-emerald-50",    fg: "text-emerald-600" },
-          { label: "Com Falha",           value: kpis.failure, icon: AlertTriangle,  bg: "bg-rose-50",       fg: "text-rose-600"    },
-          { label: "Acesso Negado",       value: kpis.denied,  icon: ShieldAlert,    bg: "bg-amber-50",      fg: "text-amber-600"   },
-        ].map(k => (
-          <Card key={k.label} className="rounded-2xl border-border/50 shadow-soft">
-            <CardContent className="p-3">
-              <div className={`w-8 h-8 rounded-xl ${k.bg} grid place-items-center mb-2`}>
-                <k.icon className={`w-4 h-4 ${k.fg}`} />
-              </div>
-              <div className="text-xl font-bold tracking-tight">{k.value}</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">{k.label}</div>
-            </CardContent>
-          </Card>
-        ))}
+        <Card className="rounded-2xl border-border/50 shadow-soft">
+          <CardContent className="p-3">
+            <div className="w-8 h-8 rounded-xl bg-slate-100 grid place-items-center mb-2">
+              <CheckCircle2 className="w-4 h-4 text-slate-600" />
+            </div>
+            <div className="text-xl font-bold tracking-tight">{kpis.total}</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">Total de Eventos</div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* FILTROS */}
@@ -3320,17 +3301,6 @@ function SecaoAuditoria() {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Status</p>
-            <div className="relative">
-              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as StatusAudit | "todos")}
-                className="w-full h-10 px-3 pr-8 text-sm rounded-xl bg-secondary/40 border border-input appearance-none focus:outline-none focus:ring-2 focus:ring-ring/30 cursor-pointer">
-                <option value="todos">Todos</option>
-                {STATUS_AUDIT.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Período</p>
             <div className="grid grid-cols-2 gap-2">
               <Input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)}
@@ -3342,7 +3312,7 @@ function SecaoAuditoria() {
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             <Input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Usuário, ação ou recurso..."
+              placeholder="Buscar usuário ou ação..."
               className="pl-10 h-10 w-full rounded-xl text-sm bg-secondary/40 border-input" />
           </div>
         </div>
@@ -3368,53 +3338,70 @@ function SecaoAuditoria() {
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 border-b border-border/40">
                 <tr>
-                  {["Data/Hora","Usuário","Ação","Módulo","Recurso ID","Status","IP Origem","Dispositivo","Detalhes"].map(h => (
+                  {["Quando","Quem","O que","Onde",""].map(h => (
                     <th key={h} className="text-left px-3 py-2.5 text-[11px] font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30">
                 {filtered.length === 0
-                  ? <tr><td colSpan={9}><EmptyState icon={CheckCircle2} title="Nenhum evento encontrado" desc="Ajuste os filtros para ver os logs de auditoria." /></td></tr>
+                  ? <tr><td colSpan={5}><EmptyState icon={CheckCircle2} title="Nenhum evento encontrado" desc="Ajuste os filtros para ver os logs de auditoria." /></td></tr>
                   : filtered.map(l => (
                     <>
                       <tr key={l.id}
                         onClick={() => setExpanded(expanded === l.id ? null : l.id)}
-                        className={`transition-colors cursor-pointer ${
-                          l.status === "denied" ? "bg-amber-50/40 hover:bg-amber-50" :
-                          l.status === "failure" ? "bg-rose-50/40 hover:bg-rose-50" :
-                          "hover:bg-secondary/20"
-                        }`}>
-                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap font-mono">{l.data_hora}</td>
+                        className="transition-colors cursor-pointer hover:bg-secondary/20">
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{l.data_hora}</td>
                         <td className="px-3 py-2.5 font-medium whitespace-nowrap">{l.nome_usuario}</td>
-                        <td className="px-3 py-2.5 text-xs font-mono text-slate-600 whitespace-nowrap">{l.acao}</td>
+                        <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px]">
+                            {l.acao.replace(/_/g, " ")}
+                          </span>
+                        </td>
                         <td className="px-3 py-2.5"><ModuloBadge modulo={l.modulo} /></td>
-                        <td className="px-3 py-2.5 text-xs font-mono text-muted-foreground whitespace-nowrap">{l.recurso_id}</td>
-                        <td className="px-3 py-2.5"><StatusAuditBadge status={l.status} /></td>
-                        <td className="px-3 py-2.5 text-xs font-mono text-muted-foreground whitespace-nowrap">{l.ip_origem}</td>
-                        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{l.dispositivo}</td>
-                        <td className="px-3 py-2.5">
+                        <td className="px-3 py-2.5 w-10">
                           <button className="p-1 rounded-lg hover:bg-secondary transition-colors">
                             <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-150 ${expanded === l.id ? "rotate-180" : ""}`} />
                           </button>
                         </td>
                       </tr>
                       {expanded === l.id && (
-                        <tr key={`${l.id}-detail`} className="bg-secondary/30">
-                          <td colSpan={9} className="px-4 py-3">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Dados Anteriores</p>
-                                {l.dados_anteriores
-                                  ? <pre className="text-[11px] font-mono bg-slate-100 text-slate-700 p-2.5 rounded-xl overflow-auto max-h-32">{JSON.stringify(l.dados_anteriores, null, 2)}</pre>
-                                  : <span className="text-xs text-muted-foreground italic">—</span>}
-                              </div>
-                              <div>
-                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Dados Novos</p>
-                                {l.dados_novos
-                                  ? <pre className="text-[11px] font-mono bg-slate-100 text-slate-700 p-2.5 rounded-xl overflow-auto max-h-32">{JSON.stringify(l.dados_novos, null, 2)}</pre>
-                                  : <span className="text-xs text-muted-foreground italic">—</span>}
-                              </div>
+                        <tr key={`${l.id}-detail`} className="bg-secondary/20">
+                          <td colSpan={5} className="px-4 py-4">
+                            <div className="space-y-3">
+                              {(l.dados_anteriores || l.dados_novos) && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  {l.dados_anteriores && (
+                                    <div className="space-y-2">
+                                      <p className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider">Antes</p>
+                                      <div className="space-y-1">
+                                        {Object.entries(l.dados_anteriores).map(([k, v]) => (
+                                          <div key={k} className="flex items-center justify-between text-sm py-1 border-b border-border/30 last:border-0">
+                                            <span className="text-muted-foreground">{k}</span>
+                                            <span className="font-mono text-xs bg-rose-50 text-rose-700 px-2 py-0.5 rounded">{String(v)}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {l.dados_novos && (
+                                    <div className="space-y-2">
+                                      <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider">Depois</p>
+                                      <div className="space-y-1">
+                                        {Object.entries(l.dados_novos).map(([k, v]) => (
+                                          <div key={k} className="flex items-center justify-between text-sm py-1 border-b border-border/30 last:border-0">
+                                            <span className="text-muted-foreground">{k}</span>
+                                            <span className="font-mono text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded">{String(v)}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {(!l.dados_anteriores && !l.dados_novos) && (
+                                <p className="text-sm text-muted-foreground italic">Sem alterações de dados para este evento.</p>
+                              )}
                             </div>
                           </td>
                         </tr>
