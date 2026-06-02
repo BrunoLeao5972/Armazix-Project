@@ -15,18 +15,58 @@ type TipoFiltro = "periodo" | "vendedor" | "cliente" | "fornecedor" | "produto" 
 
 interface ReportConfig { id: string; nome: string; descricao: string; modulo: ModuloReport; uso: UsoReport; permissao: Permissao[]; icone: React.ElementType; destaque?: boolean; filtrosDisponiveis?: TipoFiltro[]; }
 
+// ============================================
+// CATALOGO EXPANSÍVEL DE RELATÓRIOS ARMAZIX
+// ============================================
 const CATALOGO_RELATORIOS: ReportConfig[] = [
-  { id: "est-001", nome: "Entrada de Mercadorias", descricao: "Relatório completo de todas as entradas no estoque", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: Package, filtrosDisponiveis: ["periodo", "fornecedor", "produto"] },
-  { id: "est-002", nome: "Saída de Produtos", descricao: "Histórico de saídas", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "vendedor", "produto", "status"] },
-  { id: "est-005", nome: "Estoque Baixo", descricao: "Alerta de estoque", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: AlertCircle, destaque: true },
-  { id: "cli-002", nome: "Top Clientes", descricao: "Ranking de clientes", modulo: "clientes", uso: "gerencial", permissao: ["admin", "gerente"], icone: TrendingUp, destaque: true, filtrosDisponiveis: ["periodo"] },
-  { id: "cli-003", nome: "Compras por Cliente", descricao: "Histórico detalhado", modulo: "clientes", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Receipt, filtrosDisponiveis: ["periodo", "cliente"] },
-  { id: "vnd-001", nome: "Vendas por Período", descricao: "Consolidado de vendas", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente"], icone: ShoppingCart, destaque: true, filtrosDisponiveis: ["periodo", "vendedor", "cliente", "formaPagamento", "canal", "status"] },
-  { id: "vnd-002", nome: "Vendas por Produto", descricao: "Vendas detalhadas", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Package, filtrosDisponiveis: ["periodo", "vendedor", "produto", "formaPagamento"] },
-  { id: "fin-001", nome: "Fluxo de Caixa", descricao: "Entradas e saídas", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo", "conta", "historico"] },
-  { id: "fin-003", nome: "Contas a Pagar", descricao: "Obrigações", modulo: "financeiro", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "fornecedor", "status", "historico"] },
-  { id: "fis-001", nome: "Notas Fiscais", descricao: "NFe e NFCe", modulo: "fiscal", uso: "fiscal", permissao: ["admin", "gerente"], icone: Receipt, filtrosDisponiveis: ["periodo", "status", "cliente"] },
-  { id: "aud-001", nome: "Logs de Auditoria", descricao: "Alterações críticas", modulo: "auditoria", uso: "auditoria", permissao: ["admin"], icone: Shield, destaque: true, filtrosDisponiveis: ["periodo", "vendedor"] },
+  // 📦 ESTOQUE & MOVIMENTAÇÃO
+  { id: "est-001", nome: "Entrada de Mercadorias", descricao: "Relatório completo de todas as entradas no estoque com notas fiscais", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: Package, filtrosDisponiveis: ["periodo", "fornecedor", "produto"] },
+  { id: "est-002", nome: "Saída de Produtos", descricao: "Histórico detalhado de todas as saídas de estoque", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "vendedor", "produto", "status"] },
+  { id: "est-003", nome: "Extrato e Inventário", descricao: "Posição atual do estoque com valorização", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: FileText, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "est-004", nome: "Balanço de Estoque", descricao: "Comparativo teórico vs físico com ajustes", modulo: "estoque", uso: "gerencial", permissao: ["admin", "gerente"], icone: BarChart3, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "est-005", nome: "Produtos com Estoque Baixo", descricao: "Alerta de produtos abaixo do ponto de reposição", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: AlertCircle, destaque: true },
+  { id: "est-006", nome: "Produtos sem Movimentação", descricao: "Itens sem entrada ou saída no período analisado", modulo: "estoque", uso: "gerencial", permissao: ["admin", "gerente"], icone: Clock, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "est-007", nome: "Histórico de Movimentações", descricao: "Rastreabilidade completa de todas as movimentações", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: History, filtrosDisponiveis: ["periodo", "produto", "vendedor"] },
+
+  // 👥 CLIENTES & COMPORTAMENTO
+  { id: "cli-001", nome: "Clientes Cadastrados", descricao: "Base completa de clientes ativos e inativos", modulo: "clientes", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Users, filtrosDisponiveis: ["periodo", "status"] },
+  { id: "cli-002", nome: "Clientes que Mais Compram", descricao: "Ranking de clientes por volume de compras", modulo: "clientes", uso: "gerencial", permissao: ["admin", "gerente"], icone: TrendingUp, destaque: true, filtrosDisponiveis: ["periodo"] },
+  { id: "cli-003", nome: "Histórico de Compras por Cliente", descricao: "Detalhamento completo de compras individualizadas", modulo: "clientes", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Receipt, filtrosDisponiveis: ["periodo", "cliente"] },
+  { id: "cli-004", nome: "Clientes Inativos", descricao: "Clientes sem compras no período analisado", modulo: "clientes", uso: "gerencial", permissao: ["admin", "gerente"], icone: User, filtrosDisponiveis: ["periodo"] },
+  { id: "cli-005", nome: "Aniversariantes do Período", descricao: "Lista de clientes fazendo aniversário para ações de marketing", modulo: "clientes", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Calendar, filtrosDisponiveis: ["periodo"] },
+
+  // 🏷️ CADASTRO DE PRODUTOS
+  { id: "prod-001", nome: "Lista de Produtos", descricao: "Catálogo completo com preços e estoques", modulo: "produtos", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Package, filtrosDisponiveis: ["produto", "status"] },
+  { id: "prod-002", nome: "Produtos por Categoria", descricao: "Organização hierárquica por departamentos", modulo: "produtos", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Tag, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "prod-003", nome: "Produtos Mais Lucrativos", descricao: "Ranking por margem de contribuição real", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "prod-004", nome: "Produtos com Baixa Margem", descricao: "Itens com margem abaixo do esperado", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: Percent, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "prod-005", nome: "Produtos sem Estoque", descricao: "Itens esgotados ou descontinuados", modulo: "produtos", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: AlertCircle, filtrosDisponiveis: ["produto"] },
+  { id: "prod-006", nome: "Produtos com Maior Giro", descricao: "Itens mais vendidos por velocidade de rotatividade", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "produto"] },
+
+  // 📊 VENDAS & PDV
+  { id: "vnd-001", nome: "Vendas por Período", descricao: "Consolidado completo de vendas diárias, semanais ou mensais", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente"], icone: ShoppingCart, destaque: true, filtrosDisponiveis: ["periodo", "vendedor", "cliente", "formaPagamento", "canal", "status"] },
+  { id: "vnd-002", nome: "Vendas por Produto", descricao: "Detalhamento de vendas por item com quantidades e valores", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Package, filtrosDisponiveis: ["periodo", "vendedor", "produto", "formaPagamento"] },
+  { id: "vnd-003", nome: "Vendas por Cliente", descricao: "Análise de compras por cliente com ticket médio", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente", "vendedor"], icone: User, filtrosDisponiveis: ["periodo", "cliente", "vendedor"] },
+  { id: "vnd-004", nome: "Vendas por Forma de Pagamento", descricao: "Distribuição de vendas por meio de pagamento", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: CreditCard, filtrosDisponiveis: ["periodo", "formaPagamento"] },
+  { id: "vnd-005", nome: "Produtos Mais Vendidos", descricao: "Ranking de produtos por quantidade vendida", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente", "vendedor"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "vnd-006", nome: "Ticket Médio", descricao: "Análise do valor médio por venda e cliente", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente"], icone: DollarSign, filtrosDisponiveis: ["periodo", "vendedor", "cliente"] },
+  { id: "vnd-007", nome: "Cancelamentos e Devoluções", descricao: "Relatório de cancelamentos no PDV com motivos", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente"], icone: X, filtrosDisponiveis: ["periodo", "vendedor", "status"] },
+
+  // 💰 FINANCEIRO INTEGRADO
+  { id: "fin-001", nome: "Fluxo de Caixa", descricao: "Entradas e saídas com projeção de saldo", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo", "conta", "historico"] },
+  { id: "fin-002", nome: "Contas a Receber", descricao: "Títulos em aberto e recebidos por período", modulo: "financeiro", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "cliente", "status", "historico"] },
+  { id: "fin-003", nome: "Contas a Pagar", descricao: "Obrigações financeiras e vencimentos", modulo: "financeiro", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "fornecedor", "status", "historico"] },
+  { id: "fin-004", nome: "Inadimplência", descricao: "Clientes com pagamentos atrasados e valores", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: AlertCircle, filtrosDisponiveis: ["periodo", "cliente", "status"] },
+  { id: "fin-005", nome: "Lucro Bruto e Líquido", descricao: "Demonstrativo de resultados com margens", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente"], icone: BarChart3, destaque: true, filtrosDisponiveis: ["periodo", "historico"] },
+  { id: "fin-006", nome: "Receitas e Despesas por Histórico", descricao: "Consolidado por árvore hierárquica de históricos contábeis", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: Landmark, filtrosDisponiveis: ["periodo", "historico", "conta"] },
+
+  // 🔐 FISCAL & OPERACIONAL
+  { id: "fis-001", nome: "Notas Fiscais Emitidas", descricao: "NFe e NFCe com status de autorização", modulo: "fiscal", uso: "fiscal", permissao: ["admin", "gerente"], icone: Receipt, filtrosDisponiveis: ["periodo", "status", "cliente"] },
+  { id: "fis-002", nome: "Operações por Usuário", descricao: "Atividades fiscais realizadas por cada operador", modulo: "fiscal", uso: "fiscal", permissao: ["admin", "gerente"], icone: Users, filtrosDisponiveis: ["periodo", "vendedor"] },
+
+  // 🔍 AUDITORIA & SEGURANÇA
+  { id: "aud-001", nome: "Fechamento Diário de Caixa", descricao: "Resumo de fechamentos de caixa por operador", modulo: "auditoria", uso: "auditoria", permissao: ["admin", "gerente"], icone: Lock, filtrosDisponiveis: ["periodo", "vendedor"] },
+  { id: "aud-002", nome: "Logs de Alterações Críticas", descricao: "Rastreamento de alterações em valores, exclusões e estornos", modulo: "auditoria", uso: "auditoria", permissao: ["admin"], icone: Shield, destaque: true, filtrosDisponiveis: ["periodo", "vendedor", "status"] },
 ];
 
 const MOCK_USUARIOS = [{ id: "usr_001", nome: "Carlos Silva", cargo: "Vendedor" }, { id: "usr_002", nome: "Ana Oliveira", cargo: "Caixa" }, { id: "usr_003", nome: "Pedro Costa", cargo: "Estoque" }, { id: "usr_004", nome: "Maria Santos", cargo: "Gerente" }, { id: "usr_005", nome: "João Pereira", cargo: "Financeiro" }];
@@ -195,6 +235,9 @@ function ReportCard({ report, isFavorito, onToggleFavorito, onVisualizar, isLock
   return (<div className="group relative p-4 rounded-2xl border border-border/50 bg-white hover:border-primary/30 hover:shadow-soft transition-all"><div className="flex items-start gap-3"><div className={`w-10 h-10 rounded-xl ${moduloStyle.cor} flex items-center justify-center shrink-0`}><Icon className="w-4 h-4" /></div><div className="flex-1 min-w-0"><div className="flex items-center gap-2"><h4 className="font-semibold text-sm text-slate-700 truncate">{report.nome}</h4>{report.destaque && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />}</div><p className="text-xs text-muted-foreground mt-1 line-clamp-2">{report.descricao}</p><div className="flex items-center gap-1.5 mt-2"><Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-md">{moduloStyle.label}</Badge><Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-md">{report.uso}</Badge></div></div><button onClick={onToggleFavorito} className={`p-1.5 rounded-lg transition-colors ${isFavorito ? "text-amber-400" : "text-slate-300 hover:text-amber-400"}`}><Star className={`w-4 h-4 ${isFavorito ? "fill-amber-400" : ""}`} /></button></div><div className="flex items-center gap-1 mt-3 pt-3 border-t border-border/30 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={onVisualizar} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"><Eye className="w-3.5 h-3.5" /> Ver</button><button onClick={() => alert(`Exportando ${report.nome} em PDF...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50"><FileText className="w-3.5 h-3.5" /> PDF</button><button onClick={() => alert(`Exportando ${report.nome} em Excel...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50"><FileSpreadsheet className="w-3.5 h-3.5" /> Excel</button><button onClick={() => alert(`Imprimindo ${report.nome}...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"><Printer className="w-3.5 h-3.5" /> Print</button></div></div>);
 }
 
+// Mock de emissões nas últimas 24h (simulado - virá do backend)
+const EMISSOES_24H = 12;
+
 function ReportsPage() {
   const permissaoUsuario = usePermissaoUsuario();
   const [busca, setBusca] = useState("");
@@ -203,12 +246,71 @@ function ReportsPage() {
   const [favoritos, setFavoritos] = useState<string[]>(() => { if (typeof window !== "undefined") { const saved = localStorage.getItem("armazix-reports-favoritos"); return saved ? JSON.parse(saved) : []; } return []; });
   const [reportSelecionado, setReportSelecionado] = useState<ReportConfig | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [ultimoRelatorio, setUltimoRelatorio] = useState<ReportConfig | null>(null);
+
   useEffect(() => { if (typeof window !== "undefined") { localStorage.setItem("armazix-reports-favoritos", JSON.stringify(favoritos)); } }, [favoritos]);
+
   const toggleFavorito = (id: string) => { setFavoritos(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]); };
-  const abrirDrawer = (report: ReportConfig) => { setReportSelecionado(report); setDrawerOpen(true); };
-  const relatoriosFiltrados = useMemo(() => { return CATALOGO_RELATORIOS.filter(r => { if (busca && !r.nome.toLowerCase().includes(busca.toLowerCase()) && !r.descricao.toLowerCase().includes(busca.toLowerCase())) return false; if (filtroModulo !== "todos" && r.modulo !== filtroModulo) return false; if (filtroUso !== "todos" && r.uso !== filtroUso) return false; return true; }); }, [busca, filtroModulo, filtroUso]);
-  const favoritosList = useMemo(() => CATALOGO_RELATORIOS.filter(r => favoritos.includes(r.id) && temPermissao(permissaoUsuario, r.permissao)), [favoritos, permissaoUsuario]);
-  const destaques = useMemo(() => CATALOGO_RELATORIOS.filter(r => r.destaque && temPermissao(permissaoUsuario, r.permissao)).slice(0, 3), [permissaoUsuario]);
+
+  const abrirDrawer = (report: ReportConfig) => {
+    setReportSelecionado(report);
+    setUltimoRelatorio(report);
+    setDrawerOpen(true);
+  };
+
+  const scrollToFavoritos = () => {
+    const element = document.getElementById("secao-favoritos");
+    if (element) element.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const scrollToUltimo = () => {
+    if (ultimoRelatorio) abrirDrawer(ultimoRelatorio);
+  };
+
+  // Filtrar relatórios disponíveis para o usuário
+  const relatoriosPermitidos = useMemo(() =>
+    CATALOGO_RELATORIOS.filter(r => temPermissao(permissaoUsuario, r.permissao)),
+    [permissaoUsuario]
+  );
+
+  const relatoriosFiltrados = useMemo(() => {
+    return relatoriosPermitidos.filter(r => {
+      if (busca && !r.nome.toLowerCase().includes(busca.toLowerCase()) && !r.descricao.toLowerCase().includes(busca.toLowerCase())) return false;
+      if (filtroModulo !== "todos" && r.modulo !== filtroModulo) return false;
+      if (filtroUso !== "todos" && r.uso !== filtroUso) return false;
+      return true;
+    });
+  }, [busca, filtroModulo, filtroUso, relatoriosPermitidos]);
+
+  const favoritosList = useMemo(() =>
+    CATALOGO_RELATORIOS.filter(r => favoritos.includes(r.id) && temPermissao(permissaoUsuario, r.permissao)),
+    [favoritos, permissaoUsuario]
+  );
+
+  const destaques = useMemo(() =>
+    CATALOGO_RELATORIOS.filter(r => r.destaque && temPermissao(permissaoUsuario, r.permissao)).slice(0, 3),
+    [permissaoUsuario]
+  );
+
+  // Agrupar relatórios por módulo
+  const relatoriosPorModulo = useMemo(() => {
+    const grupos: Record<ModuloReport, ReportConfig[]> = {
+      estoque: [], clientes: [], produtos: [], vendas: [], financeiro: [], fiscal: [], auditoria: []
+    };
+    relatoriosFiltrados.forEach(r => { if (grupos[r.modulo]) grupos[r.modulo].push(r); });
+    return grupos;
+  }, [relatoriosFiltrados]);
+
+  const modulosOrdenados: { id: ModuloReport; label: string; icone: React.ElementType; cor: string }[] = [
+    { id: "vendas", label: "📊 Vendas & PDV", icone: ShoppingCart, cor: "text-amber-600" },
+    { id: "financeiro", label: "💰 Financeiro Integrado", icone: DollarSign, cor: "text-rose-600" },
+    { id: "estoque", label: "📦 Estoque & Movimentação", icone: Package, cor: "text-emerald-600" },
+    { id: "produtos", label: "🏷️ Cadastro de Produtos", icone: Tag, cor: "text-violet-600" },
+    { id: "clientes", label: "👥 Clientes & Comportamento", icone: Users, cor: "text-blue-600" },
+    { id: "fiscal", label: "🔐 Fiscal & Operacional", icone: Receipt, cor: "text-slate-600" },
+    { id: "auditoria", label: "🔍 Auditoria & Segurança", icone: Shield, cor: "text-red-600" },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -223,67 +325,92 @@ function ReportsPage() {
         {/* Drawer de Filtros */}
         <ReportFilterDrawer report={reportSelecionado} isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
-        {/* KPI Cards */}
+        {/* KPI Cards - Indicadores Rápidos */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="rounded-2xl border-border/50 bg-white">
+          {/* Card 1: Total de relatórios disponíveis */}
+          <Card className="rounded-2xl border-border/50 bg-white hover:shadow-md transition-shadow">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center"><FileText className="w-5 h-5 text-emerald-600" /></div>
-                <div><p className="text-2xl font-bold">{CATALOGO_RELATORIOS.length}</p><p className="text-xs text-muted-foreground">Relatórios Disponíveis</p></div>
+                <div>
+                  <p className="text-2xl font-bold">{relatoriosPermitidos.length}</p>
+                  <p className="text-xs text-muted-foreground">Relatórios Disponíveis</p>
+                </div>
               </div>
             </CardContent>
           </Card>
-          <Card className="rounded-2xl border-border/50 bg-white">
+
+          {/* Card 2: Último relatório gerado */}
+          <Card className="rounded-2xl border-border/50 bg-white hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToUltimo}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center"><History className="w-5 h-5 text-blue-600" /></div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-700 truncate">{ultimoRelatorio ? ultimoRelatorio.nome : "Nenhum ainda"}</p>
+                  <p className="text-xs text-muted-foreground">{ultimoRelatorio ? "Clique para reabrir" : "Último Relatório Gerado"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Card 3: Atalho para favoritos */}
+          <Card className="rounded-2xl border-border/50 bg-white hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToFavoritos}>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center"><Star className="w-5 h-5 text-amber-600" /></div>
-                <div><p className="text-2xl font-bold">{favoritosList.length}</p><p className="text-xs text-muted-foreground">Meus Favoritos</p></div>
+                <div>
+                  <p className="text-2xl font-bold">{favoritosList.length}</p>
+                  <p className="text-xs text-muted-foreground">⭐ Relatórios Favoritos</p>
+                </div>
               </div>
             </CardContent>
           </Card>
-          <Card className="rounded-2xl border-border/50 bg-white">
+
+          {/* Card 4: Emissões nas últimas 24h */}
+          <Card className="rounded-2xl border-border/50 bg-white hover:shadow-md transition-shadow">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center"><Download className="w-5 h-5 text-blue-600" /></div>
-                <div><p className="text-2xl font-bold">PDF/Excel</p><p className="text-xs text-muted-foreground">Exportação Direta</p></div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-2xl border-border/50 bg-white">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center"><Clock className="w-5 h-5 text-violet-600" /></div>
-                <div><p className="text-2xl font-bold">Tempo Real</p><p className="text-xs text-muted-foreground">Dados Atualizados</p></div>
+                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center"><Shield className="w-5 h-5 text-violet-600" /></div>
+                <div>
+                  <p className="text-2xl font-bold">{EMISSOES_24H}</p>
+                  <p className="text-xs text-muted-foreground">Emissões (24h)</p>
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Filtros de Busca */}
-        <Card className="rounded-2xl border-border/50">
+        {/* Barra de Controle Superior */}
+        <Card className="rounded-2xl border-border/50 shadow-sm">
           <CardContent className="p-4">
             <div className="flex flex-col md:flex-row gap-4">
               <div className="flex-1 relative">
                 <Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
-                <Input placeholder="Buscar relatórios por nome ou descrição..." value={busca} onChange={e => setBusca(e.target.value)} className="pl-9 h-10 rounded-xl" />
+                <Input placeholder="Buscar relatórios por nome, descrição ou palavras-chave..." value={busca} onChange={e => setBusca(e.target.value)} className="pl-9 h-10 rounded-xl" />
               </div>
               <div className="flex gap-2">
-                <select value={filtroModulo} onChange={e => setFiltroModulo(e.target.value as ModuloReport | "todos")} className="h-10 px-3 rounded-xl border bg-white text-sm">
-                  <option value="todos">Todos os Módulos</option>
-                  <option value="estoque">Estoque</option>
-                  <option value="clientes">Clientes</option>
-                  <option value="vendas">Vendas</option>
-                  <option value="financeiro">Financeiro</option>
-                  <option value="fiscal">Fiscal</option>
-                  <option value="auditoria">Auditoria</option>
+                <select value={filtroModulo} onChange={e => setFiltroModulo(e.target.value as ModuloReport | "todos")} className="h-10 px-3 rounded-xl border bg-white text-sm focus:ring-2 focus:ring-primary/20">
+                  <option value="todos">📁 Todos os Módulos</option>
+                  <option value="estoque">📦 Estoque</option>
+                  <option value="clientes">👥 Clientes</option>
+                  <option value="produtos">🏷️ Produtos</option>
+                  <option value="vendas">📊 Vendas</option>
+                  <option value="financeiro">💰 Financeiro</option>
+                  <option value="fiscal">🔐 Fiscal</option>
+                  <option value="auditoria">🔍 Auditoria</option>
                 </select>
-                <select value={filtroUso} onChange={e => setFiltroUso(e.target.value as UsoReport | "todos")} className="h-10 px-3 rounded-xl border bg-white text-sm">
-                  <option value="todos">Todos os Tipos</option>
-                  <option value="operacional">Operacional</option>
-                  <option value="gerencial">Gerencial</option>
-                  <option value="fiscal">Fiscal</option>
-                  <option value="auditoria">Auditoria</option>
+                <select value={filtroUso} onChange={e => setFiltroUso(e.target.value as UsoReport | "todos")} className="h-10 px-3 rounded-xl border bg-white text-sm focus:ring-2 focus:ring-primary/20">
+                  <option value="todos">🎯 Todos os Tipos</option>
+                  <option value="operacional">⚙️ Operacional</option>
+                  <option value="gerencial">📈 Gerencial</option>
+                  <option value="fiscal">📋 Fiscal</option>
+                  <option value="auditoria">🛡️ Auditoria</option>
                 </select>
+                {favoritosList.length > 0 && (
+                  <Button variant="outline" onClick={scrollToFavoritos} className="h-10 px-3 rounded-xl border-amber-200 text-amber-600 hover:bg-amber-50">
+                    <Star className="w-4 h-4 mr-1 fill-amber-400" /> {favoritosList.length}
+                  </Button>
+                )}
               </div>
             </div>
           </CardContent>
@@ -295,10 +422,11 @@ function ReportsPage() {
             <div className="flex items-center gap-2">
               <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
               <h2 className="text-lg font-semibold">Relatórios em Destaque</h2>
+              <Badge variant="secondary" className="rounded-lg ml-2">Recomendados</Badge>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {destaques.map(report => (
-                <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => abrirDrawer(report)} isLocked={!temPermissao(permissaoUsuario, report.permissao)} />
+                <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => abrirDrawer(report)} />
               ))}
             </div>
           </div>
@@ -306,10 +434,11 @@ function ReportsPage() {
 
         {/* Seção de Favoritos */}
         {favoritosList.length > 0 && (
-          <div className="space-y-4">
+          <div id="secao-favoritos" className="space-y-4">
             <div className="flex items-center gap-2">
               <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
-              <h2 className="text-lg font-semibold">Meus Favoritos</h2>
+              <h2 className="text-lg font-semibold">⭐ Relatórios Mais Utilizados</h2>
+              <Badge variant="secondary" className="rounded-lg ml-2 bg-amber-100 text-amber-700">{favoritosList.length} favoritos</Badge>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {favoritosList.map(report => (
@@ -319,18 +448,41 @@ function ReportsPage() {
           </div>
         )}
 
-        {/* Catálogo Completo */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Catálogo de Relatórios</h2>
-            <Badge variant="secondary" className="rounded-lg">{relatoriosFiltrados.length} encontrados</Badge>
+        {/* Categorias de Relatórios por Módulo */}
+        {filtroModulo === "todos" ? (
+          // Mostrar seções por módulo quando não há filtro específico
+          modulosOrdenados.map(({ id, label, icone: ModIcon, cor }) => {
+            const relatoriosModulo = relatoriosPorModulo[id];
+            if (relatoriosModulo.length === 0) return null;
+            return (
+              <div key={id} className="space-y-4">
+                <div className="flex items-center gap-2 border-b border-border/50 pb-2">
+                  <ModIcon className={`w-5 h-5 ${cor}`} />
+                  <h2 className="text-lg font-semibold text-slate-800">{label}</h2>
+                  <Badge variant="secondary" className="rounded-lg ml-2">{relatoriosModulo.length}</Badge>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {relatoriosModulo.map(report => (
+                    <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => abrirDrawer(report)} />
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          // Mostrar grid simples quando há filtro específico
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Relatórios Encontrados</h2>
+              <Badge variant="secondary" className="rounded-lg">{relatoriosFiltrados.length} resultados</Badge>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {relatoriosFiltrados.map(report => (
+                <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => abrirDrawer(report)} />
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {relatoriosFiltrados.map(report => (
-              <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => abrirDrawer(report)} isLocked={!temPermissao(permissaoUsuario, report.permissao)} />
-            ))}
-          </div>
-        </div>
+        )}
 
         {/* Mensagem se não houver resultados */}
         {relatoriosFiltrados.length === 0 && (
