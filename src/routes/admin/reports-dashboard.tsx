@@ -33,7 +33,7 @@
  */
 
 import { useState, useMemo, useEffect } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   FileText,
   Star,
@@ -173,6 +173,7 @@ interface ReportCardProps {
   isLocked?: boolean;
   onToggleFavorito: () => void;
   onVisualizar: () => void;
+  onVerPreview?: () => void;
 }
 
 function ReportCard({
@@ -181,6 +182,7 @@ function ReportCard({
   isLocked,
   onToggleFavorito,
   onVisualizar,
+  onVerPreview,
 }: ReportCardProps) {
   const Icon = report.icone;
   const categoria = REPORT_CATEGORIES.find((c) => c.id === report.modulo);
@@ -266,13 +268,22 @@ function ReportCard({
         >
           <Eye className="w-3.5 h-3.5" /> Ver
         </button>
-        <button className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50">
+        <button 
+          onClick={onVerPreview}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50"
+        >
           <FileText className="w-3.5 h-3.5" /> PDF
         </button>
-        <button className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50">
+        <button 
+          onClick={onVerPreview}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50"
+        >
           <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
         </button>
-        <button className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50">
+        <button 
+          onClick={onVerPreview}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50"
+        >
           <Printer className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -298,6 +309,7 @@ function ReportsDashboardPage() {
 
   // Hooks
   const permissoesUsuario = useUserPermissions();
+  const navigate = useNavigate();
 
   // Carregar favoritos do localStorage
   useEffect(() => {
@@ -401,6 +413,10 @@ function ReportsDashboardPage() {
     document
       .getElementById("secao-favoritos")
       ?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const verPreview = () => {
+    navigate({ to: "/admin/reports-preview" });
   };
 
   // ============================================
@@ -554,6 +570,7 @@ function ReportsDashboardPage() {
                   isFavorito={favoritos.includes(report.id)}
                   onToggleFavorito={() => toggleFavorito(report.id)}
                   onVisualizar={() => abrirRelatorio(report)}
+                  onVerPreview={verPreview}
                 />
               ))}
             </div>
@@ -580,6 +597,7 @@ function ReportsDashboardPage() {
                   isFavorito={true}
                   onToggleFavorito={() => toggleFavorito(report.id)}
                   onVisualizar={() => abrirRelatorio(report)}
+                  onVerPreview={verPreview}
                 />
               ))}
             </div>
@@ -614,6 +632,7 @@ function ReportsDashboardPage() {
                       isFavorito={favoritos.includes(report.id)}
                       onToggleFavorito={() => toggleFavorito(report.id)}
                       onVisualizar={() => abrirRelatorio(report)}
+                      onVerPreview={verPreview}
                     />
                   ))}
                 </div>
