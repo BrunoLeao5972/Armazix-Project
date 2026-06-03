@@ -4,7 +4,7 @@
  */
 
 import { useState } from "react";
-import { X, Calendar, ChevronDown } from "lucide-react";
+import { X, Calendar, ChevronDown, AlertCircle } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -78,6 +78,62 @@ const STATUS_ENTREGA = [
   { value: "devolvida", label: "Devolvida" },
 ];
 
+// Naturezas (para relatório de Contas)
+const NATUREZAS = [
+  { value: "receitas", label: "Receitas", cor: "text-emerald-600" },
+  { value: "despesas", label: "Despesas", cor: "text-rose-600" },
+  { value: "transferencias", label: "Transferências", cor: "text-blue-600" },
+];
+
+// Posições (para relatório de Contas)
+const POSICOES = [
+  { value: "em_aberto", label: "Em Aberto" },
+  { value: "efetivadas", label: "Efetivadas" },
+];
+
+// Contas Bancárias (para Conta Corrente)
+const CONTAS_BANCARIAS_LISTA = [
+  { value: "banco_nordeste", label: "Banco do Nordeste" },
+  { value: "caixa", label: "Caixa Econômica" },
+  { value: "cartoes", label: "Cartões" },
+  { value: "cofre", label: "Cofre" },
+];
+
+// Situações de Cliente
+const SITUACOES_CLIENTE = [
+  { value: "todos", label: "Todos" },
+  { value: "ativos", label: "Ativos" },
+  { value: "inativos", label: "Inativos" },
+];
+
+// Tipos de Cliente
+const TIPOS_CLIENTE = [
+  { value: "pf", label: "Pessoa Física" },
+  { value: "pj", label: "Pessoa Jurídica" },
+  { value: "revendedor", label: "Revendedor" },
+];
+
+// Centros de Resultado
+const CENTROS_RESULTADO = [
+  { value: "vendas", label: "Vendas" },
+  { value: "administrativo", label: "Administrativo" },
+  { value: "operacional", label: "Operacional" },
+  { value: "marketing", label: "Marketing" },
+];
+
+// Tipos de Produto
+const TIPOS_PRODUTO = [
+  { value: "produto", label: "Produto" },
+  { value: "insumo", label: "Insumo" },
+];
+
+// Históricos
+const HISTORICOS = [
+  { value: "hist-001", label: "Vendas de Mercadorias" },
+  { value: "hist-002", label: "Despesas Operacionais" },
+  { value: "hist-003", label: "Receitas Financeiras" },
+];
+
 // Fornecedores mockados
 const FORNECEDORES = [
   { value: "forn-001", label: "Distribuidora Silva" },
@@ -104,14 +160,6 @@ const CONTAS_BANCARIAS = [
   { value: "conta-001", label: "Itaú - 1234" },
   { value: "conta-002", label: "Bradesco - 5678" },
   { value: "conta-003", label: "Caixa - 9012" },
-];
-
-// Históricos financeiros mockados
-const HISTORICOS = [
-  { value: "1.01.01", label: "1.01.01 - Vendas à Vista" },
-  { value: "1.01.02", label: "1.01.02 - Vendas a Prazo" },
-  { value: "2.01.01", label: "2.01.01 - Custo das Mercadorias" },
-  { value: "2.01.02", label: "2.01.02 - Despesas Administrativas" },
 ];
 
 // Status gerais
@@ -610,6 +658,240 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
     )
   );
 
+  // Input Natureza (checkboxes para Contas)
+  const renderNatureza = () => (
+    filtrosVisiveis.includes("natureza" as FiltroVisivel) && (
+      <div className="space-y-3">
+        <Label className="text-sm font-medium text-slate-700">Natureza</Label>
+        <div className="flex flex-wrap gap-3">
+          {NATUREZAS.map((n) => (
+            <label key={n.value} className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(filters.naturezas as string[] || []).includes(n.value)}
+                onChange={(e) => {
+                  const current = (filters.naturezas as string[] || []);
+                  const updated = e.target.checked
+                    ? [...current, n.value]
+                    : current.filter(v => v !== n.value);
+                  handleFilterChange("naturezas", updated);
+                }}
+                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className={`text-sm ${n.cor}`}>{n.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    )
+  );
+
+  // Input Posição (checkboxes para Contas)
+  const renderPosicao = () => (
+    filtrosVisiveis.includes("posicao" as FiltroVisivel) && (
+      <div className="space-y-3">
+        <Label className="text-sm font-medium text-slate-700">Posição</Label>
+        <div className="flex flex-wrap gap-3">
+          {POSICOES.map((p) => (
+            <label key={p.value} className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(filters.posicoes as string[] || []).includes(p.value)}
+                onChange={(e) => {
+                  const current = (filters.posicoes as string[] || []);
+                  const updated = e.target.checked
+                    ? [...current, p.value]
+                    : current.filter(v => v !== p.value);
+                  handleFilterChange("posicoes", updated);
+                }}
+                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-slate-700">{p.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    )
+  );
+
+  // Input Contas Bancárias Múltiplas (checkboxes)
+  const renderContasBancariasMulti = () => (
+    filtrosVisiveis.includes("contas_bancarias_multi" as FiltroVisivel) && (
+      <div className="space-y-3">
+        <Label className="text-sm font-medium text-slate-700">Contas Bancárias</Label>
+        <div className="space-y-2">
+          {CONTAS_BANCARIAS_LISTA.map((c) => (
+            <label key={c.value} className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(filters.contas_bancarias as string[] || []).includes(c.value)}
+                onChange={(e) => {
+                  const current = (filters.contas_bancarias as string[] || []);
+                  const updated = e.target.checked
+                    ? [...current, c.value]
+                    : current.filter(v => v !== c.value);
+                  handleFilterChange("contas_bancarias", updated);
+                }}
+                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-slate-700">{c.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    )
+  );
+
+  // Input Situação do Cliente
+  const renderSituacaoCliente = () => (
+    filtrosVisiveis.includes("situacao_cliente" as FiltroVisivel) && (
+      <div className="space-y-2">
+        <Label className="text-sm font-medium text-slate-700">Situação</Label>
+        <Select
+          value={(filters.situacao_cliente as string) || ""}
+          onValueChange={(value) => handleFilterChange("situacao_cliente", value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Selecione a situação" />
+          </SelectTrigger>
+          <SelectContent>
+            {SITUACOES_CLIENTE.map((s) => (
+              <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  );
+
+  // Input Tipo de Cliente
+  const renderTipoCliente = () => (
+    filtrosVisiveis.includes("tipo_cliente" as FiltroVisivel) && (
+      <div className="space-y-2">
+        <Label className="text-sm font-medium text-slate-700">Tipo de Cliente</Label>
+        <Select
+          value={(filters.tipo_cliente as string) || ""}
+          onValueChange={(value) => handleFilterChange("tipo_cliente", value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Selecione o tipo" />
+          </SelectTrigger>
+          <SelectContent>
+            {TIPOS_CLIENTE.map((t) => (
+              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  );
+
+  // Input Centro de Resultado
+  const renderCentroResultado = () => (
+    filtrosVisiveis.includes("centro_resultado" as FiltroVisivel) && (
+      <div className="space-y-2">
+        <Label className="text-sm font-medium text-slate-700">Centro de Resultado</Label>
+        <Select
+          value={(filters.centro_resultado as string) || ""}
+          onValueChange={(value) => handleFilterChange("centro_resultado", value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Selecione o centro" />
+          </SelectTrigger>
+          <SelectContent>
+            {CENTROS_RESULTADO.map((c) => (
+              <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  );
+
+  // Input Tipo de Produto
+  const renderTipoProduto = () => (
+    filtrosVisiveis.includes("tipo_produto" as FiltroVisivel) && (
+      <div className="space-y-3">
+        <Label className="text-sm font-medium text-slate-700">Tipo de Produto</Label>
+        <div className="flex flex-wrap gap-3">
+          {TIPOS_PRODUTO.map((t) => (
+            <label key={t.value} className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(filters.tipos_produto as string[] || []).includes(t.value)}
+                onChange={(e) => {
+                  const current = (filters.tipos_produto as string[] || []);
+                  const updated = e.target.checked
+                    ? [...current, t.value]
+                    : current.filter(v => v !== t.value);
+                  handleFilterChange("tipos_produto", updated);
+                }}
+                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-slate-700">{t.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    )
+  );
+
+  // Toggle Estoque Baixo (Switch)
+  const renderToggleEstoqueBaixo = () => (
+    filtrosVisiveis.includes("toggle_estoque_baixo" as FiltroVisivel) && (
+      <div className="flex items-center justify-between py-3 px-4 bg-amber-50 border border-amber-200 rounded-lg">
+        <div className="flex items-center space-x-2">
+          <AlertCircle className="w-5 h-5 text-amber-600" />
+          <Label className="text-sm font-medium text-amber-800 cursor-pointer">
+            Apenas Estoque Baixo?
+          </Label>
+        </div>
+        <button
+          onClick={() => handleFilterChange("apenas_estoque_baixo", !(filters.apenas_estoque_baixo as boolean))}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+            (filters.apenas_estoque_baixo as boolean) ? 'bg-amber-500' : 'bg-slate-200'
+          }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              (filters.apenas_estoque_baixo as boolean) ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </div>
+    )
+  );
+
+  // Checkbox Somente Vendas
+  const renderSomenteVendas = () => (
+    filtrosVisiveis.includes("somente_vendas" as FiltroVisivel) && (
+      <label className="flex items-center space-x-2 cursor-pointer py-2">
+        <input
+          type="checkbox"
+          checked={(filters.somente_vendas as boolean) || false}
+          onChange={(e) => handleFilterChange("somente_vendas", e.target.checked)}
+          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+        />
+        <span className="text-sm text-slate-700">Somente Vendas</span>
+      </label>
+    )
+  );
+
+  // Checkbox Remover Opcionais
+  const renderRemoverOpcionais = () => (
+    filtrosVisiveis.includes("remover_opcionais" as FiltroVisivel) && (
+      <label className="flex items-center space-x-2 cursor-pointer py-2">
+        <input
+          type="checkbox"
+          checked={(filters.remover_opcionais as boolean) || false}
+          onChange={(e) => handleFilterChange("remover_opcionais", e.target.checked)}
+          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+        />
+        <span className="text-sm text-slate-700">Remover Opcionais/Adicionais</span>
+      </label>
+    )
+  );
+
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="w-full sm:max-w-md overflow-y-auto">
@@ -649,6 +931,17 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             {renderUsuarioOperador()}
             {renderTipoOperacao()}
             {renderStatusEntrega()}
+            {/* Novos filtros específicos V2 */}
+            {renderNatureza()}
+            {renderPosicao()}
+            {renderContasBancariasMulti()}
+            {renderSituacaoCliente()}
+            {renderTipoCliente()}
+            {renderCentroResultado()}
+            {renderTipoProduto()}
+            {renderToggleEstoqueBaixo()}
+            {renderSomenteVendas()}
+            {renderRemoverOpcionais()}
           </div>
 
           {/* Botões de Ação */}

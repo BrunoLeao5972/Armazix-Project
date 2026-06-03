@@ -29,15 +29,18 @@ export type NivelPermissao = "admin" | "gerente" | "financeiro" | "vendedor" | "
 
 /** Define se e como o relatório usa período de datas */
 export type TipoPeriodo =
-  | "nenhum"                              // Sem filtro de período (ex: Estoque Baixo)
+  | "nenhum"                              // Sem filtro de período (ex: Posição do Caixa, Cadastros)
   | "intervalo_movimentacao"              // Por intervalo de venda/movimentação
   | "data_entrada_nf"                     // Por data de entrada ou emissão da NF
   | "periodo_inatividade"                 // Produtos sem vender desde data X até Y
   | "mes_aniversario"                     // Apenas mês (dropdown Janeiro-Dezembro)
-  | "periodo_completo";                   // Período tradicional com data/hora
+  | "periodo_completo"                    // Período tradicional com data/hora
+  | "data_emissao_vencimento"             // Escolha entre data de emissão ou vencimento
+  | "data_efetivacao";                    // Data de efetivação (para conta corrente)
 
 /** Filtros visíveis disponíveis para cada relatório */
 export type FiltroVisivel =
+  // Filtros comerciais
   | "vendedor"
   | "cliente"
   | "fornecedor"
@@ -51,7 +54,21 @@ export type FiltroVisivel =
   | "motivo_cancelamento"
   | "historico"
   | "periodo"
-  | "mes";
+  | "mes"
+  // Filtros específicos de clientes
+  | "situacao_cliente"
+  | "tipo_cliente"
+  // Filtros específicos de contas/financeiro
+  | "natureza"
+  | "posicao"
+  | "contas_bancarias_multi"
+  | "centro_resultado"
+  // Filtros específicos de produtos
+  | "tipo_produto"
+  | "toggle_estoque_baixo"
+  // Filtros específicos de vendas
+  | "remover_opcionais"
+  | "somente_vendas";
 
 /** Configuração detalhada de filtros por relatório */
 export interface ConfiguracaoFiltro {
