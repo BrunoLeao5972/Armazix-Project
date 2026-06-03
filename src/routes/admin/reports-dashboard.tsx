@@ -365,9 +365,10 @@ function ReportsDashboardPage() {
     const grupos: Record<ModuloReport, ReportItem[]> = {
       gerencial: [],
       financeiro: [],
+      clientes: [],
       suprimentos: [],
       comercial: [],
-      seguranca: [],
+      operacoes: [],
     };
     relatoriosFiltrados.forEach((r) => grupos[r.modulo].push(r));
     return grupos;
