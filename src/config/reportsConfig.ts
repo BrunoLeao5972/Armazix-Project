@@ -20,7 +20,56 @@ import {
 export type ModuloReport = "estoque" | "clientes" | "produtos" | "vendas" | "financeiro" | "fiscal" | "auditoria";
 export type UsoReport = "operacional" | "gerencial" | "fiscal" | "auditoria";
 export type NivelPermissao = "admin" | "gerente" | "financeiro" | "vendedor" | "operador" | "caixa" | "fiscal";
-export type TipoFiltro = "periodo" | "vendedor" | "cliente" | "fornecedor" | "produto" | "formaPagamento" | "status" | "canal" | "conta" | "historico" | "categoria" | "motivoCancelamento";
+
+// ============================================
+// NOVOS TIPOS - CONFIGURAÇÃO DE FILTROS DINÂMICOS
+// ============================================
+
+/** Define se e como o relatório usa período de datas */
+export type TipoPeriodo =
+  | "nenhum"                              // Sem filtro de período (ex: Estoque Baixo)
+  | "intervalo_movimentacao"              // Por intervalo de venda/movimentação
+  | "data_entrada_nf"                     // Por data de entrada ou emissão da NF
+  | "periodo_inatividade"                 // Produtos sem vender desde data X até Y
+  | "mes_aniversario"                     // Apenas mês (dropdown Janeiro-Dezembro)
+  | "periodo_completo";                   // Período tradicional com data/hora
+
+/** Filtros visíveis disponíveis para cada relatório */
+export type FiltroVisivel =
+  | "vendedor"
+  | "cliente"
+  | "fornecedor"
+  | "conta_bancaria"
+  | "categoria_produto"
+  | "status_estoque"
+  | "produto"
+  | "forma_pagamento"
+  | "canal"
+  | "status"
+  | "motivo_cancelamento"
+  | "historico"
+  | "periodo"
+  | "mes";
+
+/** Configuração detalhada de filtros por relatório */
+export interface ConfiguracaoFiltro {
+  /** Tipo de período de datas (se aplicável) */
+  tipoPeriodo: TipoPeriodo;
+  /** Texto exibido no label do período (ex: "Data de Entrada", "Período de Análise") */
+  labelPeriodo?: string;
+  /** Lista de filtros adicionais que aparecem no drawer */
+  filtrosVisiveis: FiltroVisivel[];
+  /** Configurações extras específicas */
+  opcoes?: {
+    /** Para status_estoque: valores disponíveis no select */
+    statusEstoque?: string[];
+    /** Para categoria_produto: permitir múltipla seleção */
+    multiplaCategoria?: boolean;
+    /** Range de estoque mínimo (para relatórios de estoque baixo) */
+    rangeEstoqueMinimo?: boolean;
+  };
+}
+
 export type FormatoExportacao = "pdf" | "excel" | "csv" | "json" | "print";
 export type StatusReport = "ativo" | "beta" | "descontinuado" | "em_breve";
 
@@ -39,7 +88,10 @@ export interface ReportItem {
   destaque?: boolean;
   permiteFavorito: boolean;
   status: StatusReport;
-  filtrosDisponiveis: TipoFiltro[];
+  /** @deprecated Use configuracaoFiltro em vez de filtrosDisponiveis */
+  filtrosDisponiveis?: string[];
+  /** Nova configuração dinâmica de filtros */
+  configuracaoFiltro: ConfiguracaoFiltro;
   formatosExportacao: FormatoExportacao[];
   endpointGeracao?: string;
   usaHistoricoEstruturado?: boolean;
@@ -79,53 +131,692 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
 
 export const REPORTS_CATALOGO: ReportItem[] = [
   // ESTOQUE (7)
-  { id: "est-001", nome: "Entrada de Mercadorias", descricao: "Relatório completo de entradas no estoque com notas fiscais", modulo: "estoque", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "operador"], icone: Package, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "fornecedor", "produto"], formatosExportacao: ["pdf", "excel"], ordem: 1, versao: "1.0" },
-  { id: "est-002", nome: "Saída de Produtos", descricao: "Histórico de saídas de estoque com motivos", modulo: "estoque", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "operador"], icone: TrendingDown, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "vendedor", "produto", "status"], formatosExportacao: ["pdf", "excel"], ordem: 2, versao: "1.0" },
-  { id: "est-003", nome: "Extrato e Inventário", descricao: "Posição atual do estoque com valorização", modulo: "estoque", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "operador"], icone: FileText, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "produto"], formatosExportacao: ["pdf", "excel", "csv"], ordem: 3, versao: "1.0" },
-  { id: "est-004", nome: "Balanço de Estoque", descricao: "Comparativo teórico vs físico com ajustes", modulo: "estoque", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: BarChart3, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "produto"], formatosExportacao: ["pdf", "excel"], ordem: 4, versao: "1.0" },
-  { id: "est-005", nome: "Produtos com Estoque Baixo", descricao: "Alerta de produtos abaixo do ponto de reposição", modulo: "estoque", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "operador"], icone: AlertCircle, destaque: true, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["produto"], formatosExportacao: ["pdf", "excel"], ordem: 5, versao: "1.0" },
-  { id: "est-006", nome: "Produtos sem Movimentação", descricao: "Itens sem entrada ou saída no período", modulo: "estoque", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: Clock, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "produto"], formatosExportacao: ["pdf", "excel"], ordem: 6, versao: "1.0" },
-  { id: "est-007", nome: "Histórico de Movimentações", descricao: "Rastreabilidade completa de movimentações", modulo: "estoque", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "operador"], icone: History, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "produto", "vendedor"], formatosExportacao: ["pdf", "excel"], ordem: 7, versao: "1.0" },
+  {
+    id: "est-001",
+    nome: "Entrada de Mercadorias",
+    descricao: "Relatório completo de entradas no estoque com notas fiscais",
+    modulo: "estoque",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "operador"],
+    icone: Package,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "data_entrada_nf",
+      labelPeriodo: "Data de Entrada / Emissão da NF",
+      filtrosVisiveis: ["fornecedor"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 1,
+    versao: "1.0"
+  },
+  {
+    id: "est-002",
+    nome: "Saída de Produtos",
+    descricao: "Histórico de saídas de estoque com motivos",
+    modulo: "estoque",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "operador"],
+    icone: TrendingDown,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["vendedor", "produto", "status"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 2,
+    versao: "1.0"
+  },
+  {
+    id: "est-003",
+    nome: "Extrato e Inventário",
+    descricao: "Posição atual do estoque com valorização",
+    modulo: "estoque",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "operador"],
+    icone: FileText,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["produto"]
+    },
+    formatosExportacao: ["pdf", "excel", "csv"],
+    ordem: 3,
+    versao: "1.0"
+  },
+  {
+    id: "est-004",
+    nome: "Balanço de Estoque",
+    descricao: "Comparativo teórico vs físico com ajustes",
+    modulo: "estoque",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: BarChart3,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["produto"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 4,
+    versao: "1.0"
+  },
+  {
+    id: "est-005",
+    nome: "Produtos com Estoque Baixo",
+    descricao: "Alerta de produtos abaixo do ponto de reposição",
+    modulo: "estoque",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "operador"],
+    icone: AlertCircle,
+    destaque: true,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "nenhum",
+      filtrosVisiveis: ["categoria_produto", "status_estoque"],
+      opcoes: {
+        rangeEstoqueMinimo: true,
+        statusEstoque: ["Crítico", "Baixo", "Atenção"]
+      }
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 5,
+    versao: "1.0"
+  },
+  {
+    id: "est-006",
+    nome: "Produtos sem Movimentação",
+    descricao: "Itens sem entrada ou saída no período",
+    modulo: "estoque",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: Clock,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_inatividade",
+      labelPeriodo: "Período de Inatividade",
+      filtrosVisiveis: ["categoria_produto"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 6,
+    versao: "1.0"
+  },
+  {
+    id: "est-007",
+    nome: "Histórico de Movimentações",
+    descricao: "Rastreabilidade completa de movimentações",
+    modulo: "estoque",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "operador"],
+    icone: History,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["produto", "vendedor"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 7,
+    versao: "1.0"
+  },
 
   // CLIENTES (5)
-  { id: "cli-001", nome: "Clientes Cadastrados", descricao: "Base completa de clientes ativos e inativos", modulo: "clientes", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "vendedor"], icone: Users, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "status"], formatosExportacao: ["pdf", "excel", "csv"], ordem: 1, versao: "1.0" },
-  { id: "cli-002", nome: "Clientes que Mais Compram", descricao: "Ranking por volume de compras e ticket médio", modulo: "clientes", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: TrendingUp, destaque: true, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo"], formatosExportacao: ["pdf", "excel"], ordem: 2, versao: "1.0" },
-  { id: "cli-003", nome: "Histórico de Compras", descricao: "Detalhamento de compras por cliente", modulo: "clientes", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "vendedor"], icone: Receipt, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "cliente"], formatosExportacao: ["pdf", "excel"], ordem: 3, versao: "1.0" },
-  { id: "cli-004", nome: "Clientes Inativos", descricao: "Clientes sem compras no período", modulo: "clientes", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: User, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo"], formatosExportacao: ["pdf", "excel"], ordem: 4, versao: "1.0" },
-  { id: "cli-005", nome: "Aniversariantes", descricao: "Lista para ações de marketing", modulo: "clientes", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "vendedor"], icone: Calendar, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo"], formatosExportacao: ["pdf", "excel"], ordem: 5, versao: "1.0" },
+  {
+    id: "cli-001",
+    nome: "Clientes Cadastrados",
+    descricao: "Base completa de clientes ativos e inativos",
+    modulo: "clientes",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "vendedor"],
+    icone: Users,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Cadastro",
+      filtrosVisiveis: ["status"]
+    },
+    formatosExportacao: ["pdf", "excel", "csv"],
+    ordem: 1,
+    versao: "1.0"
+  },
+  {
+    id: "cli-002",
+    nome: "Clientes que Mais Compram",
+    descricao: "Ranking por volume de compras e ticket médio",
+    modulo: "clientes",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: TrendingUp,
+    destaque: true,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: []
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 2,
+    versao: "1.0"
+  },
+  {
+    id: "cli-003",
+    nome: "Histórico de Compras",
+    descricao: "Detalhamento de compras por cliente",
+    modulo: "clientes",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "vendedor"],
+    icone: Receipt,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["cliente"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 3,
+    versao: "1.0"
+  },
+  {
+    id: "cli-004",
+    nome: "Clientes Inativos",
+    descricao: "Clientes sem compras no período",
+    modulo: "clientes",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: User,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_inatividade",
+      labelPeriodo: "Período de Inatividade",
+      filtrosVisiveis: []
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 4,
+    versao: "1.0"
+  },
+  {
+    id: "cli-005",
+    nome: "Aniversariantes",
+    descricao: "Lista para ações de marketing",
+    modulo: "clientes",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "vendedor"],
+    icone: Calendar,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "mes_aniversario",
+      labelPeriodo: "Mês de Aniversário",
+      filtrosVisiveis: ["mes"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 5,
+    versao: "1.0"
+  },
 
   // PRODUTOS (6)
-  { id: "prod-001", nome: "Lista de Produtos", descricao: "Catálogo com preços e estoques", modulo: "produtos", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "vendedor"], icone: Package, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["produto", "status"], formatosExportacao: ["pdf", "excel"], ordem: 1, versao: "1.0" },
-  { id: "prod-002", nome: "Produtos por Categoria", descricao: "Organização hierárquica", modulo: "produtos", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "vendedor"], icone: Tag, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "produto"], formatosExportacao: ["pdf", "excel"], ordem: 2, versao: "1.0" },
-  { id: "prod-003", nome: "Produtos Mais Lucrativos", descricao: "Ranking por margem de contribuição", modulo: "produtos", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: DollarSign, destaque: true, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "produto"], formatosExportacao: ["pdf", "excel"], ordem: 3, versao: "1.0" },
-  { id: "prod-004", nome: "Produtos com Baixa Margem", descricao: "Itens com margem abaixo do esperado", modulo: "produtos", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: Percent, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "produto"], formatosExportacao: ["pdf", "excel"], ordem: 4, versao: "1.0" },
-  { id: "prod-005", nome: "Produtos sem Estoque", descricao: "Itens esgotados ou descontinuados", modulo: "produtos", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "operador"], icone: AlertCircle, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["produto"], formatosExportacao: ["pdf", "excel"], ordem: 5, versao: "1.0" },
-  { id: "prod-006", nome: "Produtos com Maior Giro", descricao: "Ranking por velocidade de rotatividade", modulo: "produtos", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: TrendingUp, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "produto"], formatosExportacao: ["pdf", "excel"], ordem: 6, versao: "1.0" },
+  {
+    id: "prod-001",
+    nome: "Lista de Produtos",
+    descricao: "Catálogo com preços e estoques",
+    modulo: "produtos",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "vendedor"],
+    icone: Package,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "nenhum",
+      filtrosVisiveis: ["produto", "status"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 1,
+    versao: "1.0"
+  },
+  {
+    id: "prod-002",
+    nome: "Produtos por Categoria",
+    descricao: "Organização hierárquica",
+    modulo: "produtos",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "vendedor"],
+    icone: Tag,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "nenhum",
+      filtrosVisiveis: ["categoria_produto", "produto"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 2,
+    versao: "1.0"
+  },
+  {
+    id: "prod-003",
+    nome: "Produtos Mais Lucrativos",
+    descricao: "Ranking por margem de contribuição",
+    modulo: "produtos",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: DollarSign,
+    destaque: true,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "intervalo_movimentacao",
+      labelPeriodo: "Intervalo de Movimentação/Venda",
+      filtrosVisiveis: ["categoria_produto"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 3,
+    versao: "1.0"
+  },
+  {
+    id: "prod-004",
+    nome: "Produtos com Baixa Margem",
+    descricao: "Itens com margem abaixo do esperado",
+    modulo: "produtos",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: Percent,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["categoria_produto", "produto"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 4,
+    versao: "1.0"
+  },
+  {
+    id: "prod-005",
+    nome: "Produtos sem Estoque",
+    descricao: "Itens esgotados ou descontinuados",
+    modulo: "produtos",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "operador"],
+    icone: AlertCircle,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "nenhum",
+      filtrosVisiveis: ["categoria_produto", "produto"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 5,
+    versao: "1.0"
+  },
+  {
+    id: "prod-006",
+    nome: "Produtos com Maior Giro",
+    descricao: "Ranking por velocidade de rotatividade",
+    modulo: "produtos",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: TrendingUp,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "intervalo_movimentacao",
+      labelPeriodo: "Intervalo de Análise",
+      filtrosVisiveis: ["categoria_produto"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 6,
+    versao: "1.0"
+  },
 
   // VENDAS (7)
-  { id: "vnd-001", nome: "Vendas por Período", descricao: "Consolidado completo de vendas", modulo: "vendas", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: ShoppingCart, destaque: true, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "vendedor", "cliente", "formaPagamento", "canal", "status"], formatosExportacao: ["pdf", "excel"], ordem: 1, versao: "1.0" },
-  { id: "vnd-002", nome: "Vendas por Produto", descricao: "Detalhamento por item", modulo: "vendas", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "vendedor"], icone: Package, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "vendedor", "produto", "formaPagamento"], formatosExportacao: ["pdf", "excel"], ordem: 2, versao: "1.0" },
-  { id: "vnd-003", nome: "Vendas por Cliente", descricao: "Análise com ticket médio", modulo: "vendas", uso: "gerencial", permissaoNecessaria: ["admin", "gerente", "vendedor"], icone: User, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "cliente", "vendedor"], formatosExportacao: ["pdf", "excel"], ordem: 3, versao: "1.0" },
-  { id: "vnd-004", nome: "Vendas por Forma de Pagamento", descricao: "Distribuição por meio de pagamento", modulo: "vendas", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "financeiro"], icone: CreditCard, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "formaPagamento"], formatosExportacao: ["pdf", "excel"], ordem: 4, versao: "1.0" },
-  { id: "vnd-005", nome: "Produtos Mais Vendidos", descricao: "Ranking por quantidade", modulo: "vendas", uso: "gerencial", permissaoNecessaria: ["admin", "gerente", "vendedor"], icone: TrendingUp, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "produto"], formatosExportacao: ["pdf", "excel"], ordem: 5, versao: "1.0" },
-  { id: "vnd-006", nome: "Ticket Médio", descricao: "Valor médio por venda e cliente", modulo: "vendas", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: DollarSign, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "vendedor", "cliente"], formatosExportacao: ["pdf", "excel"], ordem: 6, versao: "1.0" },
-  { id: "vnd-007", nome: "Cancelamentos e Devoluções", descricao: "Relatório com motivos", modulo: "vendas", uso: "operacional", permissaoNecessaria: ["admin", "gerente"], icone: X, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "vendedor", "motivoCancelamento"], formatosExportacao: ["pdf", "excel"], ordem: 7, versao: "1.0" },
+  {
+    id: "vnd-001",
+    nome: "Vendas por Período",
+    descricao: "Consolidado completo de vendas",
+    modulo: "vendas",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: ShoppingCart,
+    destaque: true,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["vendedor", "cliente", "forma_pagamento", "canal", "status"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 1,
+    versao: "1.0"
+  },
+  {
+    id: "vnd-002",
+    nome: "Vendas por Produto",
+    descricao: "Detalhamento por item",
+    modulo: "vendas",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "vendedor"],
+    icone: Package,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["vendedor", "produto", "forma_pagamento"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 2,
+    versao: "1.0"
+  },
+  {
+    id: "vnd-003",
+    nome: "Vendas por Cliente",
+    descricao: "Análise com ticket médio",
+    modulo: "vendas",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente", "vendedor"],
+    icone: User,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["cliente", "vendedor"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 3,
+    versao: "1.0"
+  },
+  {
+    id: "vnd-004",
+    nome: "Vendas por Forma de Pagamento",
+    descricao: "Distribuição por meio de pagamento",
+    modulo: "vendas",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "financeiro"],
+    icone: CreditCard,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["forma_pagamento"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 4,
+    versao: "1.0"
+  },
+  {
+    id: "vnd-005",
+    nome: "Produtos Mais Vendidos",
+    descricao: "Ranking por quantidade",
+    modulo: "vendas",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente", "vendedor"],
+    icone: TrendingUp,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["produto", "categoria_produto"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 5,
+    versao: "1.0"
+  },
+  {
+    id: "vnd-006",
+    nome: "Ticket Médio",
+    descricao: "Valor médio por venda e cliente",
+    modulo: "vendas",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: DollarSign,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["vendedor", "cliente"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 6,
+    versao: "1.0"
+  },
+  {
+    id: "vnd-007",
+    nome: "Cancelamentos e Devoluções",
+    descricao: "Relatório com motivos",
+    modulo: "vendas",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: X,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["vendedor", "motivo_cancelamento"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 7,
+    versao: "1.0"
+  },
 
   // FINANCEIRO (6)
-  { id: "fin-001", nome: "Fluxo de Caixa", descricao: "Entradas e saídas com projeção", modulo: "financeiro", uso: "gerencial", permissaoNecessaria: ["admin", "gerente", "financeiro"], icone: DollarSign, destaque: true, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "conta", "historico"], formatosExportacao: ["pdf", "excel"], usaHistoricoEstruturado: true, ordem: 1, versao: "1.0" },
-  { id: "fin-002", nome: "Contas a Receber", descricao: "Títulos em aberto e recebidos", modulo: "financeiro", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "financeiro"], icone: TrendingUp, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "cliente", "status", "historico"], formatosExportacao: ["pdf", "excel"], ordem: 2, versao: "1.0" },
-  { id: "fin-003", nome: "Contas a Pagar", descricao: "Obrigações financeiras", modulo: "financeiro", uso: "operacional", permissaoNecessaria: ["admin", "gerente", "financeiro"], icone: TrendingDown, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "fornecedor", "status", "historico"], formatosExportacao: ["pdf", "excel"], ordem: 3, versao: "1.0" },
-  { id: "fin-004", nome: "Inadimplência", descricao: "Clientes com pagamentos atrasados", modulo: "financeiro", uso: "gerencial", permissaoNecessaria: ["admin", "gerente", "financeiro"], icone: AlertCircle, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "cliente", "status"], formatosExportacao: ["pdf", "excel"], ordem: 4, versao: "1.0" },
-  { id: "fin-005", nome: "Lucro Bruto e Líquido", descricao: "Demonstrativo de resultados", modulo: "financeiro", uso: "gerencial", permissaoNecessaria: ["admin", "gerente"], icone: BarChart3, destaque: true, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "historico"], formatosExportacao: ["pdf", "excel"], ordem: 5, versao: "1.0" },
-  { id: "fin-006", nome: "Receitas e Despesas por Histórico", descricao: "Consolidado por árvore hierárquica", modulo: "financeiro", uso: "gerencial", permissaoNecessaria: ["admin", "gerente", "financeiro"], icone: Landmark, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "historico", "conta"], formatosExportacao: ["pdf", "excel"], usaHistoricoEstruturado: true, ordem: 6, versao: "1.0" },
+  {
+    id: "fin-001",
+    nome: "Fluxo de Caixa",
+    descricao: "Entradas e saídas com projeção",
+    modulo: "financeiro",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente", "financeiro"],
+    icone: DollarSign,
+    destaque: true,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["conta_bancaria", "historico"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    usaHistoricoEstruturado: true,
+    ordem: 1,
+    versao: "1.0"
+  },
+  {
+    id: "fin-002",
+    nome: "Contas a Receber",
+    descricao: "Títulos em aberto e recebidos",
+    modulo: "financeiro",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "financeiro"],
+    icone: TrendingUp,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Vencimento",
+      filtrosVisiveis: ["cliente", "status", "historico"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 2,
+    versao: "1.0"
+  },
+  {
+    id: "fin-003",
+    nome: "Contas a Pagar",
+    descricao: "Obrigações financeiras",
+    modulo: "financeiro",
+    uso: "operacional",
+    permissaoNecessaria: ["admin", "gerente", "financeiro"],
+    icone: TrendingDown,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Vencimento",
+      filtrosVisiveis: ["fornecedor", "status", "historico"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 3,
+    versao: "1.0"
+  },
+  {
+    id: "fin-004",
+    nome: "Inadimplência",
+    descricao: "Clientes com pagamentos atrasados",
+    modulo: "financeiro",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente", "financeiro"],
+    icone: AlertCircle,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Atraso",
+      filtrosVisiveis: ["cliente", "status"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 4,
+    versao: "1.0"
+  },
+  {
+    id: "fin-005",
+    nome: "Lucro Bruto e Líquido",
+    descricao: "Demonstrativo de resultados",
+    modulo: "financeiro",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: BarChart3,
+    destaque: true,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["historico"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 5,
+    versao: "1.0"
+  },
+  {
+    id: "fin-006",
+    nome: "Receitas e Despesas por Histórico",
+    descricao: "Consolidado por árvore hierárquica",
+    modulo: "financeiro",
+    uso: "gerencial",
+    permissaoNecessaria: ["admin", "gerente", "financeiro"],
+    icone: Landmark,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["historico", "conta_bancaria"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    usaHistoricoEstruturado: true,
+    ordem: 6,
+    versao: "1.0"
+  },
 
   // FISCAL (2)
-  { id: "fis-001", nome: "Notas Fiscais Emitidas", descricao: "NFe e NFCe com status", modulo: "fiscal", uso: "fiscal", permissaoNecessaria: ["admin", "gerente", "fiscal"], icone: FileText, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "status", "cliente"], formatosExportacao: ["pdf", "excel"], ordem: 1, versao: "1.0" },
-  { id: "fis-002", nome: "Operações por Usuário", descricao: "Atividades fiscais por operador", modulo: "fiscal", uso: "fiscal", permissaoNecessaria: ["admin", "gerente", "fiscal"], icone: Users, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "vendedor"], formatosExportacao: ["pdf", "excel"], ordem: 2, versao: "1.0" },
+  {
+    id: "fis-001",
+    nome: "Notas Fiscais Emitidas",
+    descricao: "NFe e NFCe com status",
+    modulo: "fiscal",
+    uso: "fiscal",
+    permissaoNecessaria: ["admin", "gerente", "fiscal"],
+    icone: FileText,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Emissão",
+      filtrosVisiveis: ["status", "cliente"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 1,
+    versao: "1.0"
+  },
+  {
+    id: "fis-002",
+    nome: "Operações por Usuário",
+    descricao: "Atividades fiscais por operador",
+    modulo: "fiscal",
+    uso: "fiscal",
+    permissaoNecessaria: ["admin", "gerente", "fiscal"],
+    icone: Users,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["vendedor"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 2,
+    versao: "1.0"
+  },
 
   // AUDITORIA (2)
-  { id: "aud-001", nome: "Fechamento Diário de Caixa", descricao: "Resumo por operador", modulo: "auditoria", uso: "auditoria", permissaoNecessaria: ["admin", "gerente"], icone: Lock, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "vendedor"], formatosExportacao: ["pdf", "excel"], ordem: 1, versao: "1.0" },
-  { id: "aud-002", nome: "Logs de Alterações Críticas", descricao: "Rastreamento de alterações em valores", modulo: "auditoria", uso: "auditoria", permissaoNecessaria: ["admin"], icone: Shield, destaque: true, permiteFavorito: true, status: "ativo", filtrosDisponiveis: ["periodo", "vendedor", "status"], formatosExportacao: ["pdf", "excel"], ordem: 2, versao: "1.0" },
+  {
+    id: "aud-001",
+    nome: "Fechamento Diário de Caixa",
+    descricao: "Resumo por operador",
+    modulo: "auditoria",
+    uso: "auditoria",
+    permissaoNecessaria: ["admin", "gerente"],
+    icone: Lock,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["vendedor"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 1,
+    versao: "1.0"
+  },
+  {
+    id: "aud-002",
+    nome: "Logs de Alterações Críticas",
+    descricao: "Rastreamento de alterações em valores",
+    modulo: "auditoria",
+    uso: "auditoria",
+    permissaoNecessaria: ["admin"],
+    icone: Shield,
+    destaque: true,
+    permiteFavorito: true,
+    status: "ativo",
+    configuracaoFiltro: {
+      tipoPeriodo: "periodo_completo",
+      labelPeriodo: "Período de Análise",
+      filtrosVisiveis: ["vendedor", "status"]
+    },
+    formatosExportacao: ["pdf", "excel"],
+    ordem: 2,
+    versao: "1.0"
+  },
 ];
 
 // ============================================

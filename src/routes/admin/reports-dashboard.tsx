@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ReportFilterDrawer } from "@/components/reports/ReportFilterDrawer";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
@@ -306,6 +307,7 @@ function ReportsDashboardPage() {
   const [reportSelecionado, setReportSelecionado] = useState<ReportItem | null>(
     null
   );
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Hooks
   const permissoesUsuario = useUserPermissions();
@@ -405,8 +407,19 @@ function ReportsDashboardPage() {
   const abrirRelatorio = (report: ReportItem) => {
     setReportSelecionado(report);
     setUltimoRelatorioId(report.id);
-    // TODO: Abrir drawer/modal de filtros
-    console.log("Abrindo relatório:", report.id);
+    setDrawerOpen(true);
+  };
+
+  const handleCloseDrawer = () => {
+    setDrawerOpen(false);
+    setReportSelecionado(null);
+  };
+
+  const handleGenerateReport = (filters: Record<string, unknown>) => {
+    console.log("Gerando relatório:", reportSelecionado?.id, "com filtros:", filters);
+    // TODO: Chamar API para gerar relatório
+    alert(`Relatório "${reportSelecionado?.nome}" gerado com sucesso!`);
+    handleCloseDrawer();
   };
 
   const scrollToFavoritos = () => {
@@ -660,6 +673,14 @@ function ReportsDashboardPage() {
             </Button>
           </div>
         )}
+
+        {/* Drawer de Filtros Dinâmicos */}
+        <ReportFilterDrawer
+          report={reportSelecionado}
+          isOpen={drawerOpen}
+          onClose={handleCloseDrawer}
+          onGenerate={handleGenerateReport}
+        />
       </div>
     </div>
   );
