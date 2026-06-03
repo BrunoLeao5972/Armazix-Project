@@ -1,16 +1,24 @@
 /**
  * ============================================
- * ARMAZIX - CENTRAL DE RELATÓRIOS (ETAPAS 2-3/6)
+ * ARMAZIX - CENTRAL DE RELATÓRIOS (ETAPAS 2-4/6)
  * Arquivo: reports-dashboard.tsx
- * Descrição: Página principal com KPI Cards, busca, filtros e favoritos
+ * Descrição: Página principal completa com KPIs, busca, favoritos e grid
  *
  * ETAPA 2 ✅: KPI Cards (4 cards no topo)
- * ETAPA 3 ✅: Barra de controle com busca em tempo real, filtros e favoritos
+ *   - Total disponíveis, Último relatório, Favoritos, Emissões 24h
+ *
+ * ETAPA 3 ✅: Barra de controle com busca em tempo real
  *   - Busca global por nome, descrição e tags
  *   - Filtros por módulo (7 categorias)
  *   - Estado de favoritos com localStorage
  *   - Seção "⭐ Relatórios Mais Utilizados" dinâmica
  *   - UI responsiva com useMemo (sem gargalos)
+ *
+ * ETAPA 4 ✅: Grid dinâmico agrupado por categorias
+ *   - Mapeamento do array por módulos (Vendas, Financeiro, Estoque...)
+ *   - Cards finos: Nome (font-semibold text-slate-700) + Descrição (text-xs)
+ *   - Controle de segurança por Roles: cards bloqueados com cadeado (isLocked)
+ *   - Layout responsivo: grid-cols-1 → xl:grid-cols-4
  * ============================================
  */
 
