@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 const CashFlowChart = lazy(() => import("@/components/armazix/CashFlowChart"));
+import { getFinanceiroMovimentacoes, getFinanceiroReceber, getFinanceiroPagar } from "@/services/api";
 
 export const Route = createFileRoute("/admin/financial")({
   component: FinancialPage,
@@ -998,26 +999,52 @@ function parseMovData(s: string): number {
 // 1. DASHBOARD
 function SecaoDashboard() {
   const [dtr, setDtr] = useState<DateTimeRange>(DTR_DEFAULT);
+  const [mov, setMov] = useState<Movimentacao[]>([]);
+  const [rec, setRec] = useState<ContaReceber[]>([]);
+  const [pag, setPag] = useState<ContaPagar[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const [m, r, p] = await Promise.all([
+          getFinanceiroMovimentacoes().catch(() => []),
+          getFinanceiroReceber().catch(() => []),
+          getFinanceiroPagar().catch(() => []),
+        ]);
+        if (!mounted) return;
+        setMov(Array.isArray(m) ? (m as unknown as Movimentacao[]) : []);
+        setRec(Array.isArray(r) ? (r as unknown as ContaReceber[]) : []);
+        setPag(Array.isArray(p) ? (p as unknown as ContaPagar[]) : []);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const movFiltradas = useMemo(() => {
-    if (!dtr.dataInicio && !dtr.dataFim) return MOCK_MOV;
+    const base = mov;
+    if (!dtr.dataInicio && !dtr.dataFim) return base;
     const tsI = dtr.dataInicio ? Date.parse(`${dtr.dataInicio}T${dtr.horaInicio}:00`) : 0;
     const tsF = dtr.dataFim    ? Date.parse(`${dtr.dataFim}T${dtr.horaFim}:00`)    : Infinity;
-    return MOCK_MOV.filter(m => { const ts = parseMovData(m.data); return ts >= tsI && ts <= tsF; });
-  }, [dtr]);
+    return base.filter(m => { const ts = parseMovData(m.data); return ts >= tsI && ts <= tsF; });
+  }, [dtr, mov]);
 
-  const entradas = movFiltradas.filter(m => m.tipo === "entrada").reduce((s, m) => s + m.valor, 0);
-  const saidas   = movFiltradas.filter(m => m.tipo === "saida").reduce((s, m) => s + m.valor, 0);
+  const entradas = movFiltradas.filter(m => m.tipo === "entrada").reduce((s, m) => s + (m.valor || 0), 0);
+  const saidas   = movFiltradas.filter(m => m.tipo === "saida").reduce((s, m) => s + (m.valor || 0), 0);
   const saldo    = entradas - saidas;
-  const vencidas = [...MOCK_RECEBER, ...MOCK_PAGAR].filter(c => c.status === "vencido").length;
-  const aVencer  = [...MOCK_RECEBER, ...MOCK_PAGAR].filter(c => c.status === "pendente").length;
+  const vencidas = useMemo(() => [...rec, ...pag].filter(c => c.status === "vencido").length, [rec, pag]);
+  const aVencer  = useMemo(() => [...rec, ...pag].filter(c => c.status === "pendente").length, [rec, pag]);
 
   const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
   // Agrupa movFiltradas por mês/ano e acumula receita e despesa
   const cashflowData = useMemo(() => {
     const map = new Map<string, { name: string; receita: number; despesa: number; order: number }>();
-    const base = dtr.dataInicio || dtr.dataFim ? movFiltradas : MOCK_MOV;
+    const base = dtr.dataInicio || dtr.dataFim ? movFiltradas : mov;
     base.forEach(m => {
       const [datePart = ""] = m.data.split(" ");
       const [, mm = "01", yyyy = "2026"] = datePart.split("/");
@@ -1028,9 +1055,8 @@ function SecaoDashboard() {
       else if (m.tipo === "saida") entry.despesa += m.valor;
     });
     const sorted = Array.from(map.values()).sort((a, b) => a.order - b.order);
-    // Se não há movimentações filtradas usa o mock estático
-    return sorted.length > 0 ? sorted : MOCK_CASHFLOW;
-  }, [movFiltradas, dtr.dataInicio, dtr.dataFim]);
+    return sorted;
+  }, [movFiltradas, dtr.dataInicio, dtr.dataFim, mov]);
 
   const fmtDtrLabel = (date: string, time: string) => {
     if (!date) return "…";
@@ -1083,8 +1109,8 @@ function SecaoDashboard() {
           <CardContent className="space-y-3 pt-1">
             {(() => {
               const lacs: LancamentoDRE[] = [
-                ...MOCK_PAGAR.map(c => ({ categoria: c.categoria, valor: c.valorPago > 0 ? c.valorPago : c.valor, tipo: "saida" as const })),
-                ...MOCK_MOV.filter(m => m.tipo === "saida").map(m => ({ categoria: m.categoria, valor: m.valor, tipo: "saida" as const })),
+                ...pag.map(c => ({ categoria: c.categoria, valor: c.valorPago > 0 ? c.valorPago : c.valor, tipo: "saida" as const })),
+                ...mov.filter(m => m.tipo === "saida").map(m => ({ categoria: m.categoria, valor: m.valor, tipo: "saida" as const })),
               ];
               const { despesas } = top5Historicos(HISTORICOS, lacs);
               const maxVal = despesas[0]?.total ?? 1;
@@ -1114,12 +1140,12 @@ function SecaoDashboard() {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-semibold">Movimentacoes recentes</CardTitle>
-            <span className="text-xs text-muted-foreground">{MOCK_MOV.length} registros</span>
+            <span className="text-xs text-muted-foreground">{mov.length} registros</span>
           </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-0.5">
-            {MOCK_MOV.map(m => (
+            {mov.map(m => (
               <div key={m.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-secondary/40 transition-colors">
                 <div className="flex items-center gap-3">
                   <span className={`grid place-items-center w-8 h-8 rounded-xl shrink-0 ${
@@ -1282,7 +1308,7 @@ function ModalNovaContaReceber({ onClose, onSave }: { onClose: () => void; onSav
 
 // 2. CONTAS A RECEBER
 function SecaoReceber() {
-  const [contas, setContas] = useState<ContaReceber[]>(MOCK_RECEBER);
+  const [contas, setContas] = useState<ContaReceber[]>([]);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusRec[]>([]);
   const [filterForma, setFilterForma] = useState("TODAS");
@@ -1300,6 +1326,18 @@ function SecaoReceber() {
   const [filtrosAbertosRec, setFiltrosAbertosRec] = useState(true);
   const [sortCol, setSortCol] = useState<keyof ContaReceber>("vencimento");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getFinanceiroReceber();
+        if (mounted) setContas(Array.isArray(data) ? (data as unknown as ContaReceber[]) : []);
+      } catch {
+        if (mounted) setContas([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2800); };
   const parseDate = (s: string) => { const [d, m, y] = s.split("/"); return Date.parse(`${y}-${m}-${d}T00:00:00`) || 0; };
@@ -1724,7 +1762,7 @@ const DTR_PAG_DEFAULT = { dataInicio: "", horaInicio: "00:00", dataFim: "", hora
 
 // 3. CONTAS A PAGAR
 function SecaoPagar() {
-  const [contas, setContas]                   = useState<ContaPagar[]>(MOCK_PAGAR);
+  const [contas, setContas]                   = useState<ContaPagar[]>([]);
   const [toast, setToast]                     = useState("");
   const [modalAberto, setModalAberto]         = useState(false);
   const [editando, setEditando]               = useState<ContaPagar | null>(null);
@@ -1744,6 +1782,18 @@ function SecaoPagar() {
   const [filterFornecedor, setFilterFornecedor] = useState("");
   const [search,           setSearch]           = useState("");
   const [dtrPag, setDtrPag]                     = useState(DTR_PAG_DEFAULT);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getFinanceiroPagar();
+        if (mounted) setContas(Array.isArray(data) ? (data as unknown as ContaPagar[]) : []);
+      } catch {
+        if (mounted) setContas([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
@@ -2559,12 +2609,25 @@ function SecaoMovimentacoes() {
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("todos");
   const [dtr, setDtr] = useState<DateTimeRange>(DTR_DEFAULT);
+  const [movs, setMovs] = useState<Movimentacao[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getFinanceiroMovimentacoes();
+        if (mounted) setMovs(Array.isArray(data) ? (data as unknown as Movimentacao[]) : []);
+      } catch {
+        if (mounted) setMovs([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const filtered = useMemo(() => {
     const tsI = dtr.dataInicio ? Date.parse(`${dtr.dataInicio}T${dtr.horaInicio}:00`) : 0;
     const tsF = dtr.dataFim    ? Date.parse(`${dtr.dataFim}T${dtr.horaFim}:00`)    : Infinity;
     const q = search.toLowerCase();
-    return MOCK_MOV.filter(m => {
+    return movs.filter(m => {
       if (filterTipo !== "todos" && m.tipo !== filterTipo) return false;
       if (q && !m.desc.toLowerCase().includes(q) && !m.categoria.toLowerCase().includes(q) && !m.responsavel.toLowerCase().includes(q)) return false;
       if (dtr.dataInicio || dtr.dataFim) {
@@ -2573,7 +2636,7 @@ function SecaoMovimentacoes() {
       }
       return true;
     });
-  }, [search, filterTipo, dtr]);
+  }, [search, filterTipo, dtr, movs]);
 
   const tipoCls: Record<TipoMov, string> = {
     entrada: "bg-emerald-500/15 text-emerald-700",

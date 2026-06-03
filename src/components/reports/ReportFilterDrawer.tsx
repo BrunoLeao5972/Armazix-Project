@@ -3,7 +3,7 @@
  * Renderização atômica condicional baseada na configuração do relatório ativo
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Calendar, ChevronDown, AlertCircle } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,17 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ReportItem, FiltroVisivel } from "@/config/reportsConfig";
+import {
+  searchClientes,
+  searchFornecedores,
+  searchVendedores,
+  searchUsuarios,
+  getContasBancarias,
+  getCategoriasProduto,
+  getHistoricos,
+  getFormasPagamento,
+  type Option,
+} from "@/services/api";
 
 interface ReportFilterDrawerProps {
   report: ReportItem | null;
@@ -39,35 +50,12 @@ const MESES = [
 // Status de estoque
 const STATUS_ESTOQUE = ["Crítico", "Baixo", "Atenção", "Normal"];
 
-// Categorias mockadas
-const CATEGORIAS_PRODUTO = [
-  { value: "graos", label: "Grãos" },
-  { value: "oleos", label: "Óleos" },
-  { value: "massas", label: "Massas" },
-  { value: "laticinios", label: "Laticínios" },
-  { value: "bebidas", label: "Bebidas" },
-];
+// Opções carregadas de API
+// Observação: Situações/Tipos de Cliente, Natureza/Posição e Tipos de Produto permanecem estáticos
+// Por serem taxonomias internas configuradas no Armazix
+const EMPTY_OPTIONS: Option[] = [];
 
-// Usuários/Operadores mockados (para relatórios de auditoria)
-const USUARIOS_OPERADORES = [
-  { value: "admin", label: "Administrador" },
-  { value: "gerente", label: "Gerente" },
-  { value: "carlos", label: "Carlos (Vendedor)" },
-  { value: "ana", label: "Ana (Vendedor)" },
-  { value: "pedro", label: "Pedro (Operador)" },
-  { value: "joao", label: "João (Caixa)" },
-];
-
-// Tipos de operação (para relatórios de auditoria/exclusões)
-const TIPOS_OPERACAO = [
-  { value: "exclusao_produto", label: "Exclusão de Produto" },
-  { value: "exclusao_venda", label: "Exclusão de Venda" },
-  { value: "exclusao_lancamento", label: "Exclusão de Lançamento" },
-  { value: "alteracao_preco", label: "Alteração de Preço" },
-  { value: "cancelamento_nfce", label: "Cancelamento NFC-e" },
-  { value: "reabertura_caixa", label: "Reabertura de Caixa" },
-  { value: "estorno_pagamento", label: "Estorno de Pagamento" },
-];
+// Tipos de operação e usuários virão da API
 
 // Status de entrega (para relatório de entregadores)
 const STATUS_ENTREGA = [
@@ -91,13 +79,8 @@ const POSICOES = [
   { value: "efetivadas", label: "Efetivadas" },
 ];
 
-// Contas Bancárias (para Conta Corrente)
-const CONTAS_BANCARIAS_LISTA = [
-  { value: "banco_nordeste", label: "Banco do Nordeste" },
-  { value: "caixa", label: "Caixa Econômica" },
-  { value: "cartoes", label: "Cartões" },
-  { value: "cofre", label: "Cofre" },
-];
+// Estados de dados dinâmicos
+// Selects controlados por API
 
 // Situações de Cliente
 const SITUACOES_CLIENTE = [
@@ -127,40 +110,7 @@ const TIPOS_PRODUTO = [
   { value: "insumo", label: "Insumo" },
 ];
 
-// Históricos
-const HISTORICOS = [
-  { value: "hist-001", label: "Vendas de Mercadorias" },
-  { value: "hist-002", label: "Despesas Operacionais" },
-  { value: "hist-003", label: "Receitas Financeiras" },
-];
-
-// Fornecedores mockados
-const FORNECEDORES = [
-  { value: "forn-001", label: "Distribuidora Silva" },
-  { value: "forn-002", label: "Alimentos Brasil" },
-  { value: "forn-003", label: "Cerealista Central" },
-];
-
-// Vendedores mockados
-const VENDEDORES = [
-  { value: "vend-001", label: "Carlos" },
-  { value: "vend-002", label: "Ana" },
-  { value: "vend-003", label: "Pedro" },
-];
-
-// Clientes mockados
-const CLIENTES = [
-  { value: "cli-001", label: "João da Silva" },
-  { value: "cli-002", label: "Maria Oliveira" },
-  { value: "cli-003", label: "Restaurante Bom Sabor" },
-];
-
-// Contas bancárias mockadas
-const CONTAS_BANCARIAS = [
-  { value: "conta-001", label: "Itaú - 1234" },
-  { value: "conta-002", label: "Bradesco - 5678" },
-  { value: "conta-003", label: "Caixa - 9012" },
-];
+// useEffect para carregar opções estáticas vindas da API conforme filtros visíveis
 
 // Status gerais
 const STATUS = [
@@ -170,15 +120,7 @@ const STATUS = [
   { value: "concluido", label: "Concluído" },
 ];
 
-// Formas de pagamento
-const FORMAS_PAGAMENTO = [
-  { value: "dinheiro", label: "Dinheiro" },
-  { value: "pix", label: "Pix" },
-  { value: "cartao_debito", label: "Cartão Débito" },
-  { value: "cartao_credito", label: "Cartão Crédito" },
-  { value: "boleto", label: "Boleto" },
-  { value: "transferencia", label: "Transferência" },
-];
+// (formas de pagamento vêm da API)
 
 // Canais de venda
 const CANAIS = [
@@ -198,6 +140,21 @@ const MOTIVOS_CANCELAMENTO = [
 
 export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: ReportFilterDrawerProps) {
   const [filters, setFilters] = useState<Record<string, unknown>>({});
+  // Estados de opções dinâmicas
+  const [clientesOptions, setClientesOptions] = useState<Option[]>(EMPTY_OPTIONS);
+  const [fornecedoresOptions, setFornecedoresOptions] = useState<Option[]>(EMPTY_OPTIONS);
+  const [vendedoresOptions, setVendedoresOptions] = useState<Option[]>(EMPTY_OPTIONS);
+  const [contasOptions, setContasOptions] = useState<Option[]>(EMPTY_OPTIONS);
+  const [categoriasOptions, setCategoriasOptions] = useState<Option[]>(EMPTY_OPTIONS);
+  const [historicosOptions, setHistoricosOptions] = useState<Option[]>(EMPTY_OPTIONS);
+  const [formasPagOptions, setFormasPagOptions] = useState<Option[]>(EMPTY_OPTIONS);
+  // Queries para busca com debounce
+  const [clienteQuery, setClienteQuery] = useState("");
+  const [fornecedorQuery, setFornecedorQuery] = useState("");
+  const [vendedorQuery, setVendedorQuery] = useState("");
+  const [usuarioQuery, setUsuarioQuery] = useState("");
+  const [usuariosOptions, setUsuariosOptions] = useState<Option[]>(EMPTY_OPTIONS);
+  const [tiposOperacaoOptions, setTiposOperacaoOptions] = useState<Option[]>(EMPTY_OPTIONS);
 
   if (!report) return null;
 
@@ -212,6 +169,109 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
     onGenerate(filters);
     onClose();
   };
+
+  // Carregamentos baseados nos filtros visíveis (combos estáticos vindos da API)
+  useEffect(() => {
+    if (!report) return;
+    (async () => {
+      try {
+        if (filtrosVisiveis.includes("conta_bancaria" as FiltroVisivel) ||
+            filtrosVisiveis.includes("contas_bancarias_multi" as FiltroVisivel)) {
+          const contas = await getContasBancarias();
+          setContasOptions(contas);
+        }
+      } catch {}
+      try {
+        if (filtrosVisiveis.includes("categoria_produto" as FiltroVisivel)) {
+          const cats = await getCategoriasProduto();
+          setCategoriasOptions(cats);
+        }
+      } catch {}
+      try {
+        if (filtrosVisiveis.includes("historico" as FiltroVisivel)) {
+          const hist = await getHistoricos();
+          setHistoricosOptions(hist);
+        }
+      } catch {}
+      try {
+        if (filtrosVisiveis.includes("forma_pagamento" as FiltroVisivel)) {
+          const formas = await getFormasPagamento();
+          setFormasPagOptions(formas);
+        }
+      } catch {}
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report?.id]);
+
+  // Debounced searches
+  useEffect(() => {
+    if (!filtrosVisiveis.includes("cliente" as FiltroVisivel)) return;
+    const h = setTimeout(async () => {
+      try {
+        const opts = await searchClientes(clienteQuery);
+        setClientesOptions(opts);
+      } catch {
+        setClientesOptions(EMPTY_OPTIONS);
+      }
+    }, 300);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteQuery, report?.id]);
+
+  useEffect(() => {
+    if (!filtrosVisiveis.includes("fornecedor" as FiltroVisivel)) return;
+    const h = setTimeout(async () => {
+      try {
+        const opts = await searchFornecedores(fornecedorQuery);
+        setFornecedoresOptions(opts);
+      } catch {
+        setFornecedoresOptions(EMPTY_OPTIONS);
+      }
+    }, 300);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fornecedorQuery, report?.id]);
+
+  useEffect(() => {
+    if (!filtrosVisiveis.includes("vendedor" as FiltroVisivel)) return;
+    const h = setTimeout(async () => {
+      try {
+        const opts = await searchVendedores(vendedorQuery);
+        setVendedoresOptions(opts);
+      } catch {
+        setVendedoresOptions(EMPTY_OPTIONS);
+      }
+    }, 300);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendedorQuery, report?.id]);
+
+  useEffect(() => {
+    if (!filtrosVisiveis.includes("usuario_operador" as FiltroVisivel)) return;
+    const h = setTimeout(async () => {
+      try {
+        const opts = await searchUsuarios(usuarioQuery);
+        setUsuariosOptions(opts);
+      } catch {
+        setUsuariosOptions(EMPTY_OPTIONS);
+      }
+    }, 300);
+    return () => clearTimeout(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuarioQuery, report?.id]);
+
+  useEffect(() => {
+    if (!filtrosVisiveis.includes("tipo_operacao" as FiltroVisivel)) return;
+    (async () => {
+      try {
+        const opts = await (await import("@/services/api")).getTiposOperacao();
+        setTiposOperacaoOptions(opts);
+      } catch {
+        setTiposOperacaoOptions(EMPTY_OPTIONS);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report?.id]);
 
   // Renderização condicional do bloco de período
   const renderPeriodo = () => {
@@ -297,6 +357,11 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
     filtrosVisiveis.includes("vendedor" as FiltroVisivel) && (
       <div className="space-y-2">
         <Label className="text-sm font-medium text-slate-700">Vendedor</Label>
+        <Input
+          placeholder="Buscar vendedor..."
+          value={vendedorQuery}
+          onChange={(e) => setVendedorQuery(e.target.value)}
+        />
         <Select
           value={(filters.vendedor as string) || ""}
           onValueChange={(value) => handleFilterChange("vendedor", value)}
@@ -305,7 +370,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             <SelectValue placeholder="Todos os vendedores" />
           </SelectTrigger>
           <SelectContent>
-            {VENDEDORES.map((v) => (
+            {vendedoresOptions.map((v) => (
               <SelectItem key={v.value} value={v.value}>{v.label}</SelectItem>
             ))}
           </SelectContent>
@@ -319,6 +384,11 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
     filtrosVisiveis.includes("cliente" as FiltroVisivel) && (
       <div className="space-y-2">
         <Label className="text-sm font-medium text-slate-700">Cliente</Label>
+        <Input
+          placeholder="Buscar cliente..."
+          value={clienteQuery}
+          onChange={(e) => setClienteQuery(e.target.value)}
+        />
         <Select
           value={(filters.cliente as string) || ""}
           onValueChange={(value) => handleFilterChange("cliente", value)}
@@ -327,7 +397,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             <SelectValue placeholder="Todos os clientes" />
           </SelectTrigger>
           <SelectContent>
-            {CLIENTES.map((c) => (
+            {clientesOptions.map((c) => (
               <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
             ))}
           </SelectContent>
@@ -341,6 +411,11 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
     filtrosVisiveis.includes("fornecedor" as FiltroVisivel) && (
       <div className="space-y-2">
         <Label className="text-sm font-medium text-slate-700">Fornecedor</Label>
+        <Input
+          placeholder="Buscar fornecedor..."
+          value={fornecedorQuery}
+          onChange={(e) => setFornecedorQuery(e.target.value)}
+        />
         <Select
           value={(filters.fornecedor as string) || ""}
           onValueChange={(value) => handleFilterChange("fornecedor", value)}
@@ -349,7 +424,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             <SelectValue placeholder="Todos os fornecedores" />
           </SelectTrigger>
           <SelectContent>
-            {FORNECEDORES.map((f) => (
+            {fornecedoresOptions.map((f) => (
               <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
             ))}
           </SelectContent>
@@ -371,7 +446,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             <SelectValue placeholder="Todas as contas" />
           </SelectTrigger>
           <SelectContent>
-            {CONTAS_BANCARIAS.map((c) => (
+            {contasOptions.map((c) => (
               <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
             ))}
           </SelectContent>
@@ -393,7 +468,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             <SelectValue placeholder="Todas as categorias" />
           </SelectTrigger>
           <SelectContent>
-            {CATEGORIAS_PRODUTO.map((c) => (
+            {categoriasOptions.map((c) => (
               <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
             ))}
           </SelectContent>
@@ -473,7 +548,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             <SelectValue placeholder="Todas as formas" />
           </SelectTrigger>
           <SelectContent>
-            {FORMAS_PAGAMENTO.map((f) => (
+            {formasPagOptions.map((f) => (
               <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
             ))}
           </SelectContent>
@@ -561,7 +636,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             <SelectValue placeholder="Selecione o histórico" />
           </SelectTrigger>
           <SelectContent>
-            {HISTORICOS.map((h) => (
+            {historicosOptions.map((h) => (
               <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>
             ))}
           </SelectContent>
@@ -597,6 +672,11 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
     filtrosVisiveis.includes("usuario_operador" as FiltroVisivel) && (
       <div className="space-y-2">
         <Label className="text-sm font-medium text-slate-700">Usuário/Operador</Label>
+        <Input
+          placeholder="Buscar usuário..."
+          value={usuarioQuery}
+          onChange={(e) => setUsuarioQuery(e.target.value)}
+        />
         <Select
           value={(filters.usuario_operador as string) || ""}
           onValueChange={(value) => handleFilterChange("usuario_operador", value)}
@@ -605,7 +685,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             <SelectValue placeholder="Todos os usuários" />
           </SelectTrigger>
           <SelectContent>
-            {USUARIOS_OPERADORES.map((u) => (
+            {usuariosOptions.map((u) => (
               <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
             ))}
           </SelectContent>
@@ -627,7 +707,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             <SelectValue placeholder="Todos os tipos" />
           </SelectTrigger>
           <SelectContent>
-            {TIPOS_OPERACAO.map((t) => (
+            {tiposOperacaoOptions.map((t) => (
               <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
             ))}
           </SelectContent>
@@ -720,7 +800,7 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
       <div className="space-y-3">
         <Label className="text-sm font-medium text-slate-700">Contas Bancárias</Label>
         <div className="space-y-2">
-          {CONTAS_BANCARIAS_LISTA.map((c) => (
+          {contasOptions.map((c) => (
             <label key={c.value} className="flex items-center space-x-2 cursor-pointer">
               <input
                 type="checkbox"

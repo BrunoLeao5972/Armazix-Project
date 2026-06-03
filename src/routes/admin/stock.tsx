@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 const StockMovementChart = lazy(() => import("@/components/armazix/StockMovementChart"));
+import { getStockProducts, getStockMovements } from "@/services/api";
 
 export const Route = createFileRoute("/admin/stock")({
   component: StockPage,
@@ -108,32 +109,33 @@ function SkeletonRows({ n = 5 }: { n?: number }) {
   );
 }
 
-// ─── MOCK DATA ────────────────────────────────────────────────────
-const MOCK_PRODUCTS: StockProduct[] = [
-  { id: "1", name: "Arroz Integral 5kg", sku: "ARR-001", category: "Grãos", stock: 42, minStock: 20, location: "A-01", lastMovement: "25/05/2026", costPrice: 18.90, price: 29.90 },
-  { id: "2", name: "Feijão Preto 1kg", sku: "FEJ-002", category: "Grãos", stock: 8, minStock: 15, location: "A-02", lastMovement: "24/05/2026", costPrice: 7.50, price: 12.90 },
-  { id: "3", name: "Macarrão Espaguete", sku: "MAC-003", category: "Massas", stock: 0, minStock: 10, location: "B-01", lastMovement: "20/05/2026", costPrice: 3.20, price: 5.90 },
-  { id: "4", name: "Azeite Extra Virgem", sku: "AZT-004", category: "Óleos", stock: 5, minStock: 8, location: "C-03", lastMovement: "23/05/2026", costPrice: 28.00, price: 45.90 },
-  { id: "5", name: "Sal Refinado 1kg", sku: "SAL-005", category: "Temperos", stock: 120, minStock: 30, location: "A-05", lastMovement: "22/05/2026", costPrice: 1.80, price: 3.50 },
-];
-
-const MOCK_MOVEMENTS: Movement[] = [
-  { id: "m1", date: "25/05/2026 14:32", product: "Arroz Integral 5kg", type: "entrada", qty: 20, balanceBefore: 22, balanceAfter: 42, user: "Admin", note: "NF 1234" },
-  { id: "m2", date: "24/05/2026 10:15", product: "Feijão Preto 1kg", type: "saida", qty: 5, balanceBefore: 13, balanceAfter: 8, user: "Admin", note: "Pedido #892" },
-  { id: "m3", date: "23/05/2026 09:00", product: "Azeite Extra Virgem", type: "ajuste", qty: -3, balanceBefore: 8, balanceAfter: 5, user: "Admin", note: "Recontagem" },
-  { id: "m4", date: "22/05/2026 16:45", product: "Macarrão Espaguete", type: "perda", qty: 6, balanceBefore: 6, balanceAfter: 0, user: "Admin", note: "Avaria" },
-  { id: "m5", date: "21/05/2026 11:20", product: "Sal Refinado 1kg", type: "transferencia", qty: 30, balanceBefore: 90, balanceAfter: 120, user: "Admin", note: "Depósito B→A" },
-];
+// Dados agora vêm da API; estados iniciam vazios
 
 // ─── SEÇÃO: ESTOQUE ───────────────────────────────────────────────
 function SecaoEstoque() {
   const [search, setSearch] = useState("");
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<StockProduct[]>([]);
   const [exportOpen, setExportOpen] = useState(false);
-  const products_ref = MOCK_PRODUCTS;
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await getStockProducts();
+        if (mounted) setProducts(Array.isArray(data) ? data as StockProduct[] : []);
+      } catch {
+        if (mounted) setProducts([]);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const handleExportEstoqueCSV = () => {
-    const filtered_ref = products_ref.filter(p =>
+    const filtered_ref = products.filter(p =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.sku.toLowerCase().includes(search.toLowerCase()) ||
       p.category.toLowerCase().includes(search.toLowerCase())
@@ -151,7 +153,7 @@ function SecaoEstoque() {
   };
 
   const handleExportEstoquePDF = () => {
-    const filtered_pdf = products_ref.filter(p =>
+    const filtered_pdf = products.filter(p =>
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.sku.toLowerCase().includes(search.toLowerCase()) ||
       p.category.toLowerCase().includes(search.toLowerCase())
@@ -228,8 +230,6 @@ function SecaoEstoque() {
     URL.revokeObjectURL(url);
     setExportOpen(false);
   };
-  const products = MOCK_PRODUCTS;
-
   const filtered = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.sku.toLowerCase().includes(search.toLowerCase()) ||
@@ -389,7 +389,21 @@ function SecaoEntrada() {
   };
 
   // Lista de últimas entradas
-  const ultimasEntradas = MOCK_MOVEMENTS.filter(m => m.type === "entrada").slice(0, 6);
+  const [movements, setMovements] = useState<Movement[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getStockMovements();
+        if (mounted) setMovements(Array.isArray(data) ? data as Movement[] : []);
+      } catch {
+        if (mounted) setMovements([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const ultimasEntradas = movements.filter(m => m.type === "entrada").slice(0, 6);
 
   if (!showForm) {
     return (
@@ -642,7 +656,20 @@ function SecaoSaida() {
   };
 
   // Lista de últimas saídas
-  const ultimasSaidas = MOCK_MOVEMENTS.filter(m => m.type === "saida").slice(0, 6);
+  const [saidaMovs, setSaidaMovs] = useState<Movement[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getStockMovements();
+        if (mounted) setSaidaMovs((Array.isArray(data) ? data as Movement[] : []).filter(m => m.type === "saida").slice(0, 6));
+      } catch {
+        if (mounted) setSaidaMovs([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+  const ultimasSaidas = saidaMovs;
 
   if (!showForm) {
     return (
@@ -726,11 +753,7 @@ function SecaoSaida() {
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-muted-foreground uppercase">Responsável</Label>
             <div className="relative">
-              <select value={responsavel} onChange={e => setResponsavel(e.target.value)} className="w-full h-10 px-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring">
-                <option value="">Selecionar usuário…</option>
-                {MOCK_USERS.map(u => <option key={u} value={u}>{u}</option>)}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input placeholder="Responsável" value={responsavel} onChange={e => setResponsavel(e.target.value)} className="h-10 rounded-xl" />
             </div>
           </div>
           <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs font-semibold text-muted-foreground uppercase">Observação</Label>
@@ -797,7 +820,19 @@ function SecaoTransferencias() {
 function SecaoExtrato() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("todos");
-  const movements = MOCK_MOVEMENTS;
+  const [movements, setMovements] = useState<Movement[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getStockMovements();
+        if (mounted) setMovements(Array.isArray(data) ? data as Movement[] : []);
+      } catch {
+        if (mounted) setMovements([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const filtered = movements.filter(m => {
     const matchSearch = m.product.toLowerCase().includes(search.toLowerCase()) || m.note.toLowerCase().includes(search.toLowerCase());
@@ -888,10 +923,22 @@ function gerarCodigo() {
 }
 
 function SecaoInventario() {
-  const allProducts = MOCK_PRODUCTS;
+  const [allProducts, setAllProducts] = useState<StockProduct[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getStockProducts();
+        if (mounted) setAllProducts(Array.isArray(data) ? data as StockProduct[] : []);
+      } catch {
+        if (mounted) setAllProducts([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const [view, setView] = useState<"lista" | "novo">("lista");
-  const [balancos, setBalancos] = useState<BalancoRecord[]>(MOCK_BALANCOS);
+  const [balancos, setBalancos] = useState<BalancoRecord[]>([]);
 
   // form state
   const [prodScope, setProdScope] = useState<"todos" | "alguns">("todos");
@@ -1331,7 +1378,19 @@ function SecaoAjustes() {
 // ─── SEÇÃO: HISTÓRICO ─────────────────────────────────────────────
 function SecaoHistorico() {
   const [search, setSearch] = useState("");
-  const movements = MOCK_MOVEMENTS;
+  const [movements, setMovements] = useState<Movement[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getStockMovements();
+        if (mounted) setMovements(Array.isArray(data) ? data as Movement[] : []);
+      } catch {
+        if (mounted) setMovements([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
   const filtered = movements.filter(m =>
     m.product.toLowerCase().includes(search.toLowerCase()) ||
     m.user.toLowerCase().includes(search.toLowerCase()) ||
@@ -1386,7 +1445,19 @@ function SecaoHistorico() {
 
 // ─── SEÇÃO: BALANÇO ───────────────────────────────────────────────
 function SecaoBalanco() {
-  const products = MOCK_PRODUCTS;
+  const [products, setProducts] = useState<StockProduct[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getStockProducts();
+        if (mounted) setProducts(Array.isArray(data) ? data as StockProduct[] : []);
+      } catch {
+        if (mounted) setProducts([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
   const totalValue = products.reduce((s, p) => s + p.stock * p.costPrice, 0);
   const totalItems = products.reduce((s, p) => s + p.stock, 0);
   const semEstoque = products.filter(p => p.stock === 0).length;
