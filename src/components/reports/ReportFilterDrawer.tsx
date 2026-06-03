@@ -48,6 +48,36 @@ const CATEGORIAS_PRODUTO = [
   { value: "bebidas", label: "Bebidas" },
 ];
 
+// Usuários/Operadores mockados (para relatórios de auditoria)
+const USUARIOS_OPERADORES = [
+  { value: "admin", label: "Administrador" },
+  { value: "gerente", label: "Gerente" },
+  { value: "carlos", label: "Carlos (Vendedor)" },
+  { value: "ana", label: "Ana (Vendedor)" },
+  { value: "pedro", label: "Pedro (Operador)" },
+  { value: "joao", label: "João (Caixa)" },
+];
+
+// Tipos de operação (para relatórios de auditoria/exclusões)
+const TIPOS_OPERACAO = [
+  { value: "exclusao_produto", label: "Exclusão de Produto" },
+  { value: "exclusao_venda", label: "Exclusão de Venda" },
+  { value: "exclusao_lancamento", label: "Exclusão de Lançamento" },
+  { value: "alteracao_preco", label: "Alteração de Preço" },
+  { value: "cancelamento_nfce", label: "Cancelamento NFC-e" },
+  { value: "reabertura_caixa", label: "Reabertura de Caixa" },
+  { value: "estorno_pagamento", label: "Estorno de Pagamento" },
+];
+
+// Status de entrega (para relatório de entregadores)
+const STATUS_ENTREGA = [
+  { value: "pendente", label: "Pendente" },
+  { value: "em_rota", label: "Em Rota" },
+  { value: "entregue", label: "Entregue" },
+  { value: "cancelada", label: "Cancelada" },
+  { value: "devolvida", label: "Devolvida" },
+];
+
 // Fornecedores mockados
 const FORNECEDORES = [
   { value: "forn-001", label: "Distribuidora Silva" },
@@ -514,6 +544,72 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
     )
   );
 
+  // Input Usuário/Operador (para relatórios de auditoria)
+  const renderUsuarioOperador = () => (
+    filtrosVisiveis.includes("usuario_operador" as FiltroVisivel) && (
+      <div className="space-y-2">
+        <Label className="text-sm font-medium text-slate-700">Usuário/Operador</Label>
+        <Select
+          value={(filters.usuario_operador as string) || ""}
+          onValueChange={(value) => handleFilterChange("usuario_operador", value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Todos os usuários" />
+          </SelectTrigger>
+          <SelectContent>
+            {USUARIOS_OPERADORES.map((u) => (
+              <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  );
+
+  // Input Tipo de Operação (para relatórios de auditoria/exclusões)
+  const renderTipoOperacao = () => (
+    filtrosVisiveis.includes("tipo_operacao" as FiltroVisivel) && (
+      <div className="space-y-2">
+        <Label className="text-sm font-medium text-slate-700">Tipo de Operação</Label>
+        <Select
+          value={(filters.tipo_operacao as string) || ""}
+          onValueChange={(value) => handleFilterChange("tipo_operacao", value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Todos os tipos" />
+          </SelectTrigger>
+          <SelectContent>
+            {TIPOS_OPERACAO.map((t) => (
+              <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  );
+
+  // Input Status de Entrega (para relatório de entregadores)
+  const renderStatusEntrega = () => (
+    filtrosVisiveis.includes("status_entrega" as FiltroVisivel) && (
+      <div className="space-y-2">
+        <Label className="text-sm font-medium text-slate-700">Status da Entrega</Label>
+        <Select
+          value={(filters.status_entrega as string) || ""}
+          onValueChange={(value) => handleFilterChange("status_entrega", value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Todos os status" />
+          </SelectTrigger>
+          <SelectContent>
+            {STATUS_ENTREGA.map((s) => (
+              <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    )
+  );
+
   return (
     <Sheet open={isOpen} onOpenChange={onClose}>
       <SheetContent className="w-full sm:max-w-md overflow-y-auto">
@@ -550,6 +646,9 @@ export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: Repo
             {renderMotivoCancelamento()}
             {renderHistorico()}
             {renderMes()}
+            {renderUsuarioOperador()}
+            {renderTipoOperacao()}
+            {renderStatusEntrega()}
           </div>
 
           {/* Botões de Ação */}

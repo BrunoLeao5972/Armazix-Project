@@ -363,13 +363,11 @@ function ReportsDashboardPage() {
   // Agrupar por módulo
   const relatoriosPorModulo = useMemo(() => {
     const grupos: Record<ModuloReport, ReportItem[]> = {
-      estoque: [],
-      clientes: [],
-      produtos: [],
-      vendas: [],
+      gerencial: [],
       financeiro: [],
-      fiscal: [],
-      auditoria: [],
+      suprimentos: [],
+      comercial: [],
+      seguranca: [],
     };
     relatoriosFiltrados.forEach((r) => grupos[r.modulo].push(r));
     return grupos;

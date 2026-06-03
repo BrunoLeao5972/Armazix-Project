@@ -27,6 +27,8 @@ import { Route as StoreCartRouteImport } from './routes/store/cart'
 import { Route as StoreAccountRouteImport } from './routes/store/account'
 import { Route as AdminStockRouteImport } from './routes/admin/stock'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
+import { Route as AdminReportsPreviewRouteImport } from './routes/admin/reports-preview'
+import { Route as AdminReportsDashboardRouteImport } from './routes/admin/reports-dashboard'
 import { Route as AdminReportsRouteImport } from './routes/admin/reports'
 import { Route as AdminProductsRouteImport } from './routes/admin/products'
 import { Route as AdminPdvRouteImport } from './routes/admin/pdv'
@@ -130,6 +132,16 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminReportsPreviewRoute = AdminReportsPreviewRouteImport.update({
+  id: '/reports-preview',
+  path: '/reports-preview',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminReportsDashboardRoute = AdminReportsDashboardRouteImport.update({
+  id: '/reports-dashboard',
+  path: '/reports-dashboard',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminReportsRoute = AdminReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
@@ -210,6 +222,8 @@ export interface FileRoutesByFullPath {
   '/admin/pdv': typeof AdminPdvRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/reports': typeof AdminReportsRoute
+  '/admin/reports-dashboard': typeof AdminReportsDashboardRoute
+  '/admin/reports-preview': typeof AdminReportsPreviewRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/stock': typeof AdminStockRoute
   '/store/account': typeof StoreAccountRoute
@@ -240,6 +254,8 @@ export interface FileRoutesByTo {
   '/admin/pdv': typeof AdminPdvRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/reports': typeof AdminReportsRoute
+  '/admin/reports-dashboard': typeof AdminReportsDashboardRoute
+  '/admin/reports-preview': typeof AdminReportsPreviewRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/stock': typeof AdminStockRoute
   '/store/account': typeof StoreAccountRoute
@@ -273,6 +289,8 @@ export interface FileRoutesById {
   '/admin/pdv': typeof AdminPdvRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/reports': typeof AdminReportsRoute
+  '/admin/reports-dashboard': typeof AdminReportsDashboardRoute
+  '/admin/reports-preview': typeof AdminReportsPreviewRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/stock': typeof AdminStockRoute
   '/store/account': typeof StoreAccountRoute
@@ -307,6 +325,8 @@ export interface FileRouteTypes {
     | '/admin/pdv'
     | '/admin/products'
     | '/admin/reports'
+    | '/admin/reports-dashboard'
+    | '/admin/reports-preview'
     | '/admin/settings'
     | '/admin/stock'
     | '/store/account'
@@ -337,6 +357,8 @@ export interface FileRouteTypes {
     | '/admin/pdv'
     | '/admin/products'
     | '/admin/reports'
+    | '/admin/reports-dashboard'
+    | '/admin/reports-preview'
     | '/admin/settings'
     | '/admin/stock'
     | '/store/account'
@@ -369,6 +391,8 @@ export interface FileRouteTypes {
     | '/admin/pdv'
     | '/admin/products'
     | '/admin/reports'
+    | '/admin/reports-dashboard'
+    | '/admin/reports-preview'
     | '/admin/settings'
     | '/admin/stock'
     | '/store/account'
@@ -522,6 +546,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/reports-preview': {
+      id: '/admin/reports-preview'
+      path: '/reports-preview'
+      fullPath: '/admin/reports-preview'
+      preLoaderRoute: typeof AdminReportsPreviewRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/reports-dashboard': {
+      id: '/admin/reports-dashboard'
+      path: '/reports-dashboard'
+      fullPath: '/admin/reports-dashboard'
+      preLoaderRoute: typeof AdminReportsDashboardRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/reports': {
       id: '/admin/reports'
       path: '/reports'
@@ -620,6 +658,8 @@ interface AdminRouteChildren {
   AdminPdvRoute: typeof AdminPdvRoute
   AdminProductsRoute: typeof AdminProductsRoute
   AdminReportsRoute: typeof AdminReportsRoute
+  AdminReportsDashboardRoute: typeof AdminReportsDashboardRoute
+  AdminReportsPreviewRoute: typeof AdminReportsPreviewRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminStockRoute: typeof AdminStockRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -636,6 +676,8 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminPdvRoute: AdminPdvRoute,
   AdminProductsRoute: AdminProductsRoute,
   AdminReportsRoute: AdminReportsRoute,
+  AdminReportsDashboardRoute: AdminReportsDashboardRoute,
+  AdminReportsPreviewRoute: AdminReportsPreviewRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminStockRoute: AdminStockRoute,
   AdminIndexRoute: AdminIndexRoute,
