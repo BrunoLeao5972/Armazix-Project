@@ -1,8 +1,8 @@
 /**
  * ============================================
- * ARMAZIX - CENTRAL DE RELATÓRIOS (ETAPAS 2-4/6)
+ * ARMAZIX - CENTRAL DE RELATÓRIOS (ETAPAS 2-5/6)
  * Arquivo: reports-dashboard.tsx
- * Descrição: Página principal completa com KPIs, busca, favoritos e grid
+ * Descrição: Página principal completa com KPIs, busca, favoritos, grid e ações
  *
  * ETAPA 2 ✅: KPI Cards (4 cards no topo)
  *   - Total disponíveis, Último relatório, Favoritos, Emissões 24h
@@ -19,6 +19,12 @@
  *   - Cards finos: Nome (font-semibold text-slate-700) + Descrição (text-xs)
  *   - Controle de segurança por Roles: cards bloqueados com cadeado (isLocked)
  *   - Layout responsivo: grid-cols-1 → xl:grid-cols-4
+ *
+ * ETAPA 5 ✅: Barra de ações rápidas inline/flutuante
+ *   - 4 micro-botões no hover: Olho (Ver), PDF (vermelho), Excel (verde), Imprimir
+ *   - Transições suaves: opacity-0 → group-hover:opacity-100
+ *   - Efeitos hover: bg-slate-50, bg-rose-50, bg-emerald-50
+ *   - transition-all duration-200 aplicado
  * ============================================
  */
 
