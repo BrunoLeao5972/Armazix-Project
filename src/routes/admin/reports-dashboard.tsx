@@ -1,30 +1,34 @@
 /**
  * ============================================
- * ARMAZIX - CENTRAL DE RELATÓRIOS (ETAPAS 2-5/6)
+ * ARMAZIX - CENTRAL DE RELATÓRIOS (VERSÃO 1.0)
  * Arquivo: reports-dashboard.tsx
- * Descrição: Página principal completa com KPIs, busca, favoritos, grid e ações
+ * Descrição: Central de Relatórios completa e consolidada
  *
- * ETAPA 2 ✅: KPI Cards (4 cards no topo)
+ * ETAPA 1 ✅: Arquitetura de Dados (reportsConfig.ts)
+ *   - 35 relatórios tipados em 7 módulos
+ *   - Catálogo expansível com segurança por roles
+ *
+ * ETAPA 2 ✅: KPI Cards (4 cards responsivos)
  *   - Total disponíveis, Último relatório, Favoritos, Emissões 24h
  *
- * ETAPA 3 ✅: Barra de controle com busca em tempo real
- *   - Busca global por nome, descrição e tags
+ * ETAPA 3 ✅: Busca e Favoritos
+ *   - Busca em tempo real por nome/descrição/tags
  *   - Filtros por módulo (7 categorias)
- *   - Estado de favoritos com localStorage
- *   - Seção "⭐ Relatórios Mais Utilizados" dinâmica
- *   - UI responsiva com useMemo (sem gargalos)
+ *   - Persistência localStorage
  *
- * ETAPA 4 ✅: Grid dinâmico agrupado por categorias
- *   - Mapeamento do array por módulos (Vendas, Financeiro, Estoque...)
- *   - Cards finos: Nome (font-semibold text-slate-700) + Descrição (text-xs)
- *   - Controle de segurança por Roles: cards bloqueados com cadeado (isLocked)
- *   - Layout responsivo: grid-cols-1 → xl:grid-cols-4
+ * ETAPA 4 ✅: Grid por Categorias + Segurança
+ *   - Agrupamento por módulos
+ *   - Cards com controle de acesso (isLocked)
+ *   - Layout responsivo 1→4 colunas
  *
- * ETAPA 5 ✅: Barra de ações rápidas inline/flutuante
- *   - 4 micro-botões no hover: Olho (Ver), PDF (vermelho), Excel (verde), Imprimir
- *   - Transições suaves: opacity-0 → group-hover:opacity-100
- *   - Efeitos hover: bg-slate-50, bg-rose-50, bg-emerald-50
- *   - transition-all duration-200 aplicado
+ * ETAPA 5 ✅: Ações Rápidas
+ *   - 4 botões no hover: Ver, PDF, Excel, Imprimir
+ *   - Transições suaves Tailwind v4
+ *
+ * ETAPA 6 ✅: Consolidação Final
+ *   - Estados integrados e testados
+ *   - Estilo minimalista SaaS
+ *   - Código limpo e importável
  * ============================================
  */
 
