@@ -13,6 +13,7 @@ import {
   Truck,
   Ticket,
   BarChart3,
+  Eye,
   Settings,
   ChevronLeft,
   Search,
@@ -49,19 +50,20 @@ const NAV_ITEMS = [
   { label: "Produtos", icon: Package, href: "/admin/products" },
   { label: "Categorias", icon: Tags, href: "/admin/categories" },
   { label: "Clientes", icon: Users, href: "/admin/customers" },
-  { label: "Movimentação", icon: Warehouse, href: "/admin/stock" },
+  { label: "Estoque", icon: Warehouse, href: "/admin/stock" },
   { label: "Financeiro", icon: DollarSign, href: "/admin/financial" },
   { label: "PDV", icon: Monitor, href: "/admin/pdv" },
   { label: "Delivery", icon: Truck, href: "/admin/delivery" },
   { label: "Cupons", icon: Ticket, href: "/admin/coupons" },
   { label: "Relatórios", icon: BarChart3, href: "/admin/reports" },
+  { label: "Relatórios (Pré-visualizar)", icon: Eye, href: "/admin/reports-preview" },
   { label: "Configurações", icon: Settings, href: "/admin/settings" },
 ];
 
 function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const pathname = useRouterState({ select: s => s.location.pathname });
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
 
   const [userName, setUserName] = useState("");
@@ -70,35 +72,49 @@ function AdminLayout() {
   const [userPlan, setUserPlan] = useState("Free");
 
   useEffect(() => {
-    api.get("/api/user/get").then(async (res) => {
-      if (res.ok) {
-        const data = await res.json() as { user?: { name?: string; avatarUrl?: string } };
-        const name = data.user?.name || "";
-        if (name) {
-          setUserName(name);
-          const words = name.trim().split(/\s+/);
-          const initials = words.length >= 2
-            ? words[0][0] + words[words.length - 1][0]
-            : words[0].slice(0, 2);
-          setUserInitials(initials.toUpperCase());
+    api
+      .get("/api/user/get")
+      .then(async (res) => {
+        if (res.ok) {
+          const data = (await res.json()) as {
+            user?: { name?: string; avatarUrl?: string };
+          };
+          const name = data.user?.name || "";
+          if (name) {
+            setUserName(name);
+            const words = name.trim().split(/\s+/);
+            const initials =
+              words.length >= 2 ? words[0][0] + words[words.length - 1][0] : words[0].slice(0, 2);
+            setUserInitials(initials.toUpperCase());
+          }
+          if (data.user?.avatarUrl) setUserAvatar(data.user.avatarUrl);
         }
-        if (data.user?.avatarUrl) setUserAvatar(data.user.avatarUrl);
-      }
-    }).catch(() => {});
+      })
+      .catch(() => {});
 
     const storeId = localStorage.getItem("storeId");
     if (storeId) {
       fetch(`/api/subscriptions/status?storeId=${storeId}`)
-        .then(r => r.json())
+        .then((r) => r.json())
         .then((data: { plan?: string }) => {
-          const labels: Record<string, string> = { free: "Free", start: "Start", pro: "Pro", full: "Full" };
+          const labels: Record<string, string> = {
+            free: "Free",
+            start: "Start",
+            pro: "Pro",
+            full: "Full",
+          };
           if (data.plan) setUserPlan(labels[data.plan] || "Free");
-        }).catch(() => {});
+        })
+        .catch(() => {});
     }
   }, []);
 
   const handleLogout = async () => {
-    try { await api.post("/api/auth/logout", {}); } catch { /* ignore */ }
+    try {
+      await api.post("/api/auth/logout", {});
+    } catch {
+      /* ignore */
+    }
     localStorage.removeItem("csrf_token");
     localStorage.removeItem("storeId");
     navigate({ to: "/login" });
@@ -168,17 +184,22 @@ function AdminLayout() {
             className="fixed inset-0 bg-black/40 z-40 lg:hidden"
             onClick={() => setMobileOpen(false)}
           />
-          <aside
-            className="fixed left-0 top-0 bottom-0 w-[260px] bg-surface border-r border-border/50 z-50 lg:hidden flex flex-col animate-in slide-in-from-left duration-100"
-          >
+          <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-surface border-r border-border/50 z-50 lg:hidden flex flex-col animate-in slide-in-from-left duration-100">
             <div className="h-16 flex items-center justify-between px-4">
-              <Link to="/admin/dashboard" className="flex items-center gap-2.5 font-bold text-lg" onClick={() => setMobileOpen(false)}>
+              <Link
+                to="/admin/dashboard"
+                className="flex items-center gap-2.5 font-bold text-lg"
+                onClick={() => setMobileOpen(false)}
+              >
                 <span className="grid place-items-center w-9 h-9 rounded-2xl overflow-hidden">
                   <img src="/logo.png" alt="ARMAZIX" className="w-full h-full object-contain" />
                 </span>
                 ARMAZIX
               </Link>
-              <button onClick={() => setMobileOpen(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-secondary">
+              <button
+                onClick={() => setMobileOpen(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-secondary"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -207,7 +228,10 @@ function AdminLayout() {
             <div className="p-3">
               <button
                 type="button"
-                onClick={() => { setMobileOpen(false); handleLogout(); }}
+                onClick={() => {
+                  setMobileOpen(false);
+                  handleLogout();
+                }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
               >
                 <LogOut className="w-5 h-5" />
@@ -219,7 +243,9 @@ function AdminLayout() {
       )}
 
       {/* Main content area */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-[margin] duration-200 ${collapsed ? "lg:ml-[68px]" : "lg:ml-[240px]"}`}>
+      <div
+        className={`flex-1 flex flex-col min-w-0 transition-[margin] duration-200 ${collapsed ? "lg:ml-[68px]" : "lg:ml-[240px]"}`}
+      >
         {/* Topbar */}
         <header className="h-16 border-b border-border/50 bg-surface sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
@@ -239,7 +265,10 @@ function AdminLayout() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="hidden sm:flex gap-1.5 rounded-full px-3 py-1 text-xs font-medium border-primary/30 text-primary">
+            <Badge
+              variant="outline"
+              className="hidden sm:flex gap-1.5 rounded-full px-3 py-1 text-xs font-medium border-primary/30 text-primary"
+            >
               <span className="w-1.5 h-1.5 rounded-full bg-primary" />
               Loja ativa
             </Badge>
@@ -264,11 +293,31 @@ function AdminLayout() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48 rounded-xl">
-                <DropdownMenuItem className="rounded-lg cursor-pointer" onClick={() => navigate({ to: "/admin/settings", search: { tab: "perfil" } })}>Meu perfil</DropdownMenuItem>
-                <DropdownMenuItem className="rounded-lg cursor-pointer" onClick={() => navigate({ to: "/admin/settings" })}>Minha loja</DropdownMenuItem>
-                <DropdownMenuItem className="rounded-lg cursor-pointer" onClick={() => navigate({ to: "/admin/settings", search: { tab: "senha" } })}>Redefinir senha</DropdownMenuItem>
+                <DropdownMenuItem
+                  className="rounded-lg cursor-pointer"
+                  onClick={() => navigate({ to: "/admin/settings", search: { tab: "perfil" } })}
+                >
+                  Meu perfil
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="rounded-lg cursor-pointer"
+                  onClick={() => navigate({ to: "/admin/settings", search: { tab: "geral" } })}
+                >
+                  Minha loja
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="rounded-lg cursor-pointer"
+                  onClick={() => navigate({ to: "/admin/settings", search: { tab: "senha" } })}
+                >
+                  Redefinir senha
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="rounded-lg cursor-pointer text-destructive" onClick={handleLogout}>Sair</DropdownMenuItem>
+                <DropdownMenuItem
+                  className="rounded-lg cursor-pointer text-destructive"
+                  onClick={handleLogout}
+                >
+                  Sair
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

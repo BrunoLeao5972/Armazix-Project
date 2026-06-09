@@ -18,7 +18,7 @@ import { getStockProducts, getStockMovements } from "@/services/api";
 export const Route = createFileRoute("/admin/stock")({
   component: StockPage,
   head: () => ({
-    meta: [{ title: "Movimentação — ARMAZIX" }],
+    meta: [{ title: "Estoque — ARMAZIX" }],
   }),
 });
 
@@ -1579,7 +1579,7 @@ function StockPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Movimentação</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Estoque</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Central de controle de estoque e movimentações</p>
         </div>
         <Button variant="outline" size="sm" className="rounded-xl h-9 gap-1.5" onClick={() => window.location.reload()}>
