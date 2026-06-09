@@ -73,6 +73,14 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
     email?: string;
     primaryColor?: string;
     logoUrl?: string;
+    bannerUrl?: string;
+    bannerMobileUrl?: string;
+    backgroundColor?: string;
+    textColor?: string;
+    showPrice?: boolean;
+    whatsappOrderEnabled?: boolean;
+    whatsappPhone?: string;
+    highlightLowStock?: boolean;
     address?: {
       street: string;
       number: string;
@@ -98,6 +106,14 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
         email: body.email,
         primaryColor: body.primaryColor,
         logoUrl: body.logoUrl,
+        bannerUrl: body.bannerUrl,
+        bannerMobileUrl: body.bannerMobileUrl,
+        backgroundColor: body.backgroundColor,
+        textColor: body.textColor,
+        showPrice: body.showPrice,
+        whatsappOrderEnabled: body.whatsappOrderEnabled,
+        whatsappPhone: body.whatsappPhone,
+        highlightLowStock: body.highlightLowStock,
         address: body.address,
         updatedAt: new Date(),
       })

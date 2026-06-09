@@ -19,7 +19,10 @@ export interface StorePublicData {
   description: string | null;
   logoUrl: string | null;
   bannerUrl: string | null;
+  bannerMobileUrl: string | null;
   primaryColor: string | null;
+  backgroundColor: string | null;
+  textColor: string | null;
   accentColor: string | null;
   font: string | null;
   phone: string | null;
@@ -30,9 +33,27 @@ export interface StorePublicData {
   minDeliveryOrder: string | null;
   deliveryEstimate: string | null;
   businessHours: Array<{ day: string; open: string; close: string; closed: boolean }> | null;
+  showPrice: boolean | null;
+  whatsappOrderEnabled: boolean | null;
+  whatsappPhone: string | null;
+  highlightLowStock: boolean | null;
   rating: string | null;
   active: boolean | null;
   banners: StoreBanner[];
+}
+
+export interface ConfiguracaoVitrine {
+  lojaId: string;
+  logoUrl: string;
+  bannerUrl: string;
+  bannerMobileUrl: string;
+  corPrimaria: string;
+  corFundo: string;
+  corTextos: string;
+  exibirPreco: boolean;
+  pedidoWhatsapp: boolean;
+  telefoneWhatsapp?: string;
+  destacarEstoqueBaixo: boolean;
 }
 
 export interface StoreProduct {
@@ -46,6 +67,7 @@ export interface StoreProduct {
   emoji: string | null;
   badge: string | null;
   stock: number | null;
+  lowStockThreshold: number | null;
   active: boolean | null;
   featured: boolean | null;
   categoryId: string | null;
@@ -60,6 +82,7 @@ export interface StoreCategory {
   color: string | null;
   imageUrl: string | null;
   position: number | null;
+  active: boolean | null;
 }
 
 export interface CartItem {

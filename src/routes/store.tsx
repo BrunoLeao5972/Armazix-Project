@@ -64,6 +64,34 @@ function StoreLayout() {
   const [storeLoading, setStoreLoading] = useState(true);
   const colorStyleRef = useRef<HTMLStyleElement | null>(null);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("storeCart");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      const sanitized = parsed
+        .filter((i: any) => i && typeof i.id === "string" && typeof i.name === "string" && typeof i.qty === "number")
+        .map((i: any) => ({
+          id: i.id,
+          name: i.name,
+          price: typeof i.price === "number" ? i.price : 0,
+          image: typeof i.image === "string" ? i.image : null,
+          emoji: typeof i.emoji === "string" ? i.emoji : null,
+          qty: i.qty,
+          obs: typeof i.obs === "string" ? i.obs : undefined,
+          additions: Array.isArray(i.additions) ? i.additions : undefined,
+        })) as CartItem[];
+      setCart(sanitized);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("storeCart", JSON.stringify(cart));
+    } catch {}
+  }, [cart]);
+
   // Load real store data from slug or subdomain
   useEffect(() => {
     async function loadStore() {
@@ -129,6 +157,12 @@ function StoreLayout() {
   const cartTotal = cart.reduce((a, c) => a + c.price * c.qty, 0);
   const toggleFavorite = (id: string) =>
     setFavorites((prev) => (prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]));
+  const clearCart = () => {
+    setCart([]);
+    try {
+      localStorage.removeItem("storeCart");
+    } catch {}
+  };
 
   const deliveryFee = store?.deliveryEnabled
     ? parseFloat(store.deliveryFee || "0")
@@ -141,7 +175,7 @@ function StoreLayout() {
     : "...";
 
   return (
-    <StoreContext.Provider value={{ store, storeLoading, cart, addToCart, removeFromCart, updateQty, clearCart: () => setCart([]), cartCount, cartTotal, favorites, toggleFavorite }}>
+    <StoreContext.Provider value={{ store, storeLoading, cart, addToCart, removeFromCart, updateQty, clearCart, cartCount, cartTotal, favorites, toggleFavorite }}>
       <div className="min-h-screen bg-background flex flex-col">
         {/* Header */}
         <header className="sticky top-0 z-40 bg-surface/80 backdrop-blur-md border-b border-border/40">

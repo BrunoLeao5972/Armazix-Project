@@ -47,6 +47,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ImageUploadCrop } from "@/components/armazix/ImageUploadCrop";
 
 export const Route = createFileRoute("/admin/settings")({
   component: SettingsPage,
@@ -67,6 +68,15 @@ interface StoreData {
   phone: string;
   email: string;
   primaryColor: string;
+  logoUrl?: string;
+  bannerUrl?: string;
+  bannerMobileUrl?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  showPrice?: boolean;
+  whatsappOrderEnabled?: boolean;
+  whatsappPhone?: string;
+  highlightLowStock?: boolean;
   address?: {
     street: string;
     number: string;
@@ -94,6 +104,15 @@ function SettingsPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [primaryColor, setPrimaryColor] = useState("#00C853");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [bannerUrl, setBannerUrl] = useState("");
+  const [bannerMobileUrl, setBannerMobileUrl] = useState("");
+  const [backgroundColor, setBackgroundColor] = useState("#ffffff");
+  const [textColor, setTextColor] = useState("#0f172a");
+  const [showPrice, setShowPrice] = useState(true);
+  const [whatsappOrderEnabled, setWhatsappOrderEnabled] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [highlightLowStock, setHighlightLowStock] = useState(false);
 
   // Email edit states
   const [emailLocked, setEmailLocked] = useState(true);
@@ -136,6 +155,10 @@ function SettingsPage() {
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState("");
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const [vitrineSaving, setVitrineSaving] = useState(false);
+  const [vitrineSuccess, setVitrineSuccess] = useState(false);
+  const [vitrineError, setVitrineError] = useState("");
 
   // Password states
   const [currentPassword, setCurrentPassword] = useState("");
@@ -196,6 +219,15 @@ function SettingsPage() {
         setPhone(data.store.phone || "");
         setEmail(data.store.email || "");
         setPrimaryColor(data.store.primaryColor || "#00C853");
+        setLogoUrl(data.store.logoUrl || "");
+        setBannerUrl(data.store.bannerUrl || "");
+        setBannerMobileUrl(data.store.bannerMobileUrl || "");
+        setBackgroundColor(data.store.backgroundColor || "#ffffff");
+        setTextColor(data.store.textColor || "#0f172a");
+        setShowPrice(data.store.showPrice !== false);
+        setWhatsappOrderEnabled(data.store.whatsappOrderEnabled === true);
+        setWhatsappPhone(data.store.whatsappPhone || data.store.phone || "");
+        setHighlightLowStock(data.store.highlightLowStock === true);
         if (data.store.address) {
           setAddressCep(data.store.address.zip || "");
           setAddressStreet(data.store.address.street || "");
@@ -254,6 +286,44 @@ function SettingsPage() {
       setError("Erro de conexão");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveVitrine = async () => {
+    if (!store) return;
+    setVitrineSaving(true);
+    setVitrineSuccess(false);
+    setVitrineError("");
+    try {
+      if (whatsappOrderEnabled && !whatsappPhone.trim()) {
+        setVitrineError("Informe o WhatsApp para ativar o pedido via WhatsApp");
+        return;
+      }
+      const res = await api.post("/api/store/update", {
+        storeId: store.id,
+        logoUrl: logoUrl || null,
+        bannerUrl: bannerUrl || null,
+        bannerMobileUrl: bannerMobileUrl || null,
+        primaryColor,
+        backgroundColor,
+        textColor,
+        showPrice,
+        whatsappOrderEnabled,
+        whatsappPhone: whatsappOrderEnabled ? whatsappPhone : null,
+        highlightLowStock,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setVitrineSuccess(true);
+        setStore(data.store);
+        setTimeout(() => setVitrineSuccess(false), 3000);
+      } else {
+        setVitrineError(data.error || "Erro ao salvar vitrine");
+      }
+    } catch {
+      setVitrineError("Erro de conexão");
+    } finally {
+      setVitrineSaving(false);
     }
   };
 
@@ -386,7 +456,7 @@ function SettingsPage() {
         <TabsList className="grid w-full grid-cols-4 sm:grid-cols-8 rounded-xl">
           <TabsTrigger value="geral" className="rounded-lg">Geral</TabsTrigger>
           <TabsTrigger value="horarios" className="rounded-lg">Horários</TabsTrigger>
-          <TabsTrigger value="personalizacao" className="rounded-lg">Aparência</TabsTrigger>
+          <TabsTrigger value="personalizacao" className="rounded-lg">Personalizar</TabsTrigger>
           <TabsTrigger value="pagamentos" className="rounded-lg">Pagamentos</TabsTrigger>
           <TabsTrigger value="senha" className="rounded-lg">Senha</TabsTrigger>
           <TabsTrigger value="perfil" className="rounded-lg">Perfil</TabsTrigger>
@@ -691,34 +761,128 @@ function SettingsPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <Palette className="w-4 h-4" />
-                Aparência
+                Personalizar
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label className="flex items-center gap-1.5">
-                  Cor principal
-                </Label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={primaryColor}
-                    onChange={(e) => setPrimaryColor(e.target.value)}
-                    className="w-10 h-10 rounded-xl border border-border cursor-pointer"
-                  />
-                  <Input
-                    value={primaryColor}
-                    onChange={(e) => setPrimaryColor(e.target.value)}
-                    className="w-32 h-11 rounded-xl font-mono"
-                  />
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <div className="text-sm font-semibold">Identidade básica</div>
+
+                <ImageUploadCrop
+                  label="Logo"
+                  value={logoUrl}
+                  onChange={setLogoUrl}
+                  recommendedText="Tamanho recomendado: 250x250px (Proporção 1:1) - PNG transparente"
+                  aspect={1}
+                  targetWidth={250}
+                  targetHeight={250}
+                  maxBytes={2 * 1024 * 1024}
+                  outputFormat="image/png"
+                />
+
+                <ImageUploadCrop
+                  label="Banner principal (Desktop)"
+                  value={bannerUrl}
+                  onChange={setBannerUrl}
+                  recommendedText="Tamanho recomendado: 1920x450px (Proporção 64:15)"
+                  aspect={64 / 15}
+                  targetWidth={1920}
+                  targetHeight={450}
+                  maxBytes={3 * 1024 * 1024}
+                  outputFormat="image/jpeg"
+                />
+
+                <ImageUploadCrop
+                  label="Banner mobile"
+                  value={bannerMobileUrl}
+                  onChange={setBannerMobileUrl}
+                  recommendedText="Tamanho recomendado: 800x600px (Proporção 4:3)"
+                  aspect={4 / 3}
+                  targetWidth={800}
+                  targetHeight={600}
+                  maxBytes={3 * 1024 * 1024}
+                  outputFormat="image/jpeg"
+                />
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <div className="text-sm font-semibold">Cores do tema</div>
+
+                <div className="grid md:grid-cols-2 gap-6 items-start">
+                  <div className="space-y-4">
+                    <ColorField label="Cor primária" value={primaryColor} onChange={setPrimaryColor} />
+                    <ColorField label="Cor de fundo" value={backgroundColor} onChange={setBackgroundColor} />
+                    <ColorField label="Cor dos textos" value={textColor} onChange={setTextColor} />
+                  </div>
+
+                  <div className="md:pt-2">
+                    <StorefrontMiniPreview
+                      primaryColor={primaryColor}
+                      backgroundColor={backgroundColor}
+                      textColor={textColor}
+                    />
+                  </div>
                 </div>
               </div>
-              <Button 
-                onClick={handleSave}
-                disabled={saving}
+
+              <Separator />
+
+              <div className="space-y-4">
+                <div className="text-sm font-semibold">Opções de layout</div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium">Exibir preço nos produtos?</div>
+                    <div className="text-xs text-muted-foreground">Desative para usar apenas como vitrine/catálogo</div>
+                  </div>
+                  <Switch checked={showPrice} onCheckedChange={setShowPrice} />
+                </div>
+
+                <Separator />
+
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium">Permitir pedido via WhatsApp?</div>
+                    <div className="text-xs text-muted-foreground">Ativa o botão “Enviar pedido para o WhatsApp”</div>
+                  </div>
+                  <Switch checked={whatsappOrderEnabled} onCheckedChange={setWhatsappOrderEnabled} />
+                </div>
+
+                {whatsappOrderEnabled && (
+                  <div className="space-y-2">
+                    <Label>Telefone do WhatsApp</Label>
+                    <Input value={whatsappPhone} onChange={(e) => setWhatsappPhone(e.target.value)} placeholder="Ex: 5581999999999" className="h-11 rounded-xl font-mono" />
+                    <p className="text-xs text-muted-foreground">Use DDI + DDD + número (apenas dígitos)</p>
+                  </div>
+                )}
+
+                <Separator />
+
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-medium">Destacar estoque baixo / últimas unidades?</div>
+                    <div className="text-xs text-muted-foreground">Mostra um aviso discreto no card do produto</div>
+                  </div>
+                  <Switch checked={highlightLowStock} onCheckedChange={setHighlightLowStock} />
+                </div>
+              </div>
+
+              {vitrineError && <p className="text-sm text-destructive">{vitrineError}</p>}
+              {vitrineSuccess && (
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <Check className="w-4 h-4" />
+                  Personalização salva com sucesso!
+                </div>
+              )}
+
+              <Button
+                onClick={handleSaveVitrine}
+                disabled={vitrineSaving}
                 className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
               >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar alterações"}
+                {vitrineSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar personalização"}
               </Button>
             </CardContent>
           </Card>
@@ -1124,6 +1288,186 @@ function SettingsPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function normalizeHex(value: string): string {
+  const v = value.trim().toUpperCase();
+  if (!v) return "";
+  const raw = v.startsWith("#") ? v.slice(1) : v;
+  const cleaned = raw.replace(/[^0-9A-F]/g, "").slice(0, 6);
+  return `#${cleaned}`;
+}
+
+function expandHex3(value: string): string {
+  const raw = value.replace("#", "");
+  if (raw.length !== 3) return value;
+  const [a, b, c] = raw.split("");
+  return `#${a}${a}${b}${b}${c}${c}`;
+}
+
+function isHex6(value: string): boolean {
+  return /^#[0-9A-F]{6}$/.test(value.toUpperCase());
+}
+
+function ColorField(props: { label: string; value: string; onChange: (value: string) => void }) {
+  const [text, setText] = useState(props.value.toUpperCase());
+
+  useEffect(() => {
+    setText(props.value.toUpperCase());
+  }, [props.value]);
+
+  return (
+    <div className="space-y-2">
+      <Label>{props.label}</Label>
+      <div className="flex items-center gap-3">
+        <label className="relative shrink-0">
+          <span
+            className="block w-11 h-11 rounded-full border border-border/60 shadow-sm"
+            style={{ backgroundColor: props.value }}
+          />
+          <input
+            type="color"
+            value={props.value}
+            onChange={(e) => {
+              const v = e.target.value.toUpperCase();
+              props.onChange(v);
+              setText(v);
+            }}
+            className="absolute inset-0 opacity-0 cursor-pointer"
+          />
+        </label>
+
+        <Input
+          value={text}
+          onChange={(e) => {
+            const next = e.target.value.toUpperCase();
+            setText(next);
+            const normalized = normalizeHex(next);
+            if (isHex6(normalized)) {
+              props.onChange(normalized);
+              setText(normalized);
+            }
+          }}
+          onBlur={() => {
+            const normalized = normalizeHex(text);
+            const expanded = isHex6(expandHex3(normalized)) ? expandHex3(normalized) : normalized;
+            if (isHex6(expanded)) props.onChange(expanded);
+            setText(isHex6(expanded) ? expanded : props.value.toUpperCase());
+          }}
+          placeholder="#0B1F3A"
+          className="h-11 rounded-xl font-mono uppercase"
+        />
+      </div>
+    </div>
+  );
+}
+
+function StorefrontMiniPreview(props: { primaryColor: string; backgroundColor: string; textColor: string }) {
+  const borderColor = `color-mix(in oklab, ${props.textColor} 18%, transparent)`;
+  const surfaceColor = `color-mix(in oklab, ${props.backgroundColor} 90%, white)`;
+  const surface2Color = `color-mix(in oklab, ${props.backgroundColor} 82%, white)`;
+  const mutedTextColor = `color-mix(in oklab, ${props.textColor} 65%, transparent)`;
+
+  return (
+    <div className="rounded-2xl border border-border/50 bg-secondary/20 p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="text-sm font-semibold">Mini-preview</div>
+        <Badge className="rounded-full bg-primary/15 text-primary border-0 text-[10px]">Tempo real</Badge>
+      </div>
+
+      <div className="mx-auto w-full max-w-[340px]">
+        <div className="rounded-[2.5rem] border border-border/60 bg-muted/30 p-3 shadow-soft">
+          <div
+            className="rounded-[2rem] overflow-hidden"
+            style={{ backgroundColor: props.backgroundColor, color: props.textColor }}
+          >
+            <div
+              className="px-3 pt-3 pb-2"
+              style={{
+                backgroundColor: surfaceColor,
+                borderBottom: `1px solid ${borderColor}`,
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className="w-8 h-8 rounded-2xl border"
+                    style={{ backgroundColor: props.primaryColor, borderColor: borderColor }}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold truncate">Sua Loja</div>
+                    <div className="text-[10px] truncate" style={{ color: mutedTextColor }}>
+                      Catálogo online
+                    </div>
+                  </div>
+                </div>
+                <div
+                  className="w-9 h-9 rounded-2xl flex items-center justify-center border"
+                  style={{ backgroundColor: surface2Color, borderColor: borderColor }}
+                >
+                  <Package className="w-4 h-4" style={{ color: mutedTextColor }} />
+                </div>
+              </div>
+
+              <div
+                className="mt-3 h-9 rounded-2xl flex items-center gap-2 px-3 border"
+                style={{ backgroundColor: props.backgroundColor, borderColor: borderColor }}
+              >
+                <Search className="w-4 h-4" style={{ color: mutedTextColor }} />
+                <span className="text-xs" style={{ color: mutedTextColor }}>
+                  Buscar produtos...
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 space-y-3">
+              <div
+                className="h-16 rounded-2xl border"
+                style={{
+                  backgroundImage: `linear-gradient(135deg, color-mix(in oklab, ${props.primaryColor} 35%, transparent), transparent)`,
+                  backgroundColor: surface2Color,
+                  borderColor: borderColor,
+                }}
+              />
+
+              <div className="grid grid-cols-2 gap-2">
+                {Array.from({ length: 2 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="rounded-2xl border overflow-hidden"
+                    style={{ backgroundColor: surfaceColor, borderColor: borderColor }}
+                  >
+                    <div className="aspect-square" style={{ backgroundColor: surface2Color }} />
+                    <div className="p-2 space-y-1">
+                      <div className="text-[11px] font-medium leading-snug">Produto</div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[11px] font-bold" style={{ color: props.primaryColor }}>
+                          R$ 19,90
+                        </div>
+                        <div
+                          className="w-7 h-7 rounded-xl flex items-center justify-center"
+                          style={{ backgroundColor: props.primaryColor, color: "#fff" }}
+                        >
+                          +
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                className="h-10 rounded-2xl flex items-center justify-center text-xs font-semibold"
+                style={{ backgroundColor: props.primaryColor, color: "#fff" }}
+              >
+                Enviar pedido
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

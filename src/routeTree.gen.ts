@@ -25,6 +25,7 @@ import { Route as StoreCheckoutRouteImport } from './routes/store/checkout'
 import { Route as StoreCategoriesRouteImport } from './routes/store/categories'
 import { Route as StoreCartRouteImport } from './routes/store/cart'
 import { Route as StoreAccountRouteImport } from './routes/store/account'
+import { Route as LojaSlugOuIdRouteImport } from './routes/loja.$slugOuId'
 import { Route as AdminStockRouteImport } from './routes/admin/stock'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminReportsPreviewRouteImport } from './routes/admin/reports-preview'
@@ -121,6 +122,11 @@ const StoreAccountRoute = StoreAccountRouteImport.update({
   id: '/account',
   path: '/account',
   getParentRoute: () => StoreRoute,
+} as any)
+const LojaSlugOuIdRoute = LojaSlugOuIdRouteImport.update({
+  id: '/loja/$slugOuId',
+  path: '/loja/$slugOuId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AdminStockRoute = AdminStockRouteImport.update({
   id: '/stock',
@@ -226,6 +232,7 @@ export interface FileRoutesByFullPath {
   '/admin/reports-preview': typeof AdminReportsPreviewRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/stock': typeof AdminStockRoute
+  '/loja/$slugOuId': typeof LojaSlugOuIdRoute
   '/store/account': typeof StoreAccountRoute
   '/store/cart': typeof StoreCartRoute
   '/store/categories': typeof StoreCategoriesRoute
@@ -258,6 +265,7 @@ export interface FileRoutesByTo {
   '/admin/reports-preview': typeof AdminReportsPreviewRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/stock': typeof AdminStockRoute
+  '/loja/$slugOuId': typeof LojaSlugOuIdRoute
   '/store/account': typeof StoreAccountRoute
   '/store/cart': typeof StoreCartRoute
   '/store/categories': typeof StoreCategoriesRoute
@@ -293,6 +301,7 @@ export interface FileRoutesById {
   '/admin/reports-preview': typeof AdminReportsPreviewRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/stock': typeof AdminStockRoute
+  '/loja/$slugOuId': typeof LojaSlugOuIdRoute
   '/store/account': typeof StoreAccountRoute
   '/store/cart': typeof StoreCartRoute
   '/store/categories': typeof StoreCategoriesRoute
@@ -329,6 +338,7 @@ export interface FileRouteTypes {
     | '/admin/reports-preview'
     | '/admin/settings'
     | '/admin/stock'
+    | '/loja/$slugOuId'
     | '/store/account'
     | '/store/cart'
     | '/store/categories'
@@ -361,6 +371,7 @@ export interface FileRouteTypes {
     | '/admin/reports-preview'
     | '/admin/settings'
     | '/admin/stock'
+    | '/loja/$slugOuId'
     | '/store/account'
     | '/store/cart'
     | '/store/categories'
@@ -395,6 +406,7 @@ export interface FileRouteTypes {
     | '/admin/reports-preview'
     | '/admin/settings'
     | '/admin/stock'
+    | '/loja/$slugOuId'
     | '/store/account'
     | '/store/cart'
     | '/store/categories'
@@ -416,6 +428,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   StoreRoute: typeof StoreRouteWithChildren
   VerifyEmailRoute: typeof VerifyEmailRoute
+  LojaSlugOuIdRoute: typeof LojaSlugOuIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -531,6 +544,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/store/account'
       preLoaderRoute: typeof StoreAccountRouteImport
       parentRoute: typeof StoreRoute
+    }
+    '/loja/$slugOuId': {
+      id: '/loja/$slugOuId'
+      path: '/loja/$slugOuId'
+      fullPath: '/loja/$slugOuId'
+      preLoaderRoute: typeof LojaSlugOuIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/admin/stock': {
       id: '/admin/stock'
@@ -720,6 +740,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   StoreRoute: StoreRouteWithChildren,
   VerifyEmailRoute: VerifyEmailRoute,
+  LojaSlugOuIdRoute: LojaSlugOuIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
