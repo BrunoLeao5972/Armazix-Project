@@ -45,6 +45,7 @@ interface Product {
   imageUrl: string | null;
   badge: string | null;
   active: boolean | null;
+  allowObservation: boolean | null;
   categoryId: string | null;
 }
 
@@ -85,6 +86,7 @@ interface ProductForm {
   badge: string;
   categoryId: string;
   active: boolean;
+  allowObservation: boolean;
   variationGroups: VariationGroup[];
 }
 
@@ -92,7 +94,7 @@ const EMPTY_FORM: ProductForm = {
   name: "", description: "", price: "", compareAtPrice: "",
   costPrice: "", stock: "", lowStockThreshold: "5",
   sku: "", barcode: "", unit: "un", imageUrl: "",
-  badge: "", categoryId: "", active: true, variationGroups: [],
+  badge: "", categoryId: "", active: true, allowObservation: false, variationGroups: [],
 };
 
 const uid = () => Math.random().toString(36).slice(2);
@@ -246,6 +248,7 @@ function ProductFormModal({
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"basic" | "price" | "stock" | "variations">("basic");
   const [errors, setErrors] = useState<{ categoryId?: string; price?: string }>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [newCatName, setNewCatName] = useState("");
   const [creatingCat, setCreatingCat] = useState(false);
   const [showNewCat, setShowNewCat] = useState(false);
@@ -267,6 +270,7 @@ function ProductFormModal({
         badge: editing.badge || "",
         categoryId: editing.categoryId || "",
         active: editing.active !== false,
+        allowObservation: editing.allowObservation === true,
         variationGroups: [],
       });
     } else {
@@ -310,6 +314,7 @@ function ProductFormModal({
       return;
     }
     setErrors({});
+    setSaveError(null);
     if (!form.name.trim()) return;
     setSaving(true);
     try {
@@ -328,6 +333,7 @@ function ProductFormModal({
         badge: form.badge || undefined,
         categoryId: form.categoryId || undefined,
         active: form.active,
+        allowObservation: form.allowObservation,
       };
       let res: Response;
       if (editing) {
@@ -339,7 +345,11 @@ function ProductFormModal({
       if (res.ok && (data.success || data.product)) {
         onSaved(data.product, !editing);
         onClose();
+      } else {
+        setSaveError(data?.error || "Erro ao salvar produto. Tente novamente.");
       }
+    } catch (err) {
+      setSaveError("Erro de conexão. Verifique sua rede e tente novamente.");
     } finally {
       setSaving(false);
     }
@@ -556,6 +566,26 @@ function ProductFormModal({
                 >
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
                     form.active ? "translate-x-5" : "translate-x-0"
+                  }`} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20">
+                <div>
+                  <p className="text-sm font-medium">Permitir observação</p>
+                  <p className="text-xs text-muted-foreground">Cliente pode adicionar nota ao item (ex: sem cebola)</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.allowObservation}
+                  onClick={() => set("allowObservation", !form.allowObservation)}
+                  className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                    form.allowObservation ? "bg-primary" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                    form.allowObservation ? "translate-x-5" : "translate-x-0"
                   }`} />
                 </button>
               </div>
@@ -780,18 +810,26 @@ function ProductFormModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-border/50 bg-surface flex items-center justify-between gap-3">
-          <button type="button" onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Cancelar
-          </button>
-          <Button
-            onClick={handleSave}
-            disabled={saving || !form.name.trim() || !form.price}
-            className="h-10 px-6 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2"
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            {editing ? "Salvar alterações" : "Criar produto"}
-          </Button>
+        <div className="px-6 py-4 border-t border-border/50 bg-surface space-y-3">
+          {saveError && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium">
+              <XCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{saveError}</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <button type="button" onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Cancelar
+            </button>
+            <Button
+              onClick={handleSave}
+              disabled={saving || !form.name.trim() || !form.price}
+              className="h-10 px-6 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {editing ? "Salvar alterações" : "Criar produto"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

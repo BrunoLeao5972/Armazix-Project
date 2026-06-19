@@ -35,6 +35,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     imageUrl?: string;
     badge?: string;
     active?: boolean;
+    allowObservation?: boolean;
   };
 
   if (!body.name || !body.price) {
@@ -64,6 +65,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
       imageUrl: body.imageUrl || null,
       badge: body.badge || null,
       active: body.active !== false,
+      allowObservation: body.allowObservation ?? false,
     }).returning();
 
     return new Response(JSON.stringify({ success: true, product }), {
@@ -143,6 +145,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     imageUrl?: string;
     badge?: string;
     active?: boolean;
+    allowObservation?: boolean;
   };
 
   if (!body.productId) {
@@ -178,6 +181,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     if (body.imageUrl !== undefined) updates.imageUrl = body.imageUrl;
     if (body.badge !== undefined) updates.badge = body.badge;
     if (body.active !== undefined) updates.active = body.active;
+    if (body.allowObservation !== undefined) updates.allowObservation = body.allowObservation;
 
     // IDOR Fix: Include storeId in WHERE clause
     const [updated] = await db.update(products)

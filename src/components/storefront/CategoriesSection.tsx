@@ -13,6 +13,7 @@ import {
   Car,
   Flower2,
   Home,
+  Layers,
   LucideIcon,
 } from "lucide-react";
 import { type StoreCategory } from "@/lib/store-context";
@@ -20,7 +21,9 @@ import { type StoreCategory } from "@/lib/store-context";
 interface CategoriesSectionProps {
   categories: StoreCategory[];
   activeCategoryId: string | null;
+  activeSubcategoryId: string | null;
   onCategoryChange: (categoryId: string | null) => void;
+  onSubcategoryChange: (subcategoryId: string | null) => void;
   primaryColor: string;
 }
 
@@ -60,89 +63,165 @@ function getIconForEmoji(emoji?: string | null): LucideIcon {
 export function CategoriesSection({
   categories,
   activeCategoryId,
+  activeSubcategoryId,
   onCategoryChange,
+  onSubcategoryChange,
   primaryColor,
 }: CategoriesSectionProps) {
-  if (categories.length === 0) return null;
+  // Apenas categorias raiz (sem pai) aparecem no carrossel principal
+  const rootCategories = categories.filter((c) => c.active !== false && !c.parentId);
+
+  // Filhos da categoria pai selecionada
+  const subcategories = activeCategoryId
+    ? categories.filter((c) => c.active !== false && c.parentId === activeCategoryId)
+    : [];
+
+  if (rootCategories.length === 0) return null;
 
   return (
-    <section className="px-4 space-y-3">
-      <h2 className="text-base font-bold text-slate-900">Categorias</h2>
+    <section className="space-y-3">
+      {/* Nível 1 — categorias raiz com ícone circular */}
+      <div className="px-4">
+        <h2 className="text-base font-bold text-[var(--cor-texto)]">Categorias</h2>
+      </div>
 
-      <div className="overflow-x-auto -mx-4 px-4 pb-2">
+      <div className="overflow-x-auto -mx-0 px-4 pb-1">
         <div className="flex gap-3 whitespace-nowrap">
-          {/* "Todos" button */}
+          {/* Botão "Todos" */}
           <button
-            onClick={() => onCategoryChange(null)}
+            onClick={() => { onCategoryChange(null); onSubcategoryChange(null); }}
             className="flex flex-col items-center gap-2 pb-2 transition-all"
           >
             <div
               className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
-                activeCategoryId === null
-                  ? "ring-2 ring-offset-2"
-                  : "bg-slate-100"
+                activeCategoryId === null ? "ring-2 ring-offset-2" : ""
               }`}
               style={{
                 backgroundColor:
                   activeCategoryId === null ? primaryColor : "rgb(241, 245, 249)",
                 color: activeCategoryId === null ? "white" : "rgb(100, 116, 139)",
-                ...(activeCategoryId === null && { "--tw-ring-color": primaryColor } as React.CSSProperties),
+                ...(activeCategoryId === null
+                  ? ({ "--tw-ring-color": primaryColor } as React.CSSProperties)
+                  : {}),
               }}
             >
               <ShoppingBag className="w-6 h-6" />
             </div>
             <span
-              className={`text-xs font-semibold whitespace-nowrap ${
+              className="text-xs font-semibold whitespace-nowrap"
+              style={
                 activeCategoryId === null
-                  ? "text-slate-900"
-                  : "text-slate-600"
-              }`}
-              style={activeCategoryId === null ? { color: primaryColor } : undefined}
+                  ? { color: primaryColor }
+                  : { color: "rgb(71, 85, 105)" }
+              }
             >
               Todos
             </span>
           </button>
 
-          {/* Category buttons */}
-          {categories
-            .filter((c) => c.active !== false)
-            .map((category) => {
-              const IconComponent = getIconForEmoji(category.emoji);
-              const isActive = activeCategoryId === category.id;
+          {/* Categorias raiz */}
+          {rootCategories.map((category) => {
+            const isAnalytic = category.analytic === true;
+            const IconComponent = isAnalytic ? Layers : getIconForEmoji(category.emoji);
+            const isActive = activeCategoryId === category.id;
 
+            return (
+              <button
+                key={category.id}
+                onClick={() => {
+                  onCategoryChange(category.id);
+                  onSubcategoryChange(null);
+                }}
+                className="flex flex-col items-center gap-2 pb-2 transition-all"
+              >
+                <div
+                  className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
+                    isActive ? "ring-2 ring-offset-2" : ""
+                  }`}
+                  style={{
+                    backgroundColor: isActive
+                      ? primaryColor
+                      : isAnalytic
+                        ? "rgb(226, 232, 240)"
+                        : "rgb(241, 245, 249)",
+                    color: isActive ? "white" : "rgb(100, 116, 139)",
+                    ...(isActive
+                      ? ({ "--tw-ring-color": primaryColor } as React.CSSProperties)
+                      : {}),
+                  }}
+                >
+                  <IconComponent className="w-6 h-6" />
+                </div>
+                <span
+                  className="text-xs font-semibold text-center max-w-[60px] whitespace-normal leading-tight"
+                  style={
+                    isActive
+                      ? { color: primaryColor }
+                      : { color: "rgb(71, 85, 105)" }
+                  }
+                >
+                  {category.name}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Nível 2 — subcategorias como pílulas de texto */}
+      {subcategories.length > 0 && (
+        <div className="overflow-x-auto px-4 pb-1">
+          <div className="flex gap-2 whitespace-nowrap">
+            {/* Pílula "Todos em [pai]" */}
+            <button
+              onClick={() => onSubcategoryChange(null)}
+              className="h-7 px-3 rounded-full text-xs font-semibold border transition-all"
+              style={
+                activeSubcategoryId === null
+                  ? {
+                      backgroundColor: primaryColor,
+                      borderColor: primaryColor,
+                      color: "white",
+                    }
+                  : {
+                      backgroundColor: "white",
+                      borderColor: "rgb(203, 213, 225)",
+                      color: "rgb(71, 85, 105)",
+                    }
+              }
+            >
+              Todos
+            </button>
+
+            {subcategories.map((sub) => {
+              const isActiveSub = activeSubcategoryId === sub.id;
               return (
                 <button
-                  key={category.id}
-                  onClick={() => onCategoryChange(category.id)}
-                  className="flex flex-col items-center gap-2 pb-2 transition-all"
+                  key={sub.id}
+                  onClick={() => onSubcategoryChange(sub.id)}
+                  className="h-7 px-3 rounded-full text-xs font-semibold border transition-all"
+                  style={
+                    isActiveSub
+                      ? {
+                          backgroundColor: primaryColor,
+                          borderColor: primaryColor,
+                          color: "white",
+                        }
+                      : {
+                          backgroundColor: "white",
+                          borderColor: "rgb(203, 213, 225)",
+                          color: "rgb(71, 85, 105)",
+                        }
+                  }
                 >
-                  <div
-                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
-                      isActive
-                        ? "ring-2 ring-offset-2"
-                        : "bg-slate-100"
-                    }`}
-                    style={{
-                      backgroundColor: isActive ? primaryColor : "rgb(241, 245, 249)",
-                      color: isActive ? "white" : "rgb(100, 116, 139)",
-                      ...(isActive && { "--tw-ring-color": primaryColor } as React.CSSProperties),
-                    }}
-                  >
-                    <IconComponent className="w-6 h-6" />
-                  </div>
-                  <span
-                    className={`text-xs font-semibold text-center max-w-[60px] ${
-                      isActive ? "text-slate-900" : "text-slate-600"
-                    }`}
-                    style={isActive ? { color: primaryColor } : undefined}
-                  >
-                    {category.name}
-                  </span>
+                  {sub.emoji && !sub.emoji.match(/^[a-z]/i) ? `${sub.emoji} ` : ""}
+                  {sub.name}
                 </button>
               );
             })}
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }

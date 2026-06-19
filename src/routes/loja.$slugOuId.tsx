@@ -7,6 +7,7 @@ import { StorefrontHeader } from "@/components/storefront/StorefrontHeader";
 import { HeroCarousel } from "@/components/storefront/HeroCarousel";
 import { CategoriesSection } from "@/components/storefront/CategoriesSection";
 import { ProductCard } from "@/components/storefront/ProductCard";
+import { ProductDetailModal } from "@/components/storefront/ProductDetailModal";
 
 export const Route = createFileRoute("/loja/$slugOuId")({
   component: PublicStorefrontPage,
@@ -22,6 +23,7 @@ type CartItem = {
   qty: number;
   imageUrl?: string | null;
   emoji?: string | null;
+  obs?: string;
 };
 
 function isUuid(value: string): boolean {
@@ -42,8 +44,10 @@ function PublicStorefrontPage() {
 
   const [query, setQuery] = useState("");
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const [activeSubcategoryId, setActiveSubcategoryId] = useState<string | null>(null);
 
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<StoreProduct | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
@@ -154,30 +158,68 @@ function PublicStorefrontPage() {
   const cartCount = cart.reduce((acc, item) => acc + item.qty, 0);
   const cartSubtotal = cart.reduce((acc, item) => acc + item.price * item.qty, 0);
 
+  // IDs filhos da categoria pai selecionada (para filtro de visibleProducts)
+  const activeParentChildIds = useMemo(() => {
+    if (!activeCategoryId) return [];
+    return categories
+      .filter((c) => c.parentId === activeCategoryId)
+      .map((c) => c.id);
+  }, [activeCategoryId, categories]);
+
   const visibleProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
     return products
       .filter((p) => p.active !== false)
-      .filter((p) => (activeCategoryId ? p.categoryId === activeCategoryId : true))
+      .filter((p) => {
+        if (activeSubcategoryId) return p.categoryId === activeSubcategoryId;
+        if (activeCategoryId) {
+          return (
+            p.categoryId === activeCategoryId ||
+            activeParentChildIds.includes(p.categoryId ?? "")
+          );
+        }
+        return true;
+      })
       .filter((p) => (q ? p.name.toLowerCase().includes(q) : true));
-  }, [activeCategoryId, products, query]);
+  }, [activeCategoryId, activeSubcategoryId, activeParentChildIds, products, query]);
 
-  const addToCart = (product: StoreProduct) => {
+  // Seções do modo "Todos": uma seção por categoria raiz (analíticas primeiro)
+  const categorySections = useMemo(() => {
+    const activeProds = products.filter((p) => p.active !== false);
+    const activeCats = categories.filter((c) => c.active !== false);
+    const roots = activeCats.filter((c) => !c.parentId);
+    // Analíticas primeiro, depois não-analíticas, respeitando position dentro de cada grupo
+    roots.sort((a, b) => {
+      const aA = a.analytic === true ? 0 : 1;
+      const bA = b.analytic === true ? 0 : 1;
+      if (aA !== bA) return aA - bA;
+      return (a.position ?? 0) - (b.position ?? 0);
+    });
+    return roots
+      .map((cat) => {
+        const children = activeCats.filter((c) => c.parentId === cat.id);
+        const childIds = children.map((c) => c.id);
+        const catProducts = activeProds.filter(
+          (p) => p.categoryId === cat.id || childIds.includes(p.categoryId ?? "")
+        );
+        return { category: cat, children, products: catProducts };
+      })
+      .filter((s) => s.products.length > 0);
+  }, [categories, products]);
+
+  const addToCart = (product: StoreProduct, obs?: string) => {
     const price = parseFloat(product.price);
     setCart((prev) => {
-      const existing = prev.find((i) => i.id === product.id);
-      if (existing) return prev.map((i) => (i.id === product.id ? { ...i, qty: i.qty + 1 } : i));
-      return [
-        ...prev,
-        {
-          id: product.id,
-          name: product.name,
-          price,
-          qty: 1,
-          imageUrl: product.imageUrl,
-          emoji: product.emoji,
-        },
-      ];
+      // Com observação → sempre adiciona como item separado
+      if (obs) {
+        return [
+          ...prev,
+          { id: product.id, name: product.name, price, qty: 1, imageUrl: product.imageUrl, emoji: product.emoji, obs },
+        ];
+      }
+      const existing = prev.find((i) => i.id === product.id && !i.obs);
+      if (existing) return prev.map((i) => (i.id === product.id && !i.obs ? { ...i, qty: i.qty + 1 } : i));
+      return [...prev, { id: product.id, name: product.name, price, qty: 1, imageUrl: product.imageUrl, emoji: product.emoji }];
     });
   };
 
@@ -197,10 +239,11 @@ function PublicStorefrontPage() {
       customerName.trim() ? `Nome: ${customerName.trim()}` : null,
       customerAddress.trim() ? `Endereço: ${customerAddress.trim()}` : null,
       customerName.trim() || customerAddress.trim() ? "" : null,
-      ...cart.map((i) => {
+      ...cart.flatMap((i) => {
         const base = `${i.qty}x ${i.name}`;
-        if (configuracaoVitrine.exibirPreco) return `${base} — R$ ${formatPrice(i.price)}`;
-        return base;
+        const priceStr = configuracaoVitrine.exibirPreco ? ` — R$ ${formatPrice(i.price)}` : "";
+        const obsStr = i.obs ? `   ↳ ${i.obs}` : null;
+        return obsStr ? [`${base}${priceStr}`, obsStr] : [`${base}${priceStr}`];
       }),
       "",
       configuracaoVitrine.exibirPreco ? `Subtotal: R$ ${formatPrice(cartSubtotal)}` : "Valores: sob consulta",
@@ -236,6 +279,7 @@ function PublicStorefrontPage() {
             name: i.name,
             qty: i.qty,
             price: i.price,
+            notes: i.obs || undefined,
           })),
           subtotal: cartSubtotal,
         }),
@@ -322,7 +366,12 @@ function PublicStorefrontPage() {
           <CategoriesSection
             categories={categories}
             activeCategoryId={activeCategoryId}
-            onCategoryChange={setActiveCategoryId}
+            activeSubcategoryId={activeSubcategoryId}
+            onCategoryChange={(id) => {
+              setActiveCategoryId(id);
+              setActiveSubcategoryId(null);
+            }}
+            onSubcategoryChange={setActiveSubcategoryId}
             primaryColor={configuracaoVitrine.corPrimaria}
           />
         </div>
@@ -333,48 +382,133 @@ function PublicStorefrontPage() {
           </div>
         )}
 
-        <section className="space-y-3">
-          <div className="px-4 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-900">Todos os produtos</h2>
-            <span className="text-sm text-slate-500">
-              {visibleProducts.length} itens
-            </span>
+        {/* ── Esqueleto de carregamento (igual nos dois modos) ── */}
+        {dataLoading ? (
+          <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-4 lg:grid-cols-5 md:gap-4 md:px-4">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
+                <Skeleton className="aspect-square" />
+                <div className="p-4 space-y-2">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-10 w-full mt-3 rounded-lg" />
+                </div>
+              </div>
+            ))}
           </div>
 
-          {dataLoading ? (
-            <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-4 lg:grid-cols-5 md:gap-4 md:px-4">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
-                  <Skeleton className="aspect-square" />
-                  <div className="p-4 space-y-2">
-                    <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-10 w-full mt-3 rounded-lg" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : visibleProducts.length === 0 ? (
+        ) : !activeCategoryId && !activeSubcategoryId && !query.trim() ? (
+          /* ── Modo "Todos": seções por categoria raiz ── */
+          categorySections.length === 0 ? (
             <div className="mx-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-12 text-center">
               <Store className="mx-auto w-12 h-12 text-slate-300 mb-3" />
-              <p className="text-sm font-semibold text-slate-900">Nenhum produto encontrado</p>
-              <p className="text-xs text-slate-500 mt-1">Tente ajustar a busca ou categoria.</p>
+              <p className="text-sm font-semibold text-slate-900">Nenhum produto cadastrado ainda</p>
+              <p className="text-xs text-slate-500 mt-1">Os produtos aparecerão aqui quando forem adicionados.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-4 lg:grid-cols-5 md:gap-4 md:px-4">
-              {visibleProducts.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  showPrice={configuracaoVitrine.exibirPreco}
-                  highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
-                  onAdd={() => addToCart(product)}
-                  primaryColor={configuracaoVitrine.corPrimaria}
-                />
+            <div className="space-y-10">
+              {categorySections.map(({ category, children, products: catProds }) => (
+                <section key={category.id} className="space-y-3">
+                  {/* Cabeçalho clicável */}
+                  <button
+                    onClick={() => {
+                      setActiveCategoryId(category.id);
+                      setActiveSubcategoryId(null);
+                    }}
+                    className="w-full px-4 flex items-center justify-between group"
+                  >
+                    <h2 className="text-lg font-bold text-[var(--cor-texto)] flex items-center gap-2">
+                      {category.emoji && (
+                        <span className="text-xl">{category.emoji}</span>
+                      )}
+                      {category.name}
+                    </h2>
+                    <span
+                      className="text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ color: configuracaoVitrine.corPrimaria }}
+                    >
+                      {category.analytic && children.length > 0
+                        ? `${children.length} categorias →`
+                        : `${catProds.length} itens →`}
+                    </span>
+                  </button>
+
+                  {/* Chips de sub-categorias (apenas para categorias analíticas com filhos) */}
+                  {category.analytic === true && children.length > 0 && (
+                    <div className="px-4 flex flex-wrap gap-2">
+                      {children.map((child) => (
+                        <button
+                          key={child.id}
+                          onClick={() => {
+                            setActiveCategoryId(category.id);
+                            setActiveSubcategoryId(child.id);
+                          }}
+                          className="h-7 px-3 rounded-full text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-800 transition-colors"
+                        >
+                          {child.emoji && !/^[a-z]/i.test(child.emoji)
+                            ? `${child.emoji} `
+                            : ""}
+                          {child.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-4 lg:grid-cols-5 md:gap-4 md:px-4">
+                    {catProds.map((product) => (
+                      <ProductCard
+                        key={product.id}
+                        product={product}
+                        showPrice={configuracaoVitrine.exibirPreco}
+                        highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                        onAdd={() => addToCart(product)}
+                        onOpenDetail={() => setSelectedProduct(product)}
+                        primaryColor={configuracaoVitrine.corPrimaria}
+                      />
+                    ))}
+                  </div>
+                </section>
               ))}
             </div>
-          )}
-        </section>
+          )
+
+        ) : (
+          /* ── Modo categoria/subcategoria/busca: grid único ── */
+          <section className="space-y-3">
+            <div className="px-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-[var(--cor-texto)]">
+                {activeSubcategoryId
+                  ? (categories.find((c) => c.id === activeSubcategoryId)?.name ?? "Produtos")
+                  : activeCategoryId
+                    ? (categories.find((c) => c.id === activeCategoryId)?.name ?? "Produtos")
+                    : `Resultados para "${query.trim()}"`}
+              </h2>
+              <span className="text-sm text-slate-500">{visibleProducts.length} itens</span>
+            </div>
+
+            {visibleProducts.length === 0 ? (
+              <div className="mx-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-12 text-center">
+                <Store className="mx-auto w-12 h-12 text-slate-300 mb-3" />
+                <p className="text-sm font-semibold text-slate-900">Nenhum produto encontrado</p>
+                <p className="text-xs text-slate-500 mt-1">Tente ajustar a busca ou categoria.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-4 lg:grid-cols-5 md:gap-4 md:px-4">
+                {visibleProducts.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    showPrice={configuracaoVitrine.exibirPreco}
+                    highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                    onAdd={() => addToCart(product)}
+                    onOpenDetail={() => setSelectedProduct(product)}
+                    primaryColor={configuracaoVitrine.corPrimaria}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </main>
 
       {configuracaoVitrine.pedidoWhatsapp && (
@@ -391,6 +525,20 @@ function PublicStorefrontPage() {
           </div>
         </div>
       )}
+
+      {/* Modal de detalhe do produto */}
+      <ProductDetailModal
+        product={selectedProduct}
+        open={selectedProduct !== null}
+        showPrice={configuracaoVitrine.exibirPreco}
+        highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+        primaryColor={configuracaoVitrine.corPrimaria}
+        onClose={() => setSelectedProduct(null)}
+        onAddToCart={(product, obs) => {
+          addToCart(product, obs);
+          setSelectedProduct(null);
+        }}
+      />
 
       {/* Modal de checkout público */}
       {showCheckout && (

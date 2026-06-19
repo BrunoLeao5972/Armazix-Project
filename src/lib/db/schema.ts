@@ -146,6 +146,7 @@ export const products = pgTable("products", {
   active: boolean("active").default(true),
   rating: numeric("rating", { precision: 2, scale: 1 }).default("0"),
   reviewCount: integer("review_count").default(0),
+  allowObservation: boolean("allow_observation").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

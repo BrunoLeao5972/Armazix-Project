@@ -7,6 +7,7 @@ interface ProductCardProps {
   showPrice: boolean;
   highlightLowStock: boolean;
   onAdd: () => void;
+  onOpenDetail: () => void;
   primaryColor: string;
 }
 
@@ -15,6 +16,7 @@ export function ProductCard({
   showPrice,
   highlightLowStock,
   onAdd,
+  onOpenDetail,
   primaryColor,
 }: ProductCardProps) {
   const [isFavorite, setIsFavorite] = useState(false);
@@ -37,7 +39,10 @@ export function ProductCard({
     : 0;
 
   return (
-    <div className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+    <div
+      className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+      onClick={onOpenDetail}
+    >
       {/* Image Section */}
       <div className="relative aspect-square bg-slate-50 overflow-hidden group">
         <img
@@ -75,7 +80,7 @@ export function ProductCard({
 
         {/* Wishlist Button - Top Right */}
         <button
-          onClick={() => setIsFavorite(!isFavorite)}
+          onClick={(e) => { e.stopPropagation(); setIsFavorite(!isFavorite); }}
           className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur flex items-center justify-center hover:bg-white transition-colors"
         >
           <Heart
@@ -133,7 +138,7 @@ export function ProductCard({
 
         {/* Add to Cart Button */}
         <button
-          onClick={onAdd}
+          onClick={(e) => { e.stopPropagation(); onAdd(); }}
           className="w-full h-11 rounded-lg font-semibold text-white flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98] mt-3"
           style={{ backgroundColor: primaryColor }}
         >

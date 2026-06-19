@@ -73,6 +73,7 @@ export interface StoreProduct {
   categoryId: string | null;
   rating: string | null;
   reviewCount: number | null;
+  allowObservation: boolean | null;
 }
 
 export interface StoreCategory {
@@ -81,8 +82,10 @@ export interface StoreCategory {
   emoji: string | null;
   color: string | null;
   imageUrl: string | null;
+  parentId: string | null;
   position: number | null;
   active: boolean | null;
+  analytic: boolean | null;
 }
 
 export interface CartItem {
