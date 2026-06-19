@@ -6,6 +6,13 @@ import {
   Zap,
   Package,
   ShoppingBag,
+  Shirt,
+  Utensils,
+  Dumbbell,
+  Baby,
+  Car,
+  Flower2,
+  Home,
   LucideIcon,
 } from "lucide-react";
 import { type StoreCategory } from "@/lib/store-context";
@@ -17,14 +24,38 @@ interface CategoriesSectionProps {
   primaryColor: string;
 }
 
-const iconMap: Record<string, LucideIcon> = {
-  smartphone: Smartphone,
-  laptop: Laptop,
-  headphones: Headphones,
-  watch: Watch,
-  power: Zap,
-  package: Package,
-};
+function getIconForEmoji(emoji?: string | null): LucideIcon {
+  if (!emoji) return Package;
+  const e = emoji.trim();
+  // Emoji real → ícone
+  if (e === "📱" || e === "🤳") return Smartphone;
+  if (e === "💻" || e === "🖥️" || e === "🖥") return Laptop;
+  if (e === "🎧" || e === "🎵" || e === "🔊" || e === "🎶") return Headphones;
+  if (e === "⌚" || e === "🕐") return Watch;
+  if (e === "⚡" || e === "🔌") return Zap;
+  if (e === "🛍️" || e === "🛒") return ShoppingBag;
+  if (e === "👕" || e === "👗" || e === "👔" || e === "🧥") return Shirt;
+  if (e === "🍔" || e === "🍕" || e === "🍽️" || e === "🥗") return Utensils;
+  if (e === "💪" || e === "🏋️" || e === "⚽") return Dumbbell;
+  if (e === "👶" || e === "🍼" || e === "🧸") return Baby;
+  if (e === "🚗" || e === "🏎️" || e === "🔧") return Car;
+  if (e === "🌸" || e === "🌺" || e === "🌼") return Flower2;
+  if (e === "🏠" || e === "🛋️" || e === "🪴") return Home;
+  // Texto em inglês (fallback legado)
+  const lower = e.toLowerCase();
+  if (lower === "smartphone" || lower === "phone" || lower === "mobile") return Smartphone;
+  if (lower === "laptop" || lower === "computer" || lower === "desktop") return Laptop;
+  if (lower === "headphones" || lower === "audio" || lower === "music") return Headphones;
+  if (lower === "watch" || lower === "wearable") return Watch;
+  if (lower === "power" || lower === "zap" || lower === "electric") return Zap;
+  if (lower === "clothes" || lower === "fashion" || lower === "shirt") return Shirt;
+  if (lower === "food" || lower === "kitchen" || lower === "restaurant") return Utensils;
+  if (lower === "sports" || lower === "gym" || lower === "fitness") return Dumbbell;
+  if (lower === "baby" || lower === "kids" || lower === "children") return Baby;
+  if (lower === "car" || lower === "auto" || lower === "vehicle") return Car;
+  if (lower === "home" || lower === "furniture" || lower === "house") return Home;
+  return Package;
+}
 
 export function CategoriesSection({
   categories,
@@ -55,7 +86,7 @@ export function CategoriesSection({
                 backgroundColor:
                   activeCategoryId === null ? primaryColor : "rgb(241, 245, 249)",
                 color: activeCategoryId === null ? "white" : "rgb(100, 116, 139)",
-                ringColor: primaryColor,
+                ...(activeCategoryId === null && { "--tw-ring-color": primaryColor } as React.CSSProperties),
               }}
             >
               <ShoppingBag className="w-6 h-6" />
@@ -76,7 +107,7 @@ export function CategoriesSection({
           {categories
             .filter((c) => c.active !== false)
             .map((category) => {
-              const IconComponent = iconMap[category.emoji?.toLowerCase() || "package"] || Package;
+              const IconComponent = getIconForEmoji(category.emoji);
               const isActive = activeCategoryId === category.id;
 
               return (
@@ -94,7 +125,7 @@ export function CategoriesSection({
                     style={{
                       backgroundColor: isActive ? primaryColor : "rgb(241, 245, 249)",
                       color: isActive ? "white" : "rgb(100, 116, 139)",
-                      ringColor: primaryColor,
+                      ...(isActive && { "--tw-ring-color": primaryColor } as React.CSSProperties),
                     }}
                   >
                     <IconComponent className="w-6 h-6" />

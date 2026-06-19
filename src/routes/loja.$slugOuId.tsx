@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type ConfiguracaoVitrine, type StoreCategory, type StoreProduct, type StorePublicData, formatPrice } from "@/lib/store-context";
-import { Loader2, MessageCircle, Search, Store } from "lucide-react";
+import { CheckCircle2, Loader2, MessageCircle, Search, Store, X } from "lucide-react";
 import { StorefrontHeader } from "@/components/storefront/StorefrontHeader";
 import { HeroCarousel } from "@/components/storefront/HeroCarousel";
 import { CategoriesSection } from "@/components/storefront/CategoriesSection";
@@ -45,7 +45,12 @@ function PublicStorefrontPage() {
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [orderDone, setOrderDone] = useState(false);
 
   useEffect(() => {
     async function loadStore() {
@@ -79,13 +84,14 @@ function PublicStorefrontPage() {
 
   useEffect(() => {
     if (!store?.id) return;
+    const currentStoreId = store.id;
     async function loadData() {
       setDataLoading(true);
       setDataError(null);
       try {
         const [productsRes, categoriesRes] = await Promise.all([
-          fetch(`/api/products/list?storeId=${encodeURIComponent(store.id)}`),
-          fetch(`/api/categories/list?storeId=${encodeURIComponent(store.id)}`),
+          fetch(`/api/products/list?storeId=${encodeURIComponent(currentStoreId)}`),
+          fetch(`/api/categories/list?storeId=${encodeURIComponent(currentStoreId)}`),
         ]);
         const productsData = (await productsRes.json()) as { products?: StoreProduct[]; error?: string };
         const categoriesData = (await categoriesRes.json()) as { categories?: StoreCategory[]; error?: string };
@@ -206,20 +212,43 @@ function PublicStorefrontPage() {
   };
 
   const goToCheckout = () => {
-    if (!store?.id) return;
+    if (cart.length === 0) return;
+    setOrderDone(false);
+    setOrderError(null);
+    setShowCheckout(true);
+  };
+
+  const submitOrder = async () => {
+    if (!store?.id || cart.length === 0) return;
+    setOrderLoading(true);
+    setOrderError(null);
     try {
-      localStorage.setItem("storeCart", JSON.stringify(cart.map((i) => ({
-        id: i.id,
-        name: i.name,
-        price: i.price,
-        image: i.imageUrl || null,
-        emoji: i.emoji || null,
-        qty: i.qty,
-      }))));
-      localStorage.setItem("storeId", store.id);
-      localStorage.setItem("storeSlug", store.slug);
-    } catch {}
-    window.location.href = "/store/checkout";
+      const res = await fetch("/api/orders/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId: store.id,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          customerAddress: customerAddress.trim() || undefined,
+          items: cart.map((i) => ({
+            productId: i.id,
+            name: i.name,
+            qty: i.qty,
+            price: i.price,
+          })),
+          subtotal: cartSubtotal,
+        }),
+      });
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(json.error || "Erro ao finalizar pedido");
+      setOrderDone(true);
+      setCart([]);
+    } catch (e) {
+      setOrderError(e instanceof Error ? e.message : "Erro ao finalizar pedido");
+    } finally {
+      setOrderLoading(false);
+    }
   };
 
   if (storeLoading) {
@@ -247,7 +276,7 @@ function PublicStorefrontPage() {
   return (
     <div
       style={themeStyle}
-      className="min-h-screen bg-white text-slate-900"
+      className="min-h-screen bg-[var(--cor-fundo)] text-[var(--cor-texto)]"
     >
       <StorefrontHeader
         storeName={store?.name || "Loja"}
@@ -359,6 +388,113 @@ function PublicStorefrontPage() {
               <MessageCircle className="w-5 h-5" />
               Enviar pedido para WhatsApp
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de checkout público */}
+      {showCheckout && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4">
+          <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-xl">
+            {/* Header do modal */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <h2 className="text-base font-bold text-slate-900">Finalizar Pedido</h2>
+              <button
+                onClick={() => setShowCheckout(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+
+            {orderDone ? (
+              /* Estado de sucesso */
+              <div className="px-5 py-10 flex flex-col items-center gap-3 text-center">
+                <CheckCircle2 className="w-14 h-14 text-green-500" />
+                <p className="text-lg font-bold text-slate-900">Pedido realizado!</p>
+                <p className="text-sm text-slate-500">Em breve entraremos em contato para confirmar.</p>
+                <button
+                  onClick={() => setShowCheckout(false)}
+                  className="mt-4 h-11 px-8 rounded-lg text-white font-semibold"
+                  style={{ backgroundColor: configuracaoVitrine.corPrimaria }}
+                >
+                  Fechar
+                </button>
+              </div>
+            ) : (
+              <div className="px-5 py-4 space-y-4 max-h-[80vh] overflow-y-auto">
+                {/* Resumo do pedido */}
+                <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm">
+                  {cart.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-slate-700">{item.qty}× {item.name}</span>
+                      {configuracaoVitrine.exibirPreco && (
+                        <span className="font-semibold text-slate-900">
+                          R$ {formatPrice(item.price * item.qty)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {configuracaoVitrine.exibirPreco && (
+                    <div className="flex items-center justify-between px-4 py-2.5 font-bold text-sm">
+                      <span>Total</span>
+                      <span>R$ {formatPrice(cartSubtotal)}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Formulário */}
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Nome *</label>
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Seu nome completo"
+                      className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">Telefone *</label>
+                    <input
+                      type="tel"
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="(11) 99999-9999"
+                      className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    />
+                  </div>
+                  {store?.deliveryEnabled === true && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-slate-700">Endereço de entrega</label>
+                      <input
+                        type="text"
+                        value={customerAddress}
+                        onChange={(e) => setCustomerAddress(e.target.value)}
+                        placeholder="Rua, número, bairro..."
+                        className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {orderError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {orderError}
+                  </div>
+                )}
+
+                <button
+                  onClick={submitOrder}
+                  disabled={orderLoading || !customerName.trim() || !customerPhone.trim()}
+                  className="w-full h-11 rounded-lg text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  style={{ backgroundColor: configuracaoVitrine.corPrimaria }}
+                >
+                  {orderLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar Pedido"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
