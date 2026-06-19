@@ -2,6 +2,7 @@ import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, gte, desc, sql } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
+import { generateCleanSlug } from "@/lib/slug";
 
 const { products, orders, orderItems, verificationCodes, users, storeUsers } = schema;
 
@@ -521,7 +522,8 @@ export async function updateUserDataHandler(request: Request, auth?: { userId?: 
 // ─── Check Store Slug ───────────────────────────────────────────
 export async function checkStoreSlugHandler(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const slug = url.searchParams.get("slug");
+  const rawSlug = url.searchParams.get("slug");
+  const slug = rawSlug ? generateCleanSlug(rawSlug) : "";
 
   if (!slug) {
     return new Response(JSON.stringify({ error: "slug required" }), {
@@ -534,7 +536,7 @@ export async function checkStoreSlugHandler(request: Request): Promise<Response>
 
   try {
     const existing = await db.select({ id: schema.stores.id }).from(schema.stores).where(eq(schema.stores.slug, slug));
-    return new Response(JSON.stringify({ available: existing.length === 0 }), {
+    return new Response(JSON.stringify({ available: existing.length === 0, slug }), {
       status: 200, headers: { "content-type": "application/json" },
     });
   } catch (error) {
@@ -561,12 +563,7 @@ export async function updateStoreSlugHandler(request: Request, auth?: AuthContex
 
   const body = await request.json() as { slug: string };
 
-  const cleanSlug = body.slug
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "")
-    .slice(0, 30);
+  const cleanSlug = generateCleanSlug(body.slug);
 
   if (!cleanSlug || cleanSlug.length < 3) {
     return new Response(JSON.stringify({ error: "Slug inválido (mínimo 3 caracteres alfanuméricos)" }), {

@@ -5,6 +5,8 @@ import { sendVerificationEmail } from "@/lib/auth/email";
 import { sanitizeString } from "@/lib/validation/schemas";
 import { logAudit, AuditActions } from "@/lib/audit";
 import { generateCsrfToken, createCsrfCookie } from "@/lib/middleware/csrf";
+import { eq } from "drizzle-orm";
+import { generateCleanSlug } from "@/lib/slug";
 
 const { users, stores, storeUsers } = schema;
 
@@ -72,13 +74,23 @@ export async function registerHandler(request: Request): Promise<Response> {
     emailVerified: false,
   }).returning();
 
-  // Create store - slug without hyphens
-  const slug = sanitizedStoreName
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "")
-    .slice(0, 30);
+  // Create store - clean slug without hyphens or special characters
+  const slug = generateCleanSlug(sanitizedStoreName);
+
+  if (!slug || slug.length < 3) {
+    return new Response(JSON.stringify({ error: "Nome da loja gera um slug inválido (mínimo 3 caracteres alfanuméricos)" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const existingSlug = await db.select({ id: stores.id }).from(stores).where(eq(stores.slug, slug));
+  if (existingSlug.length > 0) {
+    return new Response(JSON.stringify({ error: "Slug já está em uso" }), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const [store] = await db.insert(stores).values({
     name: sanitizedStoreName,

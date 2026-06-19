@@ -9,7 +9,7 @@ import { Pricing } from "@/components/armazix/Pricing";
 import { CTA } from "@/components/armazix/CTA";
 import { Footer } from "@/components/armazix/Footer";
 import { useEffect, useState } from "react";
-import { resolveStoreSlug } from "@/lib/store-context";
+import { resolveHostnameStoreSlug } from "@/lib/store-context";
 import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -37,7 +37,7 @@ function Index() {
   const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
-    const slug = resolveStoreSlug();
+    const slug = typeof window !== "undefined" ? resolveHostnameStoreSlug(window.location.hostname) : null;
     if (!slug) return;
     setRedirecting(true);
     navigate({ to: "/store" }).catch(() => {});

@@ -3,6 +3,7 @@ import "./lib/error-capture";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { handleApiRequest } from "./lib/api-handler";
+import { isCleanSlug } from "./lib/slug";
 
 // ============================================================================
 // SECURITY HEADERS
@@ -129,9 +130,9 @@ function extractStoreSlug(hostname: string): string | null {
   for (const domain of MAIN_DOMAINS) {
     if (hostname === domain) return null;
     if (hostname.endsWith(`.${domain}`)) {
-      const sub = hostname.slice(0, hostname.length - domain.length - 1);
-      // Only single-level subdomains (no www, no nested)
-      if (sub && !sub.includes(".") && sub !== "www" && sub !== "api") {
+      const sub = hostname.slice(0, hostname.length - domain.length - 1).toLowerCase();
+      // Only single-level clean subdomains (no www, no nested, no hyphens)
+      if (sub && !sub.includes(".") && sub !== "www" && sub !== "api" && isCleanSlug(sub)) {
         return sub;
       }
     }

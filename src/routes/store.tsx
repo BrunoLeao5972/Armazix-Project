@@ -1,4 +1,4 @@
-import { useState, createContext, useContext, useEffect, useRef } from "react";
+import { useState, createContext, useContext, useEffect, useMemo, type CSSProperties } from "react";
 import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router";
 import {
   Home,
@@ -8,13 +8,16 @@ import {
   User,
   Loader2,
   Store,
+  MessageCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { type CartItem, type StorePublicData, resolveStoreSlug, formatPrice } from "@/lib/store-context";
+import { type CartItem, type ConfiguracaoVitrine, type StorePublicData, resolveStoreSlug, formatPrice } from "@/lib/store-context";
 
 type StoreContextType = {
   store: StorePublicData | null;
+  configuracaoVitrine: ConfiguracaoVitrine;
   storeLoading: boolean;
   cart: CartItem[];
   addToCart: (item: Omit<CartItem, "qty">) => void;
@@ -29,6 +32,19 @@ type StoreContextType = {
 
 export const StoreContext = createContext<StoreContextType>({
   store: null,
+  configuracaoVitrine: {
+    lojaId: "",
+    logoUrl: "",
+    bannerUrl: "",
+    bannerMobileUrl: "",
+    corPrimaria: "#2A69E5",
+    corFundo: "#ffffff",
+    corTextos: "#0f172a",
+    exibirPreco: true,
+    pedidoWhatsapp: false,
+    telefoneWhatsapp: undefined,
+    destacarEstoqueBaixo: false,
+  },
   storeLoading: true,
   cart: [],
   addToCart: () => {},
@@ -62,7 +78,7 @@ function StoreLayout() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [store, setStore] = useState<StorePublicData | null>(null);
   const [storeLoading, setStoreLoading] = useState(true);
-  const colorStyleRef = useRef<HTMLStyleElement | null>(null);
+  const [desktopSearch, setDesktopSearch] = useState("");
 
   useEffect(() => {
     try {
@@ -113,33 +129,6 @@ function StoreLayout() {
     loadStore();
   }, []);
 
-  // Apply store primary color as CSS variable
-  useEffect(() => {
-    if (!store?.primaryColor) return;
-    if (!colorStyleRef.current) {
-      colorStyleRef.current = document.createElement("style");
-      document.head.appendChild(colorStyleRef.current);
-    }
-    // Convert hex to HSL for Tailwind CSS variable compatibility
-    const hex = store.primaryColor.replace("#", "");
-    const r = parseInt(hex.slice(0, 2), 16) / 255;
-    const g = parseInt(hex.slice(2, 4), 16) / 255;
-    const b = parseInt(hex.slice(4, 6), 16) / 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    let h = 0, s = 0;
-    const l = (max + min) / 2;
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      switch (max) {
-        case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
-        case g: h = ((b - r) / d + 2) / 6; break;
-        case b: h = ((r - g) / d + 4) / 6; break;
-      }
-    }
-    colorStyleRef.current.textContent = `:root { --primary: ${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%; }`;
-  }, [store?.primaryColor]);
-
   const addToCart = (item: Omit<CartItem, "qty">) => {
     setCart((prev) => {
       const existing = prev.find((c) => c.id === item.id);
@@ -169,22 +158,83 @@ function StoreLayout() {
     : 0;
   const cartTotalWithFee = cartTotal + deliveryFee;
 
+  const configuracaoVitrine = useMemo<ConfiguracaoVitrine>(() => {
+    const phone = (store?.whatsappPhone || store?.phone || "").replace(/\D/g, "");
+    return {
+      lojaId: store?.id || "",
+      logoUrl: store?.logoUrl || "",
+      bannerUrl: store?.bannerUrl || "",
+      bannerMobileUrl: store?.bannerMobileUrl || "",
+      corPrimaria: store?.primaryColor || "#2A69E5",
+      corFundo: store?.backgroundColor || "#ffffff",
+      corTextos: store?.textColor || "#0f172a",
+      exibirPreco: store?.showPrice !== false,
+      pedidoWhatsapp: store?.whatsappOrderEnabled === true,
+      telefoneWhatsapp: phone || undefined,
+      destacarEstoqueBaixo: store?.highlightLowStock === true,
+    };
+  }, [
+    store?.backgroundColor,
+    store?.bannerMobileUrl,
+    store?.bannerUrl,
+    store?.highlightLowStock,
+    store?.id,
+    store?.logoUrl,
+    store?.phone,
+    store?.primaryColor,
+    store?.showPrice,
+    store?.textColor,
+    store?.whatsappOrderEnabled,
+    store?.whatsappPhone,
+  ]);
+
+  const themeStyle = useMemo(
+    () =>
+      ({
+        "--cor-primaria": configuracaoVitrine.corPrimaria,
+        "--cor-fundo": configuracaoVitrine.corFundo,
+        "--cor-texto": configuracaoVitrine.corTextos,
+      }) as CSSProperties,
+    [configuracaoVitrine.corFundo, configuracaoVitrine.corPrimaria, configuracaoVitrine.corTextos]
+  );
+
+  const sendCartToWhatsApp = () => {
+    if (!configuracaoVitrine.pedidoWhatsapp || !configuracaoVitrine.telefoneWhatsapp || cart.length === 0) return;
+
+    const lines = [
+      `Pedido da loja ${store?.name || "Armazix"}`,
+      "",
+      ...cart.map((item) => {
+        const subtotal = item.price * item.qty;
+        if (configuracaoVitrine.exibirPreco) {
+          return `${item.qty}x ${item.name} - R$ ${formatPrice(subtotal)}`;
+        }
+        return `${item.qty}x ${item.name}`;
+      }),
+      "",
+      configuracaoVitrine.exibirPreco ? `Total: R$ ${formatPrice(cartTotalWithFee)}` : "Total: sob consulta",
+    ];
+
+    const url = `https://wa.me/${configuracaoVitrine.telefoneWhatsapp}?text=${encodeURIComponent(lines.join("\n"))}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   // Initials from store name
   const initials = store?.name
     ? store.name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase()
     : "...";
 
   return (
-    <StoreContext.Provider value={{ store, storeLoading, cart, addToCart, removeFromCart, updateQty, clearCart, cartCount, cartTotal, favorites, toggleFavorite }}>
-      <div className="min-h-screen bg-background flex flex-col">
+    <StoreContext.Provider value={{ store, configuracaoVitrine, storeLoading, cart, addToCart, removeFromCart, updateQty, clearCart, cartCount, cartTotal, favorites, toggleFavorite }}>
+      <div style={themeStyle} className="min-h-screen bg-[var(--cor-fundo)] text-[var(--cor-texto)] flex flex-col">
         {/* Header */}
-        <header className="sticky top-0 z-40 bg-surface/80 backdrop-blur-md border-b border-border/40">
-          <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+        <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80">
+          <div className="max-w-7xl mx-auto px-3 md:px-6 h-14 md:h-16 flex items-center justify-between gap-3">
             {/* Logo + Store Name */}
             <div className="flex items-center gap-2.5 min-w-0">
               <Link to="/store" className="flex items-center gap-2 shrink-0">
                 {store?.logoUrl ? (
-                  <img src={store.logoUrl} alt={store.name} className="w-9 h-9 rounded-xl object-cover shadow-sm" />
+                  <img src={store.logoUrl} alt={store.name} className="w-9 h-9 rounded-xl object-contain bg-slate-100 shadow-sm" />
                 ) : (
                   <span className="grid place-items-center w-9 h-9 rounded-xl bg-primary text-primary-foreground shadow-glow text-xs font-bold shrink-0">
                     {storeLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : initials}
@@ -201,22 +251,49 @@ function StoreLayout() {
               </div>
             </div>
 
+            {/* Desktop Nav + Search */}
+            <div className="hidden md:flex items-center gap-3 flex-1 max-w-3xl">
+              <nav className="hidden lg:flex items-center gap-4 text-sm font-medium text-slate-600">
+                <Link to="/store" className="hover:text-slate-900 transition-colors">Início</Link>
+                <a href="#mais-vendidos" className="hover:text-slate-900 transition-colors">Mais Vendidos</a>
+                <a href="#sobre-nos" className="hover:text-slate-900 transition-colors">Sobre Nós</a>
+              </nav>
+              <form
+                className="flex-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const q = desktopSearch.trim();
+                  window.location.href = q ? `/store/search?q=${encodeURIComponent(q)}` : "/store/search";
+                }}
+              >
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <Input
+                    value={desktopSearch}
+                    onChange={(e) => setDesktopSearch(e.target.value)}
+                    placeholder="Buscar produtos"
+                    className="h-10 rounded-xl border-0 bg-[#F1F3F5] pl-9 focus-visible:ring-2 focus-visible:ring-[var(--cor-primaria)]/30"
+                  />
+                </div>
+              </form>
+            </div>
+
             {/* Actions */}
             <div className="flex items-center gap-1">
               <Link
                 to="/store/search"
-                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-secondary transition-colors"
+                className="md:hidden w-9 h-9 rounded-xl flex items-center justify-center hover:bg-slate-100 transition-colors"
               >
-                <Search className="w-4.5 h-4.5 text-muted-foreground" />
+                <Search className="w-4.5 h-4.5 text-slate-600" />
               </Link>
 
               {/* Cart */}
               <Sheet>
                 <SheetTrigger asChild>
-                  <button className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-secondary transition-colors relative">
-                    <ShoppingCart className="w-4.5 h-4.5 text-muted-foreground" />
+                  <button className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-slate-100 transition-colors relative">
+                    <ShoppingCart className="w-4.5 h-4.5 text-slate-700" />
                     {cartCount > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 grid place-items-center min-w-[18px] h-[18px] rounded-full bg-primary text-primary-foreground text-[10px] font-bold leading-none px-1">
+                      <span className="absolute -top-0.5 -right-0.5 grid place-items-center min-w-[18px] h-[18px] rounded-full bg-[#163B78] text-white text-[10px] font-bold leading-none px-1">
                         {cartCount}
                       </span>
                     )}
@@ -247,7 +324,7 @@ function StoreLayout() {
                           <div key={item.id} className="flex gap-3 p-3 rounded-2xl bg-secondary/40">
                             <div className="w-14 h-14 rounded-xl bg-secondary flex items-center justify-center shrink-0 overflow-hidden">
                               {item.image ? (
-                                <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                                <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
                               ) : (
                                 <span className="text-2xl">{item.emoji || "📦"}</span>
                               )}
@@ -257,9 +334,13 @@ function StoreLayout() {
                               {item.additions && item.additions.length > 0 && (
                                 <p className="text-[10px] text-muted-foreground truncate">{item.additions.map(a => a.name).join(", ")}</p>
                               )}
-                              <p className="text-sm font-bold text-primary mt-0.5">
-                                R$ {formatPrice(item.price)}
-                              </p>
+                              {configuracaoVitrine.exibirPreco ? (
+                                <p className="text-sm font-bold mt-0.5" style={{ color: "var(--cor-primaria)" }}>
+                                  R$ {formatPrice(item.price)}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-muted-foreground mt-0.5">Sob consulta</p>
+                              )}
                               <div className="flex items-center gap-2 mt-2">
                                 <button onClick={() => updateQty(item.id, item.qty - 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center text-sm hover:bg-secondary transition-colors">−</button>
                                 <span className="text-sm font-semibold w-5 text-center">{item.qty}</span>
@@ -271,27 +352,43 @@ function StoreLayout() {
                         ))}
                       </div>
                       <div className="border-t border-border/50 pt-4 space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Subtotal</span>
-                          <span className="font-medium">R$ {formatPrice(cartTotal)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted-foreground">Entrega</span>
-                          {deliveryFee === 0
-                            ? <span className="font-medium text-primary">Grátis</span>
-                            : <span className="font-medium">R$ {formatPrice(deliveryFee)}</span>
-                          }
-                        </div>
-                        <div className="flex justify-between text-base font-bold pt-2 border-t border-border/50">
-                          <span>Total</span>
-                          <span>R$ {formatPrice(cartTotalWithFee)}</span>
-                        </div>
-                        <Link
-                          to="/store/checkout"
-                          className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-semibold flex items-center justify-center mt-2 hover:opacity-90 active:scale-[0.99] transition-all shadow-lg"
-                        >
-                          Finalizar pedido
-                        </Link>
+                        {configuracaoVitrine.exibirPreco && (
+                          <>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Subtotal</span>
+                              <span className="font-medium">R$ {formatPrice(cartTotal)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Entrega</span>
+                              {deliveryFee === 0
+                                ? <span className="font-medium" style={{ color: "var(--cor-primaria)" }}>Grátis</span>
+                                : <span className="font-medium">R$ {formatPrice(deliveryFee)}</span>
+                              }
+                            </div>
+                            <div className="flex justify-between text-base font-bold pt-2 border-t border-border/50">
+                              <span>Total</span>
+                              <span>R$ {formatPrice(cartTotalWithFee)}</span>
+                            </div>
+                          </>
+                        )}
+                        {configuracaoVitrine.pedidoWhatsapp ? (
+                          <button
+                            onClick={sendCartToWhatsApp}
+                            disabled={!configuracaoVitrine.telefoneWhatsapp || cart.length === 0}
+                            className="w-full h-12 rounded-2xl bg-[#25D366] text-white font-semibold flex items-center justify-center gap-2 mt-2 hover:bg-[#1EBE5D] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                            Finalizar no WhatsApp
+                          </button>
+                        ) : (
+                          <Link
+                            to="/store/checkout"
+                            className="w-full h-12 rounded-2xl text-white font-semibold flex items-center justify-center mt-2 hover:opacity-90 active:scale-[0.99] transition-all shadow-lg"
+                            style={{ backgroundColor: "var(--cor-primaria)" }}
+                          >
+                            Finalizar pedido
+                          </Link>
+                        )}
                       </div>
                     </div>
                   )}
@@ -303,7 +400,7 @@ function StoreLayout() {
 
         {/* Main Content */}
         <main className="flex-1 pb-20 lg:pb-0">
-          <div className="max-w-5xl mx-auto">
+          <div className="max-w-7xl mx-auto">
             {storeLoading ? (
               <div className="flex flex-col items-center justify-center py-32 gap-4">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />

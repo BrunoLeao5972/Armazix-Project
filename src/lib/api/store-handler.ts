@@ -2,6 +2,7 @@ import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { requireStoreAccess, AuthContext } from "@/lib/auth/require-store-access";
+import { generateCleanSlug } from "@/lib/slug";
 
 const { stores, storeUsers, orders, products, customers } = schema;
 
@@ -95,11 +96,30 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
   const dbUrl = process.env.DATABASE_URL!;
   const db = await createTenantDb(dbUrl, storeId);
 
+  const nextSlug = body.name ? generateCleanSlug(body.name) : null;
+  if (body.name && (!nextSlug || nextSlug.length < 3)) {
+    return new Response(JSON.stringify({ error: "Nome da loja gera um slug inválido (mínimo 3 caracteres alfanuméricos)" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   try {
+    if (nextSlug) {
+      const existing = await db.select({ id: stores.id }).from(stores).where(eq(stores.slug, nextSlug));
+      if (existing.length > 0 && existing[0].id !== storeId) {
+        return new Response(JSON.stringify({ error: "Slug já está em uso" }), {
+          status: 409,
+          headers: { "content-type": "application/json" },
+        });
+      }
+    }
+
     const [updated] = await db
       .update(stores)
       .set({
         name: body.name,
+        ...(nextSlug ? { slug: nextSlug } : {}),
         ownerName: body.ownerName,
         description: body.description,
         phone: body.phone,

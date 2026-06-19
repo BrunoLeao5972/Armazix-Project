@@ -100,17 +100,32 @@ export interface CartItem {
 // 1. x-store-slug header (server-side, from subdomain rewrite)
 // 2. window.location.hostname (client-side subdomain detection)
 // 3. localStorage fallback (legacy)
+const MAIN_DOMAINS = ["armazix.com.br", "armazix.workers.dev", "localhost"];
+
+export function resolveHostnameStoreSlug(hostname: string): string | null {
+  const lowerHostname = hostname.toLowerCase();
+
+  for (const domain of MAIN_DOMAINS) {
+    if (lowerHostname === domain) return null;
+    if (lowerHostname.endsWith(`.${domain}`)) {
+      const sub = lowerHostname.slice(0, lowerHostname.length - domain.length - 1);
+      if (sub && !sub.includes(".") && sub !== "www" && /^[a-z0-9]+$/.test(sub)) {
+        return sub;
+      }
+    }
+  }
+
+  return null;
+}
+
 export function resolveStoreSlug(): string | null {
   if (typeof window === "undefined") return null;
 
-  const MAIN_DOMAINS = ["armazix.com.br", "armazix.workers.dev", "localhost"];
   const hostname = window.location.hostname;
 
-  for (const domain of MAIN_DOMAINS) {
-    if (hostname !== domain && hostname.endsWith(`.${domain}`)) {
-      const sub = hostname.slice(0, hostname.length - domain.length - 1);
-      if (sub && !sub.includes(".") && sub !== "www") return sub;
-    }
+  const hostnameSlug = resolveHostnameStoreSlug(hostname);
+  if (hostnameSlug) {
+    return hostnameSlug;
   }
 
   // Fallback: legacy localStorage

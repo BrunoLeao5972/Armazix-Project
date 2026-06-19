@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { type ConfiguracaoVitrine, type StoreCategory, type StoreProduct, type StorePublicData, formatPrice } from "@/lib/store-context";
-import { Loader2, MessageCircle, Plus, Search, ShoppingBag, Store, X } from "lucide-react";
+import { Loader2, MessageCircle, Search, Store } from "lucide-react";
+import { StorefrontHeader } from "@/components/storefront/StorefrontHeader";
+import { HeroCarousel } from "@/components/storefront/HeroCarousel";
+import { CategoriesSection } from "@/components/storefront/CategoriesSection";
+import { ProductCard } from "@/components/storefront/ProductCard";
 
 export const Route = createFileRoute("/loja/$slugOuId")({
   component: PublicStorefrontPage,
@@ -246,249 +247,92 @@ function PublicStorefrontPage() {
   return (
     <div
       style={themeStyle}
-      className="min-h-screen bg-[var(--cor-fundo)] text-[var(--cor-texto)]"
+      className="min-h-screen bg-white text-slate-900"
     >
-      <header className="sticky top-0 z-40 bg-[var(--cor-fundo)]/80 backdrop-blur-md border-b border-border/40">
-        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            {configuracaoVitrine.logoUrl ? (
-              <img
-                src={configuracaoVitrine.logoUrl}
-                alt={store?.name || "Loja"}
-                className="w-9 h-9 rounded-xl object-cover bg-slate-100"
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center">
-                <Store className="w-4.5 h-4.5 text-slate-500" />
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="text-sm font-bold truncate">{store?.name || "Loja"}</p>
-            </div>
-          </div>
+      <StorefrontHeader
+        storeName={store?.name || "Loja"}
+        storeInitials={
+          store?.name
+            ?.split(" ")
+            .map((word) => word[0])
+            .join("")
+            .toUpperCase()
+            .slice(0, 3) || "LOJA"
+        }
+        onSearch={setQuery}
+        cartCount={cartCount}
+        cartItems={cart}
+        config={configuracaoVitrine}
+        onRemoveFromCart={removeFromCart}
+        onQtyChange={setQty}
+        cartSubtotal={cartSubtotal}
+        onSendToWhatsApp={sendToWhatsApp}
+        onGoToCheckout={goToCheckout}
+      />
 
-          <Sheet>
-            <SheetTrigger asChild>
-              <button className="relative w-10 h-10 rounded-2xl bg-slate-50/50 border border-slate-200 hover:bg-slate-50 transition-colors flex items-center justify-center">
-                <ShoppingBag className="w-5 h-5 text-slate-600" />
-                {cartCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-[var(--cor-primaria)] text-white text-[10px] font-bold grid place-items-center px-1">
-                    {cartCount}
-                  </span>
-                )}
-              </button>
-            </SheetTrigger>
-            <SheetContent className="w-full sm:max-w-md flex flex-col">
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <ShoppingBag className="w-5 h-5" style={{ color: "var(--cor-primaria)" }} />
-                  Sacola
-                  {cartCount > 0 && (
-                    <Badge className="rounded-full bg-slate-900/5 text-slate-700 border-0">
-                      {cartCount}
-                    </Badge>
-                  )}
-                </SheetTitle>
-              </SheetHeader>
+      <main className="max-w-7xl mx-auto pb-20 sm:pb-10 space-y-6">
+        <HeroCarousel
+          bannerUrl={configuracaoVitrine.bannerUrl}
+          bannerMobileUrl={configuracaoVitrine.bannerMobileUrl}
+          storeName={store?.name}
+        />
 
-              {cart.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
-                  <p className="text-sm font-medium">Sua sacola está vazia</p>
-                  <p className="text-xs text-muted-foreground">Adicione produtos para montar seu pedido</p>
-                </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto py-4 space-y-3">
-                  {cart.map((item) => (
-                    <div key={item.id} className="flex gap-3 p-3 rounded-2xl bg-secondary/40 border border-border/50">
-                      <div className="w-14 h-14 rounded-xl bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
-                        {item.imageUrl ? (
-                          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-2xl">{item.emoji || "📦"}</span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{item.name}</p>
-                        {configuracaoVitrine.exibirPreco ? (
-                          <p className="text-sm font-bold mt-0.5 text-[var(--cor-primaria)]">
-                            R$ {formatPrice(item.price)}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground mt-0.5">Sob consulta</p>
-                        )}
-                        <div className="flex items-center gap-2 mt-2">
-                          <button
-                            onClick={() => setQty(item.id, item.qty - 1)}
-                            className="w-8 h-8 rounded-xl border border-border/60 bg-background hover:bg-secondary transition-colors"
-                          >
-                            −
-                          </button>
-                          <span className="text-sm font-semibold w-6 text-center">{item.qty}</span>
-                          <button
-                            onClick={() => setQty(item.id, item.qty + 1)}
-                            className="w-8 h-8 rounded-xl border border-border/60 bg-background hover:bg-secondary transition-colors"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => removeFromCart(item.id)}
-                        className="w-9 h-9 rounded-xl hover:bg-secondary/70 flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {cart.length > 0 && (
-                <div className="border-t border-border/50 pt-4 space-y-3">
-                  {configuracaoVitrine.exibirPreco && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Subtotal</span>
-                      <span className="font-semibold">R$ {formatPrice(cartSubtotal)}</span>
-                    </div>
-                  )}
-
-                  {configuracaoVitrine.pedidoWhatsapp ? (
-                    <div className="space-y-2">
-                      <Input
-                        value={customerName}
-                        onChange={(e) => setCustomerName(e.target.value)}
-                        placeholder="Seu nome"
-                        className="h-11 rounded-xl"
-                      />
-                      <Input
-                        value={customerAddress}
-                        onChange={(e) => setCustomerAddress(e.target.value)}
-                        placeholder="Seu endereço (opcional)"
-                        className="h-11 rounded-xl"
-                      />
-                      <button
-                        onClick={sendToWhatsApp}
-                        disabled={cart.length === 0 || !configuracaoVitrine.telefoneWhatsapp}
-                        className="w-full h-12 rounded-2xl bg-[#25D366] hover:bg-[#1EBE5D] text-white font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        <MessageCircle className="w-4 h-4" />
-                        Enviar pedido para o WhatsApp
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={goToCheckout}
-                      className="w-full h-12 rounded-2xl bg-[var(--cor-primaria)] text-white font-semibold transition-all active:scale-[0.99]"
-                    >
-                      Finalizar pedido
-                    </button>
-                  )}
-                </div>
-              )}
-            </SheetContent>
-          </Sheet>
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto pb-28 sm:pb-10 space-y-6">
-        <section className="px-4 pt-4">
-          {(configuracaoVitrine.bannerMobileUrl || configuracaoVitrine.bannerUrl) && (
-            <div className="w-full rounded-xl md:rounded-2xl overflow-hidden">
-              <picture>
-                {configuracaoVitrine.bannerMobileUrl && (
-                  <source media="(max-width: 767px)" srcSet={configuracaoVitrine.bannerMobileUrl} />
-                )}
-                <img
-                  src={configuracaoVitrine.bannerUrl || configuracaoVitrine.bannerMobileUrl}
-                  alt={store?.name || "Banner"}
-                  className="w-full object-cover rounded-xl md:rounded-2xl aspect-[4/3] md:aspect-[64/15]"
-                />
-              </picture>
-            </div>
-          )}
-        </section>
-
-        <section className="px-4 space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <Input
+        <div className="px-4 space-y-4">
+          {/* Search on Mobile */}
+          <div className="sm:hidden relative">
+            <input
+              type="text"
+              placeholder="Buscar produtos..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar produtos..."
-              className="h-12 rounded-2xl pl-9 bg-white/60 border-slate-200"
+              className="w-full h-11 rounded-full bg-slate-100 px-4 pr-10 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-300"
             />
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           </div>
 
-          {categories.length > 0 && (
-            <div className="overflow-x-auto whitespace-nowrap no-scrollbar -mx-4 px-4">
-              <div className="inline-flex gap-2 pb-1">
-                <button
-                  onClick={() => setActiveCategoryId(null)}
-                  className={`h-10 px-4 rounded-full border text-sm font-semibold transition-colors ${
-                    !activeCategoryId
-                      ? "border-[var(--cor-primaria)] bg-[color-mix(in_oklab,var(--cor-primaria)_12%,transparent)]"
-                      : "border-slate-200 bg-slate-50/50 hover:bg-slate-50"
-                  }`}
-                  style={!activeCategoryId ? { color: "var(--cor-primaria)" } : undefined}
-                >
-                  Todos
-                </button>
-                {categories
-                  .filter((c) => c.active !== false)
-                  .map((cat) => {
-                    const active = activeCategoryId === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        onClick={() => setActiveCategoryId((prev) => (prev === cat.id ? null : cat.id))}
-                        className={`h-10 px-4 rounded-full border text-sm font-semibold transition-colors ${
-                          active
-                            ? "border-[var(--cor-primaria)] bg-[color-mix(in_oklab,var(--cor-primaria)_12%,transparent)]"
-                            : "border-slate-200 bg-slate-50/50 hover:bg-slate-50"
-                        }`}
-                        style={active ? { color: "var(--cor-primaria)" } : undefined}
-                      >
-                        {cat.emoji ? `${cat.emoji} ` : ""}{cat.name}
-                      </button>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-        </section>
+          <CategoriesSection
+            categories={categories}
+            activeCategoryId={activeCategoryId}
+            onCategoryChange={setActiveCategoryId}
+            primaryColor={configuracaoVitrine.corPrimaria}
+          />
+        </div>
 
         {dataError && (
-          <div className="mx-4 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className="mx-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
             {dataError}
           </div>
         )}
 
         <section className="space-y-3">
           <div className="px-4 flex items-center justify-between">
-            <h2 className="text-base font-bold">Produtos</h2>
-            {dataLoading && <Loader2 className="w-4 h-4 animate-spin text-slate-500" />}
+            <h2 className="text-lg font-bold text-slate-900">Todos os produtos</h2>
+            <span className="text-sm text-slate-500">
+              {visibleProducts.length} itens
+            </span>
           </div>
 
           {dataLoading ? (
-            <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-4 lg:grid-cols-5 md:gap-6 md:p-6">
+            <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-4 lg:grid-cols-5 md:gap-4 md:px-4">
               {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="rounded-2xl border border-border/50 bg-white/40 overflow-hidden">
+                <div key={i} className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
                   <Skeleton className="aspect-square" />
-                  <div className="p-3 space-y-2">
-                    <Skeleton className="h-4 w-4/5" />
-                    <Skeleton className="h-4 w-2/3" />
-                    <Skeleton className="h-9 w-10 rounded-2xl" />
+                  <div className="p-4 space-y-2">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-10 w-full mt-3 rounded-lg" />
                   </div>
                 </div>
               ))}
             </div>
           ) : visibleProducts.length === 0 ? (
-            <div className="mx-4 rounded-2xl border border-border/50 bg-white/40 px-4 py-10 text-center">
-              <p className="text-sm font-medium">Nenhum produto encontrado</p>
-              <p className="text-xs text-muted-foreground mt-1">Tente ajustar a busca ou categoria.</p>
+            <div className="mx-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-12 text-center">
+              <Store className="mx-auto w-12 h-12 text-slate-300 mb-3" />
+              <p className="text-sm font-semibold text-slate-900">Nenhum produto encontrado</p>
+              <p className="text-xs text-slate-500 mt-1">Tente ajustar a busca ou categoria.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-4 lg:grid-cols-5 md:gap-6 md:p-6">
+            <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-4 lg:grid-cols-5 md:gap-4 md:px-4">
               {visibleProducts.map((product) => (
                 <ProductCard
                   key={product.id}
@@ -496,6 +340,7 @@ function PublicStorefrontPage() {
                   showPrice={configuracaoVitrine.exibirPreco}
                   highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
                   onAdd={() => addToCart(product)}
+                  primaryColor={configuracaoVitrine.corPrimaria}
                 />
               ))}
             </div>
@@ -504,84 +349,19 @@ function PublicStorefrontPage() {
       </main>
 
       {configuracaoVitrine.pedidoWhatsapp && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/50 bg-background/80 backdrop-blur-md">
-          <div className="max-w-5xl mx-auto px-4 py-3">
+        <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur">
+          <div className="max-w-7xl mx-auto px-4 py-3">
             <button
               onClick={sendToWhatsApp}
               disabled={cart.length === 0 || !configuracaoVitrine.telefoneWhatsapp}
-              className="w-full h-12 rounded-2xl bg-[#25D366] hover:bg-[#1EBE5D] text-white font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full h-12 rounded-lg bg-green-500 hover:bg-green-600 text-white font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              <MessageCircle className="w-4 h-4" />
-              Enviar pedido para o WhatsApp
+              <MessageCircle className="w-5 h-5" />
+              Enviar pedido para WhatsApp
             </button>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ProductCard(props: {
-  product: StoreProduct;
-  showPrice: boolean;
-  highlightLowStock: boolean;
-  onAdd: () => void;
-}) {
-  const { product, showPrice, highlightLowStock, onAdd } = props;
-
-  const hasPromo =
-    !!product.compareAtPrice && parseFloat(product.compareAtPrice) > parseFloat(product.price);
-
-  const lowStock =
-    highlightLowStock &&
-    typeof product.stock === "number" &&
-    typeof product.lowStockThreshold === "number" &&
-    product.stock <= product.lowStockThreshold;
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white/60 overflow-hidden">
-      <div className="relative p-2">
-        <div className="aspect-square bg-slate-100 rounded-lg overflow-hidden">
-          {product.imageUrl ? (
-            <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-4xl">{product.emoji || "📦"}</div>
-          )}
-        </div>
-
-        {lowStock && (
-          <Badge className="absolute top-3 left-3 rounded-full bg-amber-500/15 text-amber-700 border-0 text-[10px]">
-            Últimas Unidades
-          </Badge>
-        )}
-        {hasPromo && (
-          <Badge className="absolute top-3 right-3 rounded-full bg-slate-900/5 text-slate-700 border-0 text-[10px]">
-            Promo
-          </Badge>
-        )}
-      </div>
-
-      <div className="px-3 pb-3">
-        <p className="text-sm font-medium line-clamp-2 mt-1 min-h-[2.5rem]">{product.name}</p>
-
-        {showPrice ? (
-          <p className="text-base font-bold text-[var(--cor-primaria)] mt-1.5">
-            R$ {formatPrice(product.price)}
-          </p>
-        ) : (
-          <p className="text-xs text-slate-500 mt-2">Sob Consulta</p>
-        )}
-
-        <div className="mt-3 flex items-center justify-end">
-          <button
-            onClick={onAdd}
-            className="w-10 h-10 rounded-full bg-[var(--cor-primaria)] text-white flex items-center justify-center active:scale-[0.98] transition-transform"
-            aria-label="Adicionar"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
