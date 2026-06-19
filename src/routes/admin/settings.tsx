@@ -37,6 +37,7 @@ import {
   ChevronDown,
   AlertTriangle,
   CheckCircle2,
+  ExternalLink,
 } from "lucide-react";
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -502,7 +503,7 @@ function SettingsPage() {
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
                   <Link2 className="w-3.5 h-3.5" />
-                  Link da loja
+                  Link da sua loja
                 </Label>
                 <div className="flex gap-2">
                   <div className="flex-1 relative">
@@ -514,7 +515,20 @@ function SettingsPage() {
                     <Globe className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   </div>
                   <CopyStoreUrlButton url={`https://${store?.slug}.armazix.com.br`} />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => window.open(`https://${store?.slug}.armazix.com.br`, "_blank")}
+                    className="h-11 w-11 rounded-xl shrink-0"
+                    title="Abrir loja em nova guia"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Padrão limpo, sem hífens ou caracteres especiais.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Descrição</Label>
