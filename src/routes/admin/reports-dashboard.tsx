@@ -39,9 +39,6 @@ import {
   Filter,
   Download,
   Eye,
-  FileText,
-  FileSpreadsheet,
-  Printer,
   Lock,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -87,7 +84,6 @@ interface ReportCardProps {
   isLocked?: boolean;
   onToggleFavorito: () => void;
   onVisualizar: () => void;
-  onVerPreview?: () => void;
 }
 
 function ReportCard({
@@ -96,7 +92,6 @@ function ReportCard({
   isLocked,
   onToggleFavorito,
   onVisualizar,
-  onVerPreview,
 }: ReportCardProps) {
   const Icon = report.icone;
   const categoria = REPORT_CATEGORIES.find((c) => c.id === report.modulo);
@@ -178,24 +173,6 @@ function ReportCard({
           className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50"
         >
           <Eye className="w-3.5 h-3.5" /> Ver
-        </button>
-        <button 
-          onClick={onVerPreview}
-          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50"
-        >
-          <FileText className="w-3.5 h-3.5" /> PDF
-        </button>
-        <button 
-          onClick={onVerPreview}
-          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50"
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
-        </button>
-        <button 
-          onClick={onVerPreview}
-          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50"
-        >
-          <Printer className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>
@@ -338,9 +315,6 @@ function ReportsDashboardPage() {
     handleCloseDrawer();
   };
 
-  const verPreview = () => {
-    navigate({ to: "/admin/reports-preview" });
-  };
 
   // ============================================
   // RENDER
@@ -434,7 +408,6 @@ function ReportsDashboardPage() {
                   isFavorito={true}
                   onToggleFavorito={() => toggleFavorito(report.id)}
                   onVisualizar={() => abrirRelatorio(report)}
-                  onVerPreview={verPreview}
                 />
               ))}
             </div>
@@ -469,7 +442,6 @@ function ReportsDashboardPage() {
                       isFavorito={favoritos.includes(report.id)}
                       onToggleFavorito={() => toggleFavorito(report.id)}
                       onVisualizar={() => abrirRelatorio(report)}
-                      onVerPreview={verPreview}
                     />
                   ))}
                 </div>

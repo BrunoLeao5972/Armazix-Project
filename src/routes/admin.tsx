@@ -13,7 +13,6 @@ import {
   Truck,
   Ticket,
   BarChart3,
-  Eye,
   Settings,
   ChevronLeft,
   Search,
@@ -56,7 +55,6 @@ const NAV_ITEMS = [
   { label: "Delivery", icon: Truck, href: "/admin/delivery" },
   { label: "Cupons", icon: Ticket, href: "/admin/coupons" },
   { label: "Relatórios", icon: BarChart3, href: "/admin/reports" },
-  { label: "Relatórios (Pré-visualizar)", icon: Eye, href: "/admin/reports-preview" },
   { label: "Configurações", icon: Settings, href: "/admin/settings" },
 ];
 
