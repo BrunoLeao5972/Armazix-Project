@@ -3,13 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   type ConfiguracaoVitrine,
-  type StoreCategory,
   type StoreProduct,
   type StorePublicData,
   formatPrice,
 } from "@/lib/store-context";
 import {
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Loader2,
   MessageCircle,
@@ -24,6 +24,7 @@ import { CategoriesSection } from "@/components/storefront/CategoriesSection";
 import { ProductCard } from "@/components/storefront/ProductCard";
 import { ProductDetailModal } from "@/components/storefront/ProductDetailModal";
 import { StorefrontSidebar } from "@/components/storefront/StorefrontSidebar";
+import { type StoreCategory } from "@/lib/store-context";
 
 export const Route = createFileRoute("/loja/$slugOuId")({
   component: PublicStorefrontPage,
@@ -43,9 +44,7 @@ type CartItem = {
 };
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function PublicStorefrontPage() {
@@ -62,11 +61,13 @@ function PublicStorefrontPage() {
 
   // ── Filtros ──────────────────────────────────────────────────────
   const [query, setQuery] = useState("");
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
-  const [activeSubcategoryId, setActiveSubcategoryId] = useState<string | null>(null);
+  const [selectedAnalyticId, setSelectedAnalyticId] = useState<string | null>(null);
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  // Accordion state for the mobile drawer
+  const [drawerOpenSections, setDrawerOpenSections] = useState<Set<string>>(new Set());
 
   // ── Carrinho ─────────────────────────────────────────────────────
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -89,10 +90,7 @@ function PublicStorefrontPage() {
           ? `id=${encodeURIComponent(slugOuId)}`
           : `slug=${encodeURIComponent(slugOuId)}`;
         const res = await fetch(`/api/store/get?${qs}`);
-        const data = (await res.json()) as {
-          store?: StorePublicData;
-          error?: string;
-        };
+        const data = (await res.json()) as { store?: StorePublicData; error?: string };
         if (!res.ok || !data.store) {
           setStoreError(data.error || "Loja não encontrada");
           setStore(null);
@@ -124,14 +122,8 @@ function PublicStorefrontPage() {
           fetch(`/api/products/list?storeId=${encodeURIComponent(currentStoreId)}`),
           fetch(`/api/categories/list?storeId=${encodeURIComponent(currentStoreId)}`),
         ]);
-        const productsData = (await productsRes.json()) as {
-          products?: StoreProduct[];
-          error?: string;
-        };
-        const categoriesData = (await categoriesRes.json()) as {
-          categories?: StoreCategory[];
-          error?: string;
-        };
+        const productsData = (await productsRes.json()) as { products?: StoreProduct[]; error?: string };
+        const categoriesData = (await categoriesRes.json()) as { categories?: StoreCategory[]; error?: string };
         if (!productsRes.ok) throw new Error(productsData.error || "Erro ao carregar produtos");
         if (!categoriesRes.ok) throw new Error(categoriesData.error || "Erro ao carregar categorias");
         setProducts(Array.isArray(productsData.products) ? productsData.products : []);
@@ -164,18 +156,10 @@ function PublicStorefrontPage() {
       destacarEstoqueBaixo: store?.highlightLowStock === true,
     }),
     [
-      store?.backgroundColor,
-      store?.bannerMobileUrl,
-      store?.bannerUrl,
-      store?.highlightLowStock,
-      store?.id,
-      store?.logoUrl,
-      store?.phone,
-      store?.primaryColor,
-      store?.showPrice,
-      store?.textColor,
-      store?.whatsappOrderEnabled,
-      store?.whatsappPhone,
+      store?.backgroundColor, store?.bannerMobileUrl, store?.bannerUrl,
+      store?.highlightLowStock, store?.id, store?.logoUrl, store?.phone,
+      store?.primaryColor, store?.showPrice, store?.textColor,
+      store?.whatsappOrderEnabled, store?.whatsappPhone,
     ]
   );
 
@@ -189,129 +173,169 @@ function PublicStorefrontPage() {
     [configuracaoVitrine.corFundo, configuracaoVitrine.corPrimaria, configuracaoVitrine.corTextos]
   );
 
-  // ── Derived ──────────────────────────────────────────────────────
+  const primaryColor = configuracaoVitrine.corPrimaria;
+
+  // ── Carrinho derived ─────────────────────────────────────────────
   const cartCount = cart.reduce((acc, i) => acc + i.qty, 0);
   const cartSubtotal = cart.reduce((acc, i) => acc + i.price * i.qty, 0);
 
-  const activeParentChildIds = useMemo(() => {
-    if (!activeCategoryId) return [];
-    return categories.filter((c) => c.parentId === activeCategoryId).map((c) => c.id);
-  }, [activeCategoryId, categories]);
-
-  const hasActiveFilters = !!(
-    activeCategoryId || activeSubcategoryId || priceMin || priceMax || query.trim()
+  // ── Categorias derived ───────────────────────────────────────────
+  const analyticCategories = useMemo(
+    () =>
+      categories
+        .filter((c) => c.active !== false && c.analytic === true)
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0)),
+    [categories]
   );
 
-  const priceFilter = (p: StoreProduct) => {
-    const price = parseFloat(p.price);
-    if (priceMin && price < parseFloat(priceMin)) return false;
-    if (priceMax && price > parseFloat(priceMax)) return false;
-    return true;
-  };
+  const analyticChildren = useMemo(
+    () =>
+      selectedAnalyticId
+        ? categories
+            .filter((c) => c.active !== false && c.parentId === selectedAnalyticId)
+            .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+        : [],
+    [selectedAnalyticId, categories]
+  );
 
+  const selectedAnalyticName = selectedAnalyticId
+    ? categories.find((c) => c.id === selectedAnalyticId)?.name
+    : null;
+  const selectedChildName = selectedChildId
+    ? categories.find((c) => c.id === selectedChildId)?.name
+    : null;
+
+  // ── Display modes ────────────────────────────────────────────────
+  // State 1: Todos (no category, no search)
+  const inTodosMode = !selectedAnalyticId && !selectedChildId && !query.trim();
+  // State 2: analítica selecionada, sem filho e sem busca → seções por filho
+  const inAnalyticMode = !!selectedAnalyticId && !selectedChildId && !query.trim();
+  // State 3: filho selecionado OU busca ativa → grid único
+
+  // ── useMemos de produtos ─────────────────────────────────────────
+
+  // Estado 1: uma seção por analítica, max 8 produtos
+  const todosSections = useMemo(() => {
+    const minP = priceMin ? parseFloat(priceMin) : null;
+    const maxP = priceMax ? parseFloat(priceMax) : null;
+    return analyticCategories
+      .map((analytic) => {
+        const children = categories.filter(
+          (c) => c.active !== false && c.parentId === analytic.id
+        );
+        const childIds = children.map((c) => c.id);
+        const sectionProds = products
+          .filter((p) => p.active !== false)
+          .filter(
+            (p) => p.categoryId === analytic.id || childIds.includes(p.categoryId ?? "")
+          )
+          .filter((p) => {
+            const price = parseFloat(p.price);
+            if (minP !== null && price < minP) return false;
+            if (maxP !== null && price > maxP) return false;
+            return true;
+          });
+        return { analytic, children, products: sectionProds };
+      })
+      .filter((s) => s.products.length > 0);
+  }, [analyticCategories, categories, products, priceMin, priceMax]);
+
+  // Estado 2: uma seção por categoria filha quando analítica selecionada
+  const analyticSections = useMemo(() => {
+    if (!selectedAnalyticId) return [];
+    const minP = priceMin ? parseFloat(priceMin) : null;
+    const maxP = priceMax ? parseFloat(priceMax) : null;
+    return analyticChildren
+      .map((child) => {
+        const childProds = products
+          .filter((p) => p.active !== false && p.categoryId === child.id)
+          .filter((p) => {
+            const price = parseFloat(p.price);
+            if (minP !== null && price < minP) return false;
+            if (maxP !== null && price > maxP) return false;
+            return true;
+          });
+        return { child, products: childProds };
+      })
+      .filter((s) => s.products.length > 0);
+  }, [selectedAnalyticId, analyticChildren, products, priceMin, priceMax]);
+
+  // Estado 3: grid único (filho selecionado ou busca)
   const visibleProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const minP = priceMin ? parseFloat(priceMin) : null;
+    const maxP = priceMax ? parseFloat(priceMax) : null;
     return products
       .filter((p) => p.active !== false)
       .filter((p) => {
-        if (activeSubcategoryId) return p.categoryId === activeSubcategoryId;
-        if (activeCategoryId)
-          return (
-            p.categoryId === activeCategoryId ||
-            activeParentChildIds.includes(p.categoryId ?? "")
-          );
+        if (selectedChildId) return p.categoryId === selectedChildId;
+        if (selectedAnalyticId) {
+          const childIds = categories
+            .filter((c) => c.active !== false && c.parentId === selectedAnalyticId)
+            .map((c) => c.id);
+          return p.categoryId === selectedAnalyticId || childIds.includes(p.categoryId ?? "");
+        }
         return true;
       })
       .filter((p) => (q ? p.name.toLowerCase().includes(q) : true))
-      .filter(priceFilter);
-  }, [
-    activeCategoryId,
-    activeSubcategoryId,
-    activeParentChildIds,
-    products,
-    query,
-    priceMin,
-    priceMax,
-  ]);
+      .filter((p) => {
+        const price = parseFloat(p.price);
+        if (minP !== null && price < minP) return false;
+        if (maxP !== null && price > maxP) return false;
+        return true;
+      });
+  }, [selectedAnalyticId, selectedChildId, categories, products, query, priceMin, priceMax]);
 
-  // Seções do modo "Todos" (agrupadas por categoria raiz)
-  const categorySections = useMemo(() => {
-    const activeCats = categories.filter((c) => c.active !== false);
-    const roots = activeCats.filter((c) => !c.parentId).sort((a, b) => {
-      const aA = a.analytic === true ? 0 : 1;
-      const bA = b.analytic === true ? 0 : 1;
-      if (aA !== bA) return aA - bA;
-      return (a.position ?? 0) - (b.position ?? 0);
-    });
-    return roots
-      .map((cat) => {
-        const children = activeCats.filter((c) => c.parentId === cat.id);
-        const childIds = children.map((c) => c.id);
-        const catProducts = products
-          .filter((p) => p.active !== false)
-          .filter(
-            (p) => p.categoryId === cat.id || childIds.includes(p.categoryId ?? "")
-          )
-          .filter(priceFilter);
-        return { category: cat, children, products: catProducts };
-      })
-      .filter((s) => s.products.length > 0);
-  }, [categories, products, priceMin, priceMax]);
+  const hasActiveFilters = !!(selectedAnalyticId || selectedChildId || priceMin || priceMax || query.trim());
 
   // ── Ações ────────────────────────────────────────────────────────
   const clearFilters = () => {
-    setActiveCategoryId(null);
-    setActiveSubcategoryId(null);
+    setSelectedAnalyticId(null);
+    setSelectedChildId(null);
     setPriceMin("");
     setPriceMax("");
     setQuery("");
     setFilterDrawerOpen(false);
   };
 
-  const handleCategoryChange = (id: string | null) => {
-    setActiveCategoryId(id);
-    setActiveSubcategoryId(null);
+  const selectAnalytic = (id: string | null) => {
+    setSelectedAnalyticId(id);
+    setSelectedChildId(null);
   };
 
+  const selectChild = (childId: string | null) => {
+    setSelectedChildId(childId);
+  };
+
+  const openFilterDrawer = () => {
+    setDrawerOpenSections(selectedAnalyticId ? new Set([selectedAnalyticId]) : new Set());
+    setFilterDrawerOpen(true);
+  };
+
+  const toggleDrawerSection = (id: string) => {
+    setDrawerOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // ── Cart ─────────────────────────────────────────────────────────
   const addToCart = (product: StoreProduct, obs?: string) => {
     const price = parseFloat(product.price);
     setCart((prev) => {
       if (obs) {
-        return [
-          ...prev,
-          {
-            id: product.id,
-            name: product.name,
-            price,
-            qty: 1,
-            imageUrl: product.imageUrl,
-            emoji: product.emoji,
-            obs,
-          },
-        ];
+        return [...prev, { id: product.id, name: product.name, price, qty: 1, imageUrl: product.imageUrl, emoji: product.emoji, obs }];
       }
       const existing = prev.find((i) => i.id === product.id && !i.obs);
       if (existing)
-        return prev.map((i) =>
-          i.id === product.id && !i.obs ? { ...i, qty: i.qty + 1 } : i
-        );
-      return [
-        ...prev,
-        {
-          id: product.id,
-          name: product.name,
-          price,
-          qty: 1,
-          imageUrl: product.imageUrl,
-          emoji: product.emoji,
-        },
-      ];
+        return prev.map((i) => i.id === product.id && !i.obs ? { ...i, qty: i.qty + 1 } : i);
+      return [...prev, { id: product.id, name: product.name, price, qty: 1, imageUrl: product.imageUrl, emoji: product.emoji }];
     });
   };
 
-  const removeFromCart = (id: string) =>
-    setCart((prev) => prev.filter((i) => i.id !== id));
-
+  const removeFromCart = (id: string) => setCart((prev) => prev.filter((i) => i.id !== id));
   const setQty = (id: string, qty: number) => {
     if (qty <= 0) return removeFromCart(id);
     setCart((prev) => prev.map((i) => (i.id === id ? { ...i, qty } : i)));
@@ -366,11 +390,7 @@ function PublicStorefrontPage() {
           customerPhone: customerPhone.trim(),
           customerAddress: customerAddress.trim() || undefined,
           items: cart.map((i) => ({
-            productId: i.id,
-            name: i.name,
-            qty: i.qty,
-            price: i.price,
-            notes: i.obs || undefined,
+            productId: i.id, name: i.name, qty: i.qty, price: i.price, notes: i.obs || undefined,
           })),
           subtotal: cartSubtotal,
         }),
@@ -386,41 +406,31 @@ function PublicStorefrontPage() {
     }
   };
 
-  // ── Sidebar props compartilhados ─────────────────────────────────
-  const sidebarProps = {
-    categories,
-    activeCategoryId,
-    activeSubcategoryId,
-    priceMin,
-    priceMax,
-    showPriceFilter: configuracaoVitrine.exibirPreco,
-    primaryColor: configuracaoVitrine.corPrimaria,
-    onCategoryChange: handleCategoryChange,
-    onSubcategoryChange: setActiveSubcategoryId,
-    onPriceMinChange: setPriceMin,
-    onPriceMaxChange: setPriceMax,
-    onClearFilters: clearFilters,
-  };
+  // ── Helpers ──────────────────────────────────────────────────────
+  const renderCard = (product: StoreProduct) => (
+    <ProductCard
+      key={product.id}
+      product={product}
+      showPrice={configuracaoVitrine.exibirPreco}
+      highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+      onAdd={() => addToCart(product)}
+      onOpenDetail={() => setSelectedProduct(product)}
+      primaryColor={primaryColor}
+    />
+  );
 
-  // ── Helpers de nome ──────────────────────────────────────────────
-  const activeCatName = activeCategoryId
-    ? categories.find((c) => c.id === activeCategoryId)?.name
-    : null;
-  const activeSubName = activeSubcategoryId
-    ? categories.find((c) => c.id === activeSubcategoryId)?.name
-    : null;
+  const emptyState = (text: string, sub?: string) => (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-16 text-center">
+      <Store className="mx-auto w-10 h-10 text-slate-300 mb-3" />
+      <p className="text-sm font-semibold text-slate-700">{text}</p>
+      {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
+    </div>
+  );
 
-  const inTodosMode =
-    !activeCategoryId && !activeSubcategoryId && !query.trim() && !priceMin && !priceMax;
-
-  // ── Skeleton cards ───────────────────────────────────────────────
   const skeletonGrid = (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div
-          key={i}
-          className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden"
-        >
+        <div key={i} className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
           <Skeleton className="aspect-square" />
           <div className="p-4 space-y-2">
             <Skeleton className="h-4 w-full" />
@@ -432,20 +442,7 @@ function PublicStorefrontPage() {
     </div>
   );
 
-  // ── ProductCard helper ───────────────────────────────────────────
-  const renderCard = (product: StoreProduct) => (
-    <ProductCard
-      key={product.id}
-      product={product}
-      showPrice={configuracaoVitrine.exibirPreco}
-      highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
-      onAdd={() => addToCart(product)}
-      onOpenDetail={() => setSelectedProduct(product)}
-      primaryColor={configuracaoVitrine.corPrimaria}
-    />
-  );
-
-  // ── Loading / Error states ───────────────────────────────────────
+  // ── Loading / Error ──────────────────────────────────────────────
   if (storeLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -477,12 +474,7 @@ function PublicStorefrontPage() {
       <StorefrontHeader
         storeName={store?.name || "Loja"}
         storeInitials={
-          store?.name
-            ?.split(" ")
-            .map((w) => w[0])
-            .join("")
-            .toUpperCase()
-            .slice(0, 3) || "LOJA"
+          store?.name?.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 3) || "LOJA"
         }
         onSearch={setQuery}
         cartCount={cartCount}
@@ -496,25 +488,36 @@ function PublicStorefrontPage() {
       />
 
       <main className="max-w-7xl mx-auto pb-24 lg:pb-10">
-        {/* Banner full-width */}
+        {/* Banner */}
         <HeroCarousel
           bannerUrl={configuracaoVitrine.bannerUrl}
           bannerMobileUrl={configuracaoVitrine.bannerMobileUrl}
           storeName={store?.name}
         />
 
-        {/* Body */}
+        {/* Layout flex: sidebar + conteúdo */}
         <div className="flex items-start gap-6 px-4 mt-6">
 
           {/* ── Desktop Sidebar ──────────────────────────────────── */}
           <aside className="hidden lg:block sticky top-4 w-56 shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-            <StorefrontSidebar {...sidebarProps} />
+            <StorefrontSidebar
+              categories={categories}
+              selectedAnalyticId={selectedAnalyticId}
+              priceMin={priceMin}
+              priceMax={priceMax}
+              showPriceFilter={configuracaoVitrine.exibirPreco}
+              primaryColor={primaryColor}
+              onAnalyticChange={selectAnalytic}
+              onPriceMinChange={setPriceMin}
+              onPriceMaxChange={setPriceMax}
+              onClearFilters={clearFilters}
+            />
           </aside>
 
           {/* ── Conteúdo principal ──────────────────────────────── */}
           <div className="flex-1 min-w-0 space-y-4">
 
-            {/* ── Mobile: busca + carrossel de categorias ── */}
+            {/* ── Mobile: busca + carrossel analíticas ── */}
             <div className="lg:hidden space-y-3">
               <div className="relative">
                 <input
@@ -529,55 +532,42 @@ function PublicStorefrontPage() {
 
               <CategoriesSection
                 categories={categories}
-                activeCategoryId={activeCategoryId}
-                activeSubcategoryId={activeSubcategoryId}
-                onCategoryChange={handleCategoryChange}
-                onSubcategoryChange={setActiveSubcategoryId}
-                primaryColor={configuracaoVitrine.corPrimaria}
+                selectedAnalyticId={selectedAnalyticId}
+                selectedChildId={selectedChildId}
+                onAnalyticChange={selectAnalytic}
+                onChildChange={selectChild}
+                primaryColor={primaryColor}
               />
             </div>
 
-            {/* ── Barra de filtros mobile ── */}
+            {/* ── Barra de controles mobile ── */}
             <div className="lg:hidden flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => setFilterDrawerOpen(true)}
+                onClick={openFilterDrawer}
                 className="flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs font-semibold transition-colors"
                 style={
                   hasActiveFilters
-                    ? {
-                        backgroundColor: configuracaoVitrine.corPrimaria,
-                        borderColor: configuracaoVitrine.corPrimaria,
-                        color: "white",
-                      }
-                    : {
-                        backgroundColor: "white",
-                        borderColor: "rgb(226, 232, 240)",
-                        color: "rgb(71, 85, 105)",
-                      }
+                    ? { backgroundColor: primaryColor, borderColor: primaryColor, color: "white" }
+                    : { backgroundColor: "white", borderColor: "rgb(226, 232, 240)", color: "rgb(71, 85, 105)" }
                 }
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
                 Filtrar
-                {hasActiveFilters && (
-                  <span className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center text-[10px] font-bold">
-                    !
-                  </span>
-                )}
               </button>
 
               {/* Chips de filtros ativos */}
-              {activeCatName && (
+              {selectedAnalyticName && !selectedChildId && (
                 <span className="flex items-center gap-1 h-7 px-2.5 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
-                  {activeCatName}
-                  <button onClick={() => handleCategoryChange(null)}>
+                  {selectedAnalyticName}
+                  <button onClick={() => selectAnalytic(null)}>
                     <X className="w-3 h-3 text-slate-400" />
                   </button>
                 </span>
               )}
-              {activeSubName && (
+              {selectedChildName && (
                 <span className="flex items-center gap-1 h-7 px-2.5 rounded-full bg-slate-100 text-slate-700 text-xs font-medium">
-                  {activeSubName}
-                  <button onClick={() => setActiveSubcategoryId(null)}>
+                  {selectedChildName}
+                  <button onClick={() => setSelectedChildId(null)}>
                     <X className="w-3 h-3 text-slate-400" />
                   </button>
                 </span>
@@ -592,7 +582,7 @@ function PublicStorefrontPage() {
               )}
             </div>
 
-            {/* ── Breadcrumb / Título (quando filtro ativo) ── */}
+            {/* ── Breadcrumb (quando filtro ativo) ── */}
             {!inTodosMode && (
               <div className="flex items-center justify-between">
                 <nav className="flex items-center gap-1 text-sm text-slate-500 flex-wrap">
@@ -602,131 +592,176 @@ function PublicStorefrontPage() {
                   >
                     Todos
                   </button>
-                  {activeCatName && (
+                  {selectedAnalyticName && (
                     <>
                       <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <button
-                        onClick={() => { setActiveSubcategoryId(null); }}
+                        onClick={() => setSelectedChildId(null)}
                         className={`hover:text-[var(--cor-texto)] transition-colors font-medium ${
-                          !activeSubcategoryId ? "text-[var(--cor-texto)]" : ""
+                          !selectedChildId ? "text-[var(--cor-texto)]" : ""
                         }`}
                       >
-                        {activeCatName}
+                        {selectedAnalyticName}
                       </button>
                     </>
                   )}
-                  {activeSubName && (
+                  {selectedChildName && (
                     <>
                       <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="text-[var(--cor-texto)] font-semibold">{activeSubName}</span>
+                      <span className="text-[var(--cor-texto)] font-semibold">{selectedChildName}</span>
                     </>
                   )}
-                  {query.trim() && !activeCategoryId && (
+                  {query.trim() && !selectedAnalyticId && (
                     <>
                       <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="text-[var(--cor-texto)] font-semibold">
-                        "{query.trim()}"
-                      </span>
+                      <span className="text-[var(--cor-texto)] font-semibold">"{query.trim()}"</span>
                     </>
                   )}
                 </nav>
-                <span className="text-xs text-slate-400 shrink-0 ml-2">
-                  {visibleProducts.length} produto{visibleProducts.length !== 1 ? "s" : ""}
-                </span>
+                {!inAnalyticMode && (
+                  <span className="text-xs text-slate-400 shrink-0 ml-2">
+                    {visibleProducts.length} produto{visibleProducts.length !== 1 ? "s" : ""}
+                  </span>
+                )}
               </div>
             )}
 
-            {/* ── Error ── */}
+            {/* ── Erro de dados ── */}
             {dataError && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {dataError}
               </div>
             )}
 
-            {/* ── Conteúdo de produtos ── */}
+            {/* ══════════════════════════════════════════════════════
+                ESTADOS DE EXIBIÇÃO
+            ══════════════════════════════════════════════════════ */}
             {dataLoading ? (
               skeletonGrid
+
             ) : inTodosMode ? (
-              /* ── Modo "Todos": seções por categoria ── */
-              categorySections.length === 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-16 text-center">
-                  <Store className="mx-auto w-10 h-10 text-slate-300 mb-3" />
-                  <p className="text-sm font-semibold text-slate-700">Nenhum produto cadastrado ainda</p>
-                  <p className="text-xs text-slate-400 mt-1">Os produtos aparecerão aqui quando forem adicionados.</p>
-                </div>
-              ) : (
-                <div className="space-y-10">
-                  {categorySections.map(({ category, children, products: catProds }) => (
-                    <section key={category.id} className="space-y-3">
-                      {/* Header da seção */}
-                      <button
-                        onClick={() => handleCategoryChange(category.id)}
-                        className="w-full flex items-center justify-between group"
-                      >
-                        <h2 className="text-base font-bold text-[var(--cor-texto)] flex items-center gap-2">
-                          {category.emoji && (
-                            <span className="text-xl">{category.emoji}</span>
-                          )}
-                          {category.name}
-                        </h2>
-                        <span
-                          className="text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                          style={{ color: configuracaoVitrine.corPrimaria }}
-                        >
-                          {category.analytic && children.length > 0
-                            ? `${children.length} categorias →`
-                            : `${catProds.length} itens →`}
-                        </span>
-                      </button>
-
-                      {/* Sub-chips para categorias analíticas */}
-                      {category.analytic === true && children.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {children.map((child) => (
-                            <button
-                              key={child.id}
-                              onClick={() => {
-                                setActiveCategoryId(category.id);
-                                setActiveSubcategoryId(child.id);
-                              }}
-                              className="h-7 px-3 rounded-full text-xs font-semibold border border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-800 transition-colors"
-                            >
-                              {child.emoji && !/^[a-z]/i.test(child.emoji)
-                                ? `${child.emoji} `
-                                : ""}
-                              {child.name}
-                            </button>
-                          ))}
+              /* ── Estado 1: Todos — uma seção por analítica ── */
+              todosSections.length === 0
+                ? emptyState("Nenhum produto cadastrado ainda", "Os produtos aparecerão aqui quando forem adicionados.")
+                : (
+                  <div className="space-y-10">
+                    {todosSections.map(({ analytic, products: sectionProds }) => (
+                      <section key={analytic.id}>
+                        {/* Header da seção */}
+                        <div className="flex items-center justify-between mb-4">
+                          <h2 className="text-base font-bold text-[var(--cor-texto)] flex items-center gap-2">
+                            {analytic.emoji && (
+                              <span className="text-xl leading-none">{analytic.emoji}</span>
+                            )}
+                            {analytic.name}
+                            <span className="text-slate-400 text-sm font-normal">
+                              ({sectionProds.length})
+                            </span>
+                          </h2>
+                          <button
+                            onClick={() => selectAnalytic(analytic.id)}
+                            className="text-xs font-semibold flex items-center gap-0.5 hover:underline shrink-0"
+                            style={{ color: primaryColor }}
+                          >
+                            Ver todos
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
                         </div>
-                      )}
 
-                      {/* Grid de produtos */}
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {catProds.map(renderCard)}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              )
+                        {/* Grid (máx 8 produtos) */}
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+                          {sectionProds.slice(0, 8).map(renderCard)}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                )
+
+            ) : inAnalyticMode ? (
+              /* ── Estado 2: Analítica selecionada — seções por filho ── */
+              <div className="space-y-6">
+                {/* Pills das categorias filhas */}
+                {analyticChildren.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {analyticChildren.map((child) => {
+                      const isActive = selectedChildId === child.id;
+                      return (
+                        <button
+                          key={child.id}
+                          onClick={() => selectChild(child.id)}
+                          className="h-8 px-3.5 rounded-full text-xs font-semibold border transition-colors"
+                          style={
+                            isActive
+                              ? { backgroundColor: primaryColor, borderColor: primaryColor, color: "white" }
+                              : { backgroundColor: "white", borderColor: "rgb(203, 213, 225)", color: "rgb(71, 85, 105)" }
+                          }
+                        >
+                          {child.emoji && !/^[a-z]/i.test(child.emoji) ? `${child.emoji} ` : ""}
+                          {child.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Seções por categoria filha */}
+                {analyticSections.length === 0
+                  ? emptyState("Nenhum produto nesta categoria", "Tente outro departamento ou ajuste os filtros.")
+                  : (
+                    <div className="space-y-10">
+                      {analyticSections.map(({ child, products: childProds }) => (
+                        <section key={child.id} className="border-t border-slate-100 pt-6 first:border-0 first:pt-0">
+                          {/* Header da seção filha */}
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-bold text-[var(--cor-texto)] flex items-center gap-2">
+                              {child.emoji && !/^[a-z]/i.test(child.emoji) && (
+                                <span className="text-lg leading-none">{child.emoji}</span>
+                              )}
+                              {child.name}
+                              <span className="text-slate-400 text-xs font-normal">
+                                ({childProds.length} produto{childProds.length !== 1 ? "s" : ""})
+                              </span>
+                            </h3>
+                            {childProds.length > 8 && (
+                              <button
+                                onClick={() => selectChild(child.id)}
+                                className="text-xs font-semibold flex items-center gap-0.5 hover:underline shrink-0"
+                                style={{ color: primaryColor }}
+                              >
+                                Ver todos
+                                <ChevronRight className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Grid (máx 8) */}
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {childProds.slice(0, 8).map(renderCard)}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  )
+                }
+              </div>
+
             ) : (
-              /* ── Modo categoria/busca: grid único ── */
-              visibleProducts.length === 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-16 text-center">
-                  <Store className="mx-auto w-10 h-10 text-slate-300 mb-3" />
-                  <p className="text-sm font-semibold text-slate-700">Nenhum produto encontrado</p>
-                  <p className="text-xs text-slate-400 mt-1">Tente ajustar a busca ou os filtros.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {visibleProducts.map(renderCard)}
-                </div>
-              )
+              /* ── Estado 3: filho selecionado ou busca — grid único ── */
+              visibleProducts.length === 0
+                ? emptyState("Nenhum produto encontrado", "Tente ajustar a busca ou os filtros.")
+                : (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {visibleProducts.map(renderCard)}
+                  </div>
+                )
             )}
           </div>
         </div>
       </main>
 
-      {/* ── Mobile Filter Drawer ────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════
+          Mobile Filter Drawer (accordion de analíticas + preço)
+      ══════════════════════════════════════════════════════════════ */}
       {filterDrawerOpen && (
         <div className="fixed inset-0 z-[60] lg:hidden flex">
           {/* Backdrop */}
@@ -736,6 +771,7 @@ function PublicStorefrontPage() {
           />
           {/* Panel */}
           <div className="relative w-72 max-w-[85vw] bg-white shadow-2xl flex flex-col">
+            {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <SlidersHorizontal className="w-4 h-4 text-slate-500" />
@@ -749,19 +785,160 @@ function PublicStorefrontPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5">
-              <StorefrontSidebar {...sidebarProps} />
+            {/* Conteúdo */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              {/* Departamentos com accordion */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                    Departamentos
+                  </span>
+                  {(selectedAnalyticId || selectedChildId) && (
+                    <button
+                      onClick={() => { selectAnalytic(null); }}
+                      className="text-[11px] text-slate-400 hover:text-red-500 flex items-center gap-0.5 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                      Limpar
+                    </button>
+                  )}
+                </div>
+
+                <ul className="space-y-px">
+                  {/* Todos */}
+                  <li>
+                    <button
+                      onClick={() => { selectAnalytic(null); setFilterDrawerOpen(false); }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                        !selectedAnalyticId ? "text-white" : "text-slate-700 hover:bg-slate-100"
+                      }`}
+                      style={!selectedAnalyticId ? { backgroundColor: primaryColor } : {}}
+                    >
+                      Todos os produtos
+                    </button>
+                  </li>
+
+                  {analyticCategories.map((cat) => {
+                    const isActive = selectedAnalyticId === cat.id;
+                    const isOpen = drawerOpenSections.has(cat.id);
+                    const children = categories.filter(
+                      (c) => c.active !== false && c.parentId === cat.id
+                    );
+                    const hasChildren = children.length > 0;
+
+                    return (
+                      <li key={cat.id}>
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            onClick={() => {
+                              selectAnalytic(cat.id);
+                              if (hasChildren)
+                                setDrawerOpenSections((prev) => new Set([...prev, cat.id]));
+                              if (!hasChildren) setFilterDrawerOpen(false);
+                            }}
+                            className={`flex-1 min-w-0 text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                              isActive && !selectedChildId
+                                ? "text-white"
+                                : "text-slate-700 hover:bg-slate-100"
+                            }`}
+                            style={isActive && !selectedChildId ? { backgroundColor: primaryColor } : {}}
+                          >
+                            {cat.emoji && !/^[a-z]/i.test(cat.emoji) && (
+                              <span className="text-base leading-none shrink-0">{cat.emoji}</span>
+                            )}
+                            <span className="flex-1 truncate">{cat.name}</span>
+                          </button>
+
+                          {hasChildren && (
+                            <button
+                              onClick={() => toggleDrawerSection(cat.id)}
+                              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-slate-100 text-slate-400 transition-colors shrink-0"
+                            >
+                              {isOpen
+                                ? <ChevronDown className="w-3.5 h-3.5" />
+                                : <ChevronRight className="w-3.5 h-3.5" />
+                              }
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Filhos no accordion */}
+                        {hasChildren && isOpen && (
+                          <ul className="ml-3 mt-0.5 pl-3 border-l-2 border-slate-100 space-y-px">
+                            {children.map((child) => {
+                              const isChildActive = selectedChildId === child.id && isActive;
+                              return (
+                                <li key={child.id}>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedAnalyticId(cat.id);
+                                      setSelectedChildId(child.id);
+                                      setFilterDrawerOpen(false);
+                                    }}
+                                    className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                                      isChildActive
+                                        ? "text-white"
+                                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
+                                    }`}
+                                    style={isChildActive ? { backgroundColor: primaryColor } : {}}
+                                  >
+                                    {child.emoji && !/^[a-z]/i.test(child.emoji) ? `${child.emoji} ` : ""}
+                                    {child.name}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+
+              {/* Faixa de Preço */}
+              {configuracaoVitrine.exibirPreco && (
+                <div>
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-3">
+                    Faixa de Preço
+                  </span>
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-slate-400 block mb-1.5">Mínimo</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">R$</span>
+                        <input
+                          type="number" min="0" placeholder="0" value={priceMin}
+                          onChange={(e) => setPriceMin(e.target.value)}
+                          className="w-full h-9 rounded-lg border border-slate-200 pl-7 pr-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                    <span className="text-slate-300 text-lg pb-1.5">–</span>
+                    <div className="flex-1">
+                      <label className="text-[10px] text-slate-400 block mb-1.5">Máximo</label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">R$</span>
+                        <input
+                          type="number" min="0" placeholder="∞" value={priceMax}
+                          onChange={(e) => setPriceMax(e.target.value)}
+                          className="w-full h-9 rounded-lg border border-slate-200 pl-7 pr-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
+            {/* Footer */}
             <div className="p-4 border-t border-slate-100">
               <button
                 onClick={() => setFilterDrawerOpen(false)}
-                className="w-full h-11 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
-                style={{ backgroundColor: configuracaoVitrine.corPrimaria }}
+                className="w-full h-11 rounded-xl text-white text-sm font-semibold transition-opacity hover:opacity-90"
+                style={{ backgroundColor: primaryColor }}
               >
-                Ver {inTodosMode
-                  ? products.filter((p) => p.active !== false).length
-                  : visibleProducts.length} produto{visibleProducts.length !== 1 ? "s" : ""}
+                Ver produtos
               </button>
             </div>
           </div>
@@ -790,15 +967,12 @@ function PublicStorefrontPage() {
         open={selectedProduct !== null}
         showPrice={configuracaoVitrine.exibirPreco}
         highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
-        primaryColor={configuracaoVitrine.corPrimaria}
+        primaryColor={primaryColor}
         onClose={() => setSelectedProduct(null)}
-        onAddToCart={(product, obs) => {
-          addToCart(product, obs);
-          setSelectedProduct(null);
-        }}
+        onAddToCart={(product, obs) => { addToCart(product, obs); setSelectedProduct(null); }}
       />
 
-      {/* ── Modal de checkout público ─────────────────────────────── */}
+      {/* ── Modal de checkout ─────────────────────────────────────── */}
       {showCheckout && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4">
           <div className="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-xl">
@@ -820,23 +994,18 @@ function PublicStorefrontPage() {
                 <button
                   onClick={() => setShowCheckout(false)}
                   className="mt-4 h-11 px-8 rounded-xl text-white font-semibold"
-                  style={{ backgroundColor: configuracaoVitrine.corPrimaria }}
+                  style={{ backgroundColor: primaryColor }}
                 >
                   Fechar
                 </button>
               </div>
             ) : (
               <div className="px-5 py-4 space-y-4 max-h-[80vh] overflow-y-auto">
-                {/* Resumo */}
+                {/* Resumo do pedido */}
                 <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 text-sm">
                   {cart.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between px-4 py-2.5"
-                    >
-                      <span className="text-slate-700">
-                        {item.qty}× {item.name}
-                      </span>
+                    <div key={item.id} className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-slate-700">{item.qty}× {item.name}</span>
                       {configuracaoVitrine.exibirPreco && (
                         <span className="font-semibold text-slate-900">
                           R$ {formatPrice(item.price * item.qty)}
@@ -857,8 +1026,7 @@ function PublicStorefrontPage() {
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700">Nome *</label>
                     <input
-                      type="text"
-                      value={customerName}
+                      type="text" value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
                       placeholder="Seu nome completo"
                       className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
@@ -867,8 +1035,7 @@ function PublicStorefrontPage() {
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700">Telefone *</label>
                     <input
-                      type="tel"
-                      value={customerPhone}
+                      type="tel" value={customerPhone}
                       onChange={(e) => setCustomerPhone(e.target.value)}
                       placeholder="(11) 99999-9999"
                       className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
@@ -876,12 +1043,9 @@ function PublicStorefrontPage() {
                   </div>
                   {store?.deliveryEnabled === true && (
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-slate-700">
-                        Endereço de entrega
-                      </label>
+                      <label className="text-xs font-semibold text-slate-700">Endereço de entrega</label>
                       <input
-                        type="text"
-                        value={customerAddress}
+                        type="text" value={customerAddress}
                         onChange={(e) => setCustomerAddress(e.target.value)}
                         placeholder="Rua, número, bairro..."
                         className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
@@ -900,13 +1064,9 @@ function PublicStorefrontPage() {
                   onClick={submitOrder}
                   disabled={orderLoading || !customerName.trim() || !customerPhone.trim()}
                   className="w-full h-11 rounded-xl text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  style={{ backgroundColor: configuracaoVitrine.corPrimaria }}
+                  style={{ backgroundColor: primaryColor }}
                 >
-                  {orderLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    "Confirmar Pedido"
-                  )}
+                  {orderLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar Pedido"}
                 </button>
               </div>
             )}

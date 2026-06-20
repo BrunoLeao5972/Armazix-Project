@@ -1,17 +1,14 @@
-import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronRight, X } from "lucide-react";
 import { type StoreCategory } from "@/lib/store-context";
 
 interface StorefrontSidebarProps {
   categories: StoreCategory[];
-  activeCategoryId: string | null;
-  activeSubcategoryId: string | null;
+  selectedAnalyticId: string | null;
   priceMin: string;
   priceMax: string;
   showPriceFilter: boolean;
   primaryColor: string;
-  onCategoryChange: (id: string | null) => void;
-  onSubcategoryChange: (id: string | null) => void;
+  onAnalyticChange: (id: string | null) => void;
   onPriceMinChange: (v: string) => void;
   onPriceMaxChange: (v: string) => void;
   onClearFilters: () => void;
@@ -19,52 +16,31 @@ interface StorefrontSidebarProps {
 
 export function StorefrontSidebar({
   categories,
-  activeCategoryId,
-  activeSubcategoryId,
+  selectedAnalyticId,
   priceMin,
   priceMax,
   showPriceFilter,
   primaryColor,
-  onCategoryChange,
-  onSubcategoryChange,
+  onAnalyticChange,
   onPriceMinChange,
   onPriceMaxChange,
   onClearFilters,
 }: StorefrontSidebarProps) {
-  const [openSections, setOpenSections] = useState<Set<string>>(
-    () => (activeCategoryId ? new Set([activeCategoryId]) : new Set())
-  );
+  const analytics = categories
+    .filter((c) => c.active !== false && c.analytic === true)
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  useEffect(() => {
-    if (activeCategoryId) {
-      setOpenSections((prev) => {
-        if (prev.has(activeCategoryId)) return prev;
-        return new Set([...prev, activeCategoryId]);
-      });
-    }
-  }, [activeCategoryId]);
-
-  const rootCategories = categories.filter((c) => c.active !== false && !c.parentId);
-  const hasActiveFilters = !!(activeCategoryId || activeSubcategoryId || priceMin || priceMax);
-
-  const toggleSection = (id: string) => {
-    setOpenSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
+  const hasFilters = !!(selectedAnalyticId || priceMin || priceMax);
 
   return (
     <div className="space-y-6">
-      {/* ── Categorias ── */}
+      {/* ── Departamentos ── */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
-            Categorias
+            Departamentos
           </span>
-          {hasActiveFilters && (
+          {hasFilters && (
             <button
               onClick={onClearFilters}
               className="text-[11px] text-slate-400 hover:text-red-500 transition-colors flex items-center gap-0.5"
@@ -76,99 +52,37 @@ export function StorefrontSidebar({
         </div>
 
         <ul className="space-y-px">
-          {/* "Todos os produtos" */}
           <li>
             <button
-              onClick={() => { onCategoryChange(null); onSubcategoryChange(null); }}
+              onClick={() => onAnalyticChange(null)}
               className={`w-full text-left px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                !activeCategoryId ? "text-white" : "text-slate-700 hover:bg-slate-100"
+                !selectedAnalyticId ? "text-white" : "text-slate-700 hover:bg-slate-100"
               }`}
-              style={!activeCategoryId ? { backgroundColor: primaryColor } : {}}
+              style={!selectedAnalyticId ? { backgroundColor: primaryColor } : {}}
             >
               Todos os produtos
             </button>
           </li>
 
-          {rootCategories.map((cat) => {
-            const children = categories.filter(
-              (c) => c.active !== false && c.parentId === cat.id
-            );
-            const hasChildren = children.length > 0;
-            const isActive = activeCategoryId === cat.id;
-            const isOpen = openSections.has(cat.id);
-
+          {analytics.map((cat) => {
+            const isActive = selectedAnalyticId === cat.id;
             return (
               <li key={cat.id}>
-                {/* Category row */}
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => {
-                      onCategoryChange(cat.id);
-                      onSubcategoryChange(null);
-                      if (hasChildren) {
-                        setOpenSections((prev) => new Set([...prev, cat.id]));
-                      }
-                    }}
-                    className={`flex-1 min-w-0 text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                      isActive && !activeSubcategoryId
-                        ? "text-white"
-                        : "text-slate-700 hover:bg-slate-100"
-                    }`}
-                    style={
-                      isActive && !activeSubcategoryId
-                        ? { backgroundColor: primaryColor }
-                        : {}
-                    }
-                  >
-                    {cat.emoji && !/^[a-z]/i.test(cat.emoji) && (
-                      <span className="text-base leading-none shrink-0">{cat.emoji}</span>
-                    )}
-                    <span className="flex-1 truncate">{cat.name}</span>
-                  </button>
-
-                  {hasChildren && (
-                    <button
-                      onClick={() => toggleSection(cat.id)}
-                      className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors shrink-0"
-                    >
-                      {isOpen ? (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      )}
-                    </button>
+                <button
+                  onClick={() => onAnalyticChange(cat.id)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    isActive ? "text-white" : "text-slate-700 hover:bg-slate-100"
+                  }`}
+                  style={isActive ? { backgroundColor: primaryColor } : {}}
+                >
+                  {cat.emoji && !/^[a-z]/i.test(cat.emoji) && (
+                    <span className="text-base leading-none shrink-0">{cat.emoji}</span>
                   )}
-                </div>
-
-                {/* Children accordion */}
-                {hasChildren && isOpen && (
-                  <ul className="ml-3 mt-0.5 pl-3 border-l-2 border-slate-100 space-y-px">
-                    {children.map((child) => {
-                      const isChildActive = activeSubcategoryId === child.id;
-                      return (
-                        <li key={child.id}>
-                          <button
-                            onClick={() => {
-                              onCategoryChange(cat.id);
-                              onSubcategoryChange(child.id);
-                            }}
-                            className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                              isChildActive
-                                ? "text-white"
-                                : "text-slate-600 hover:bg-slate-100 hover:text-slate-800"
-                            }`}
-                            style={isChildActive ? { backgroundColor: primaryColor } : {}}
-                          >
-                            {child.emoji && !/^[a-z]/i.test(child.emoji)
-                              ? `${child.emoji} `
-                              : ""}
-                            {child.name}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                  <span className="flex-1 truncate">{cat.name}</span>
+                  <ChevronRight
+                    className={`w-3.5 h-3.5 shrink-0 ${isActive ? "opacity-70" : "opacity-30"}`}
+                  />
+                </button>
               </li>
             );
           })}
