@@ -37,9 +37,16 @@ function StoreHome() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, [store?.id]);
 
+  // Coleta o ID selecionado + todos os descendentes (recursivo, qualquer profundidade)
+  const getDescendantIds = (catId: string): string[] => {
+    const children = categories.filter(c => c.active !== false && c.parentId === catId);
+    return [catId, ...children.flatMap(c => getDescendantIds(c.id))];
+  };
+  const activeCategoryIds = activeCategoryId ? new Set(getDescendantIds(activeCategoryId)) : null;
+
   const activeProducts = products
     .filter((p) => p.active !== false)
-    .filter((p) => (activeCategoryId ? p.categoryId === activeCategoryId : true));
+    .filter((p) => (activeCategoryIds ? activeCategoryIds.has(p.categoryId ?? "") : true));
 
   const handleAdd = useCallback((product: StoreProduct) => {
     addToCart({
@@ -54,19 +61,14 @@ function StoreHome() {
   return (
     <div className="pb-6 animate-in fade-in duration-300">
       {/* Hero Banner */}
-      {(store?.bannerMobileUrl || store?.bannerUrl || (store?.banners?.[0]?.imageUrl ?? null)) && (
+      {(store?.banners?.length || store?.bannerUrl) && (
         <section className="px-3 md:px-6 pt-3 md:pt-5">
-          <div className="w-full rounded-2xl overflow-hidden bg-slate-100 aspect-[64/15] flex items-center justify-center">
-            <picture className="w-full h-full">
-              {store?.bannerMobileUrl && (
-                <source media="(max-width: 767px)" srcSet={store.bannerMobileUrl} />
-              )}
-              <img
-                src={store?.bannerUrl || store?.bannerMobileUrl || store?.banners?.[0]?.imageUrl || ""}
-                alt={store?.name || "Banner da loja"}
-                className="w-full h-full object-contain"
-              />
-            </picture>
+          <div className="w-full rounded-2xl overflow-hidden bg-slate-100 aspect-[16/5]">
+            <img
+              src={store?.banners?.[0]?.imageUrl || store?.bannerUrl || ""}
+              alt={store?.name || "Banner da loja"}
+              className="w-full h-full object-cover"
+            />
           </div>
         </section>
       )}

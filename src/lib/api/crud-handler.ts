@@ -421,7 +421,8 @@ export async function createOrderHandler(request: Request): Promise<Response> {
     storeId: string;
     customerId?: string;
     type: string; // delivery | pickup
-    paymentMethod: string; // pix | card | cash
+    paymentMethod: string; // pix | card | cash | mercadopago
+    installments?: number; // 1 = à vista; >1 = parcelado
     items: { productId: string; productName: string; productEmoji?: string; productImage?: string; quantity: number; unitPrice: string; additionsTotal?: string; total: string; additionsSnapshot?: { name: string; price: string }[]; notes?: string }[];
     subtotal: string;
     deliveryFee?: string;
@@ -452,6 +453,7 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       status: "received",
       type: body.type || "delivery",
       paymentMethod: body.paymentMethod || null,
+      installments: body.installments && body.installments > 1 ? body.installments : 1,
       paymentStatus: "pending",
       subtotal: body.subtotal,
       deliveryFee: body.deliveryFee || "0",

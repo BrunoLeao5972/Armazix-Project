@@ -346,7 +346,7 @@ export async function saveMpTokenHandler(request: Request, auth?: AuthContext): 
     }, auth?.userId ? 403 : 401);
   }
 
-  const body = await request.json() as { accessToken: string };
+  const body = await request.json() as { accessToken: string; publicKey?: string };
   if (!body.accessToken) {
     return json({ error: "accessToken é obrigatório" }, 400);
   }
@@ -363,7 +363,6 @@ export async function saveMpTokenHandler(request: Request, auth?: AuthContext): 
   }
 
   try {
-    // Encrypt token before saving
     const encryptedToken = await encrypt(body.accessToken, encryptionKey);
 
     const dbUrl = process.env.DATABASE_URL!;
@@ -371,7 +370,12 @@ export async function saveMpTokenHandler(request: Request, auth?: AuthContext): 
 
     await db
       .update(stores)
-      .set({ mpAccessToken: encryptedToken, updatedAt: new Date() })
+      .set({
+        mpAccessToken: encryptedToken,
+        // Public key is not sensitive; stored in plaintext
+        ...(body.publicKey !== undefined ? { mpPublicKey: body.publicKey || null } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(stores.id, storeId));
 
     return json({ success: true });

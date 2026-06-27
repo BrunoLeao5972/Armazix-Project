@@ -45,6 +45,7 @@ import {
   createCustomerHandler,
   validatePublicCouponHandler,
 } from "./api/crud-handler";
+import { saveBannersHandler } from "./api/banners-handler";
 import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
 import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler, createPixPaymentHandler, pixWebhookHandler } from "./api/subscription-handler";
 import { requireAuth, AuthContext } from "./middleware/auth";
@@ -102,6 +103,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/customers/create": createCustomerHandler,
   "/api/payments/mp-checkout": createMpCheckoutHandler,
   "/api/payments/mp-token": saveMpTokenHandler,
+  "/api/banners/save": saveBannersHandler,
   "/api/subscriptions/create": createSubscriptionHandler,
   "/api/subscriptions/create-pix": createPixPaymentHandler,
 };

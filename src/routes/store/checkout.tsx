@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { MapPin, Truck, Package, CreditCard, Smartphone, Banknote, CheckCircle2, ChevronRight, ChevronLeft, Loader2, ShoppingBag, Tag, X } from "lucide-react";
+import { MapPin, Truck, Package, CreditCard, Smartphone, Banknote, CheckCircle2, ChevronRight, ChevronLeft, Loader2, ShoppingBag, Tag, X, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { useStore } from "../store";
-import { formatPrice } from "@/lib/store-context";
+import { formatPrice, DEFAULT_PAYMENT_METHODS, type PaymentMethodConfig } from "@/lib/store-context";
 
 export const Route = createFileRoute("/store/checkout")({
   component: CheckoutPage,
@@ -20,6 +20,7 @@ function CheckoutPage() {
   const [cepLoading, setCepLoading] = useState(false);
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
+  const [installments, setInstallments] = useState(1);
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [orderNumber, setOrderNumber] = useState<number | null>(null);
@@ -248,35 +249,82 @@ function CheckoutPage() {
       {step === 2 && (
         <div className="space-y-4">
           <h2 className="text-lg font-bold">Forma de pagamento</h2>
-          <div className="space-y-2">
-            {[
-              { key: "mercadopago", label: "Mercado Pago", desc: "Cartão, PIX, boleto e mais", icon: ShoppingBag },
-              { key: "pix", label: "PIX (na entrega)", desc: "Pagamento na entrega", icon: Smartphone },
-              { key: "card", label: "Cartão de crédito", desc: "Visa, Master, Elo", icon: CreditCard },
-              { key: "cash", label: "Dinheiro", desc: "Troco para quanto?", icon: Banknote },
-            ].map((method) => (
-              <button
-                key={method.key}
-                onClick={() => setPaymentMethod(method.key)}
-                className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-colors ${
-                  paymentMethod === method.key ? "border-primary bg-primary/5" : "border-border/50"
-                }`}
-              >
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${paymentMethod === method.key ? "bg-primary/15" : "bg-secondary"}`}>
-                  <method.icon className={`w-5 h-5 ${paymentMethod === method.key ? "text-primary" : "text-muted-foreground"}`} />
+          {(() => {
+            const paymentConfig: PaymentMethodConfig[] =
+              store?.paymentMethodsConfig?.length
+                ? (store.paymentMethodsConfig as PaymentMethodConfig[])
+                : DEFAULT_PAYMENT_METHODS;
+
+            // Global delivery payment toggle (default true if not set)
+            const deliveryOk = (store as { deliveryPaymentEnabled?: boolean | null } | null)?.deliveryPaymentEnabled !== false;
+
+            const METHOD_ICONS: Record<string, React.ElementType> = {
+              cash: Banknote, pix: QrCode, card: CreditCard, debit: CreditCard, mercadopago: ShoppingBag,
+            };
+            const METHOD_DESC: Record<string, string> = {
+              cash: "Pagar na entrega",
+              pix: "Pagar na entrega",
+              card: "Crédito — pagar na entrega",
+              debit: "Débito — pagar na entrega",
+              mercadopago: "Cartão, PIX, boleto e mais",
+            };
+
+            const selectedConfig = paymentConfig.find(m => m.key === paymentMethod);
+
+            // MP always available if enabled; non-MP only if deliveryPaymentEnabled
+            const availableMethods = paymentConfig.filter(m =>
+              m.enabled && (m.key === "mercadopago" || deliveryOk)
+            );
+
+            return (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  {availableMethods.map((m) => {
+                    const Icon = METHOD_ICONS[m.key] ?? CreditCard;
+                    return (
+                      <button
+                        key={m.key}
+                        onClick={() => { setPaymentMethod(m.key); setInstallments(1); }}
+                        className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-colors ${
+                          paymentMethod === m.key ? "border-primary bg-primary/5" : "border-border/50"
+                        }`}
+                      >
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${paymentMethod === m.key ? "bg-primary/15" : "bg-secondary"}`}>
+                          <Icon className={`w-5 h-5 ${paymentMethod === m.key ? "text-primary" : "text-muted-foreground"}`} />
+                        </div>
+                        <div className="flex-1 text-left">
+                          <p className="text-sm font-semibold">{m.label}</p>
+                          <p className="text-xs text-muted-foreground">{METHOD_DESC[m.key] ?? ""}</p>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                          paymentMethod === m.key ? "border-primary" : "border-border"
+                        }`}>
+                          {paymentMethod === m.key && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="flex-1 text-left">
-                  <p className="text-sm font-semibold">{method.label}</p>
-                  <p className="text-xs text-muted-foreground">{method.desc}</p>
-                </div>
-                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                  paymentMethod === method.key ? "border-primary" : "border-border"
-                }`}>
-                  {paymentMethod === method.key && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
-                </div>
-              </button>
-            ))}
-          </div>
+
+                {/* Seletor de parcelas */}
+                {selectedConfig && selectedConfig.maxInstallments > 1 && selectedConfig.key !== "mercadopago" && (
+                  <div className="pt-1 space-y-2">
+                    <p className="text-sm font-semibold">Parcelamento</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {Array.from({ length: selectedConfig.maxInstallments }, (_, i) => i + 1).map(n => (
+                        <button key={n} onClick={() => setInstallments(n)}
+                          className={`py-2.5 rounded-xl text-xs font-semibold border transition-colors ${
+                            installments === n ? "border-primary bg-primary/5 text-primary" : "border-border/50 text-muted-foreground"
+                          }`}>
+                          {n === 1 ? `À vista — R$ ${formatPrice(orderTotal)}` : `${n}x de R$ ${formatPrice(orderTotal / n)}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -411,6 +459,7 @@ function CheckoutPage() {
                   storeId,
                   type: deliveryType,
                   paymentMethod,
+                  installments: installments > 1 ? installments : undefined,
                   items,
                   subtotal: cartTotal.toFixed(2),
                   deliveryFee: storeDeliveryFee.toFixed(2),

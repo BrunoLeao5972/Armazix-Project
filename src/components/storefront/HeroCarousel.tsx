@@ -1,51 +1,50 @@
 import { useEffect, useState } from "react";
 
+interface BannerSlide {
+  imageUrl: string | null;
+  title?: string | null;
+}
+
 interface HeroCarouselProps {
-  bannerUrl?: string;
-  bannerMobileUrl?: string;
+  banners: BannerSlide[];
   storeName?: string;
 }
 
-export function HeroCarousel({ bannerUrl, bannerMobileUrl, storeName }: HeroCarouselProps) {
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const slides = [
-    { url: bannerMobileUrl || bannerUrl, label: "Banner 1" },
-  ];
+export function HeroCarousel({ banners, storeName }: HeroCarouselProps) {
+  const slides = banners.filter((b) => !!b.imageUrl);
+  const [current, setCurrent] = useState(0);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % slides.length);
-    }, 5000);
+    if (slides.length <= 1) return;
+    const timer = setInterval(() => setCurrent((p) => (p + 1) % slides.length), 5000);
     return () => clearInterval(timer);
   }, [slides.length]);
 
-  if (!bannerUrl && !bannerMobileUrl) return null;
+  if (!slides.length) return null;
 
   return (
     <section className="px-4 pt-4">
-      <div className="relative w-full rounded-2xl overflow-hidden bg-slate-100 aspect-video md:aspect-[16/6]">
-        <picture>
-          {bannerMobileUrl && (
-            <source media="(max-width: 767px)" srcSet={bannerMobileUrl} />
-          )}
+      <div className="relative w-full rounded-2xl overflow-hidden bg-slate-100 aspect-[16/5] md:aspect-[16/4]">
+        {slides.map((slide, idx) => (
           <img
-            src={bannerUrl || bannerMobileUrl}
-            alt={storeName || "Banner"}
-            className="w-full h-full object-cover"
+            key={idx}
+            src={slide.imageUrl!}
+            alt={slide.title || storeName || "Banner"}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
+              idx === current ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
           />
-        </picture>
+        ))}
 
-        {/* Carousel Indicators (Bottom Right) */}
         {slides.length > 1 && (
-          <div className="absolute bottom-4 right-4 flex gap-2">
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
             {slides.map((_, idx) => (
               <button
                 key={idx}
-                onClick={() => setCurrentSlide(idx)}
-                className={`transition-all ${
-                  idx === currentSlide
-                    ? "w-6 h-1 bg-white"
-                    : "w-2 h-1 bg-white/50"
+                onClick={() => setCurrent(idx)}
+                aria-label={`Banner ${idx + 1}`}
+                className={`rounded-full h-1.5 transition-all ${
+                  idx === current ? "w-6 bg-white" : "w-1.5 bg-white/50"
                 }`}
               />
             ))}

@@ -703,17 +703,24 @@ export async function getDeliveryOrdersHandler(request: Request, auth?: AuthCont
 
     const deliveries = deliveryOrders.map(o => ({
       id: `#D${String(o.number).padStart(3, "0")}`,
+      orderId: o.id,
+      number: o.number,
       customer: o.customer?.name || "Cliente",
-      address: o.addressSnapshot ? `${o.addressSnapshot.street}, ${o.addressSnapshot.number} — ${o.addressSnapshot.neighborhood}` : "",
+      address: o.addressSnapshot
+        ? `${o.addressSnapshot.street}, ${o.addressSnapshot.number} — ${o.addressSnapshot.neighborhood}`
+        : "",
       phone: o.customer?.phone || "",
-      status: o.status === "received" ? "preparando" : o.status === "preparing" ? "preparando" : o.status === "ready" ? "em_rota" : o.status === "delivering" ? "em_rota" : o.status === "delivered" ? "entregue" : o.status,
-      driver: "",
-      time: o.estimatedDelivery ? `~${Math.round((new Date(o.estimatedDelivery).getTime() - Date.now()) / 60000)} min` : "",
+      status: o.status, // exact DB status: received | preparing | ready | delivering | delivered | cancelled
+      total: parseFloat(o.total).toFixed(2),
+      time: o.estimatedDelivery
+        ? `~${Math.max(0, Math.round((new Date(o.estimatedDelivery).getTime() - Date.now()) / 60000))} min`
+        : "",
+      updatedAt: o.updatedAt.toISOString(),
     }));
 
-    const preparing = deliveries.filter(d => d.status === "preparando").length;
-    const inRoute = deliveries.filter(d => d.status === "em_rota").length;
-    const delivered = deliveries.filter(d => d.status === "entregue").length;
+    const preparing = deliveries.filter(d => d.status === "received" || d.status === "preparing").length;
+    const inRoute = deliveries.filter(d => d.status === "ready" || d.status === "delivering").length;
+    const delivered = deliveries.filter(d => d.status === "delivered").length;
 
     return new Response(JSON.stringify({ deliveries, stats: { preparing, inRoute, delivered } }), {
       status: 200, headers: { "content-type": "application/json" },

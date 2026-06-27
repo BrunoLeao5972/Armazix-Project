@@ -145,7 +145,6 @@ function PublicStorefrontPage() {
       lojaId: store?.id || "",
       logoUrl: store?.logoUrl || "",
       bannerUrl: store?.bannerUrl || "",
-      bannerMobileUrl: store?.bannerMobileUrl || "",
       corPrimaria: store?.primaryColor || "#00C853",
       corFundo: store?.backgroundColor || "#ffffff",
       corTextos: store?.textColor || "#0f172a",
@@ -156,7 +155,7 @@ function PublicStorefrontPage() {
       destacarEstoqueBaixo: store?.highlightLowStock === true,
     }),
     [
-      store?.backgroundColor, store?.bannerMobileUrl, store?.bannerUrl,
+      store?.backgroundColor, store?.bannerUrl, store?.banners,
       store?.highlightLowStock, store?.id, store?.logoUrl, store?.phone,
       store?.primaryColor, store?.showPrice, store?.textColor,
       store?.whatsappOrderEnabled, store?.whatsappPhone,
@@ -206,11 +205,9 @@ function PublicStorefrontPage() {
     : null;
 
   // ── Display modes ────────────────────────────────────────────────
-  // State 1: Todos (no category, no search)
+  // State 1: Todos (no category, no search) → seções por analítica
   const inTodosMode = !selectedAnalyticId && !selectedChildId && !query.trim();
-  // State 2: analítica selecionada, sem filho e sem busca → seções por filho
-  const inAnalyticMode = !!selectedAnalyticId && !selectedChildId && !query.trim();
-  // State 3: filho selecionado OU busca ativa → grid único
+  // State 2: qualquer filtro ativo → grade única (pai + filhos + sub-pills)
 
   // ── useMemos de produtos ─────────────────────────────────────────
 
@@ -240,27 +237,7 @@ function PublicStorefrontPage() {
       .filter((s) => s.products.length > 0);
   }, [analyticCategories, categories, products, priceMin, priceMax]);
 
-  // Estado 2: uma seção por categoria filha quando analítica selecionada
-  const analyticSections = useMemo(() => {
-    if (!selectedAnalyticId) return [];
-    const minP = priceMin ? parseFloat(priceMin) : null;
-    const maxP = priceMax ? parseFloat(priceMax) : null;
-    return analyticChildren
-      .map((child) => {
-        const childProds = products
-          .filter((p) => p.active !== false && p.categoryId === child.id)
-          .filter((p) => {
-            const price = parseFloat(p.price);
-            if (minP !== null && price < minP) return false;
-            if (maxP !== null && price > maxP) return false;
-            return true;
-          });
-        return { child, products: childProds };
-      })
-      .filter((s) => s.products.length > 0);
-  }, [selectedAnalyticId, analyticChildren, products, priceMin, priceMax]);
-
-  // Estado 3: grid único (filho selecionado ou busca)
+  // Estado 2+3: grade única — pai + filhos (visibleProducts já inclui ambos)
   const visibleProducts = useMemo(() => {
     const q = query.trim().toLowerCase();
     const minP = priceMin ? parseFloat(priceMin) : null;
@@ -490,8 +467,13 @@ function PublicStorefrontPage() {
       <main className="max-w-7xl mx-auto pb-24 lg:pb-10">
         {/* Banner */}
         <HeroCarousel
-          bannerUrl={configuracaoVitrine.bannerUrl}
-          bannerMobileUrl={configuracaoVitrine.bannerMobileUrl}
+          banners={
+            store?.banners?.length
+              ? store.banners
+              : configuracaoVitrine.bannerUrl
+                ? [{ imageUrl: configuracaoVitrine.bannerUrl }]
+                : []
+          }
           storeName={store?.name}
         />
 
@@ -618,7 +600,7 @@ function PublicStorefrontPage() {
                     </>
                   )}
                 </nav>
-                {!inAnalyticMode && (
+                {!inTodosMode && (
                   <span className="text-xs text-slate-400 shrink-0 ml-2">
                     {visibleProducts.length} produto{visibleProducts.length !== 1 ? "s" : ""}
                   </span>
@@ -677,12 +659,23 @@ function PublicStorefrontPage() {
                   </div>
                 )
 
-            ) : inAnalyticMode ? (
-              /* ── Estado 2: Analítica selecionada — seções por filho ── */
-              <div className="space-y-6">
-                {/* Pills das categorias filhas */}
-                {analyticChildren.length > 0 && (
+            ) : (
+              /* ── Estado 2+3: grade única — pai + todas as subcategorias ── */
+              <div className="space-y-4">
+                {/* Sub-pills de filtragem por subcategoria (desktop e mobile) */}
+                {selectedAnalyticId && analyticChildren.length > 0 && (
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => selectChild(null)}
+                      className="h-8 px-3.5 rounded-full text-xs font-semibold border transition-colors"
+                      style={
+                        !selectedChildId
+                          ? { backgroundColor: primaryColor, borderColor: primaryColor, color: "white" }
+                          : { backgroundColor: "white", borderColor: "rgb(203, 213, 225)", color: "rgb(71, 85, 105)" }
+                      }
+                    >
+                      Todos
+                    </button>
                     {analyticChildren.map((child) => {
                       const isActive = selectedChildId === child.id;
                       return (
@@ -703,57 +696,15 @@ function PublicStorefrontPage() {
                     })}
                   </div>
                 )}
-
-                {/* Seções por categoria filha */}
-                {analyticSections.length === 0
-                  ? emptyState("Nenhum produto nesta categoria", "Tente outro departamento ou ajuste os filtros.")
+                {visibleProducts.length === 0
+                  ? emptyState("Nenhum produto encontrado", "Tente ajustar a busca ou os filtros.")
                   : (
-                    <div className="space-y-10">
-                      {analyticSections.map(({ child, products: childProds }) => (
-                        <section key={child.id} className="border-t border-slate-100 pt-6 first:border-0 first:pt-0">
-                          {/* Header da seção filha */}
-                          <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-sm font-bold text-[var(--cor-texto)] flex items-center gap-2">
-                              {child.emoji && !/^[a-z]/i.test(child.emoji) && (
-                                <span className="text-lg leading-none">{child.emoji}</span>
-                              )}
-                              {child.name}
-                              <span className="text-slate-400 text-xs font-normal">
-                                ({childProds.length} produto{childProds.length !== 1 ? "s" : ""})
-                              </span>
-                            </h3>
-                            {childProds.length > 8 && (
-                              <button
-                                onClick={() => selectChild(child.id)}
-                                className="text-xs font-semibold flex items-center gap-0.5 hover:underline shrink-0"
-                                style={{ color: primaryColor }}
-                              >
-                                Ver todos
-                                <ChevronRight className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Grid (máx 8) */}
-                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {childProds.slice(0, 8).map(renderCard)}
-                          </div>
-                        </section>
-                      ))}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {visibleProducts.map(renderCard)}
                     </div>
                   )
                 }
               </div>
-
-            ) : (
-              /* ── Estado 3: filho selecionado ou busca — grid único ── */
-              visibleProducts.length === 0
-                ? emptyState("Nenhum produto encontrado", "Tente ajustar a busca ou os filtros.")
-                : (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {visibleProducts.map(renderCard)}
-                  </div>
-                )
             )}
           </div>
         </div>

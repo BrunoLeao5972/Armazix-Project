@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { UploadCloud, X } from "lucide-react";
 
-type OutputFormat = "image/jpeg" | "image/png";
+type OutputFormat = "image/jpeg" | "image/png" | "image/webp";
 
 async function fileToDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -59,16 +59,17 @@ async function cropToBlob(opts: {
     outputHeight
   );
 
+  // WebP and JPEG both accept quality; PNG ignores it
+  const quality = opts.format !== "image/png" ? (opts.quality ?? 0.85) : undefined;
   const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, opts.format, opts.format === "image/jpeg" ? opts.quality ?? 0.9 : undefined)
+    canvas.toBlob(resolve, opts.format, quality)
   );
   if (!blob) throw new Error("Falha ao gerar imagem final");
   return blob;
 }
 
 function approxEqualRatio(a: number, b: number): boolean {
-  const diff = Math.abs(a - b);
-  return diff <= 0.02;
+  return Math.abs(a - b) <= 0.02;
 }
 
 export function ImageUploadCrop(props: {
@@ -99,8 +100,7 @@ export function ImageUploadCrop(props: {
   const boxClass = useMemo(() => {
     const base =
       "relative rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors overflow-hidden";
-    const focus = dragOver ? " ring-2 ring-primary/30 border-primary/40" : "";
-    return base + focus;
+    return base + (dragOver ? " ring-2 ring-primary/30 border-primary/40" : "");
   }, [dragOver]);
 
   const clearPending = () => {
@@ -147,7 +147,16 @@ export function ImageUploadCrop(props: {
         return;
       }
 
-      const dataUrl = await fileToDataUrl(file);
+      // Convert to the target format (including WebP) via canvas even without crop
+      const blob = await cropToBlob({
+        imageSrc: objectUrl,
+        crop: { x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight },
+        targetWidth: props.targetWidth,
+        targetHeight: props.targetHeight,
+        format: props.outputFormat,
+        quality: 0.85,
+      });
+      const dataUrl = await fileToDataUrl(blob);
       props.onChange(dataUrl);
       URL.revokeObjectURL(objectUrl);
     } catch {
@@ -181,7 +190,7 @@ export function ImageUploadCrop(props: {
         targetWidth: props.targetWidth,
         targetHeight: props.targetHeight,
         format: props.outputFormat,
-        quality: 0.9,
+        quality: 0.85,
       });
       const dataUrl = await fileToDataUrl(blob);
       props.onChange(dataUrl);
@@ -205,14 +214,8 @@ export function ImageUploadCrop(props: {
 
       <div
         className={boxClass}
-        onDragEnter={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
+        onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
       >
@@ -312,4 +315,3 @@ export function ImageUploadCrop(props: {
     </div>
   );
 }
-

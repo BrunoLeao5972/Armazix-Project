@@ -4,10 +4,11 @@ import { api } from "@/lib/api-client";
 import {
   Search, Plus, Minus, Trash2, CreditCard, Banknote, Smartphone,
   X, ShoppingCart, Percent, Loader2, ArrowDownCircle, ArrowUpCircle,
-  Tag, CheckCircle2, Package,
+  Tag, CheckCircle2, Package, QrCode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { type PaymentMethodConfig, DEFAULT_PAYMENT_METHODS } from "@/lib/store-context";
 
 export const Route = createFileRoute("/admin/pdv")({
   component: PDVPage,
@@ -96,29 +97,39 @@ function ModalMovCaixa({
   );
 }
 
+const METHOD_ICONS: Record<string, React.ElementType> = {
+  cash: Banknote, pix: QrCode, card: CreditCard, debit: CreditCard, mercadopago: Smartphone,
+};
+
 // ─── Modal de Pagamento ───────────────────────────
 function ModalPagamento({
   total, subtotal, discountValue, discount,
-  submitting, orderNumber, onClose, onFinalize, onNovaNota,
+  submitting, orderNumber, paymentConfig,
+  onClose, onFinalize, onNovaNota,
 }: {
   total: number; subtotal: number; discountValue: number; discount: number;
   submitting: boolean; orderNumber: number | null;
+  paymentConfig: PaymentMethodConfig[];
   onClose: () => void;
-  onFinalize: (method: string) => void;
+  onFinalize: (method: string, installments: number) => void;
   onNovaNota: () => void;
 }) {
   const [method, setMethod] = useState<string | null>(null);
+  const [installments, setInstallments] = useState(1);
   const [troco, setTroco] = useState("");
 
-  const methods = [
-    { key: "pix",   label: "PIX",       icon: Smartphone },
-    { key: "card",  label: "Cartão",    icon: CreditCard },
-    { key: "cash",  label: "Dinheiro",  icon: Banknote   },
-  ];
+  const methods = paymentConfig.filter(m => m.enabled && m.key !== "mercadopago");
+  const selectedConfig = paymentConfig.find(m => m.key === method);
 
   const trocoCalc = method === "cash" && troco
     ? Math.max(parseFloat(troco.replace(",", ".")) - total, 0)
     : null;
+
+  const handleMethodChange = (key: string) => {
+    setMethod(key);
+    setInstallments(1);
+    setTroco("");
+  };
 
   if (orderNumber !== null) {
     return (
@@ -174,19 +185,45 @@ function ModalPagamento({
           {/* Formas de pagamento */}
           <div>
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Forma de Pagamento</p>
-            <div className="grid grid-cols-3 gap-2">
-              {methods.map(m => (
-                <button key={m.key} onClick={() => setMethod(m.key)}
-                  className={`flex flex-col items-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-all ${
-                    method === m.key
-                      ? "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-100"
-                      : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
-                  }`}>
-                  <m.icon className="w-5 h-5" />{m.label}
-                </button>
-              ))}
-            </div>
+            {methods.length === 0 ? (
+              <p className="text-xs text-slate-400">Nenhuma forma ativa. Configure em Configurações → Pagamentos.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {methods.map(m => {
+                  const Icon = METHOD_ICONS[m.key] ?? CreditCard;
+                  return (
+                    <button key={m.key} onClick={() => handleMethodChange(m.key)}
+                      className={`flex flex-col items-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-all ${
+                        method === m.key
+                          ? "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-100"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
+                      }`}>
+                      <Icon className="w-5 h-5" />{m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
+
+          {/* Seletor de parcelas (cartão) */}
+          {method && selectedConfig && selectedConfig.maxInstallments > 1 && (
+            <div>
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Parcelamento</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {Array.from({ length: selectedConfig.maxInstallments }, (_, i) => i + 1).map(n => (
+                  <button key={n} onClick={() => setInstallments(n)}
+                    className={`py-2 rounded-lg text-xs font-semibold border transition-all ${
+                      installments === n
+                        ? "bg-emerald-500 text-white border-emerald-500"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
+                    }`}>
+                    {n === 1 ? `À vista — ${fmtBRL(total)}` : `${n}x — ${fmtBRL(total / n)}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Campo troco se dinheiro */}
           {method === "cash" && (
@@ -205,7 +242,7 @@ function ModalPagamento({
         </div>
 
         <div className="px-5 pb-5">
-          <button onClick={() => method && onFinalize(method)}
+          <button onClick={() => method && onFinalize(method, installments)}
             disabled={!method || submitting || (method === "cash" && !!troco && parseFloat(troco.replace(",", ".")) < total)}
             className="w-full py-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-lg flex items-center justify-center gap-2 transition-colors shadow-lg shadow-emerald-100">
             {submitting
@@ -228,18 +265,32 @@ function PDVPage() {
   const [modal, setModal]               = useState<ModalType>(null);
   const [submitting, setSubmitting]     = useState(false);
   const [orderNumber, setOrderNumber]   = useState<number | null>(null);
+  const [paymentConfig, setPaymentConfig] = useState<PaymentMethodConfig[]>(DEFAULT_PAYMENT_METHODS);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const storeId = localStorage.getItem("storeId");
-    if (storeId) fetchProducts(storeId);
+    if (storeId) {
+      fetchProducts(storeId);
+      fetchPaymentConfig(storeId);
+    }
   }, []);
 
   const fetchProducts = async (storeId: string) => {
     try {
       const res = await fetch(`/api/products/list?storeId=${storeId}`);
-      const data = await res.json();
+      const data = await res.json() as { products?: Product[] };
       if (res.ok) setProducts(data.products || []);
+    } catch {}
+  };
+
+  const fetchPaymentConfig = async (storeId: string) => {
+    try {
+      const res = await fetch(`/api/store/get?id=${storeId}`);
+      const data = await res.json() as { store?: { paymentMethodsConfig?: PaymentMethodConfig[] } };
+      if (res.ok && data.store?.paymentMethodsConfig?.length) {
+        setPaymentConfig(data.store.paymentMethodsConfig);
+      }
     } catch {}
   };
 
@@ -283,7 +334,7 @@ function PDVPage() {
   const total = subtotal - discountValue;
   const totalQty = cart.reduce((s, i) => s + i.qty, 0);
 
-  const handleFinalize = async (method: string) => {
+  const handleFinalize = async (method: string, installments: number) => {
     if (submitting) return;
     const storeId = localStorage.getItem("storeId");
     if (!storeId) return;
@@ -298,12 +349,13 @@ function PDVPage() {
         total: (item.price * item.qty).toFixed(2),
       }));
       const res = await api.post("/api/orders/create", {
-        storeId, type: "pickup", paymentMethod: method, items,
-        subtotal: subtotal.toFixed(2), deliveryFee: "0",
+        storeId, type: "pickup", paymentMethod: method,
+        installments: installments > 1 ? installments : undefined,
+        items, subtotal: subtotal.toFixed(2), deliveryFee: "0",
         discount: discountValue.toFixed(2), total: total.toFixed(2),
       });
-      const data = await res.json();
-      if (res.ok && data.success) setOrderNumber(data.order.number);
+      const data = await res.json() as { success?: boolean; order?: { number: number } };
+      if (res.ok && data.success && data.order) setOrderNumber(data.order.number);
     } catch {} finally { setSubmitting(false); }
   };
 
@@ -523,6 +575,7 @@ function PDVPage() {
           total={total} subtotal={subtotal}
           discountValue={discountValue} discount={discount}
           submitting={submitting} orderNumber={orderNumber}
+          paymentConfig={paymentConfig}
           onClose={() => { if (!submitting && orderNumber === null) setModal(null); }}
           onFinalize={handleFinalize}
           onNovaNota={handleNovaNota}

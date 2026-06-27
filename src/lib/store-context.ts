@@ -1,5 +1,21 @@
 // Shared types and helpers for the public storefront
 
+export interface PaymentMethodConfig {
+  key: string;            // "cash" | "pix" | "card" | "debit" | "mercadopago" | "custom_*"
+  label: string;
+  enabled: boolean;
+  maxInstallments: number; // 1 = à vista only
+  payAtDelivery?: boolean; // if false → customer must pay online; mercadopago ignores this
+}
+
+export const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [
+  { key: "cash",        label: "Dinheiro",          enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
+  { key: "pix",         label: "PIX",               enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
+  { key: "card",        label: "Cartão de Crédito", enabled: true,  maxInstallments: 12, payAtDelivery: true  },
+  { key: "debit",       label: "Cartão de Débito",  enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
+  { key: "mercadopago", label: "Mercado Pago",       enabled: false, maxInstallments: 1                       },
+];
+
 export interface StoreBanner {
   id: string;
   title: string;
@@ -39,6 +55,9 @@ export interface StorePublicData {
   highlightLowStock: boolean | null;
   rating: string | null;
   active: boolean | null;
+  mpPublicKey: string | null;
+  paymentMethodsConfig: PaymentMethodConfig[] | null;
+  deliveryPaymentEnabled: boolean | null;
   banners: StoreBanner[];
 }
 
@@ -46,7 +65,7 @@ export interface ConfiguracaoVitrine {
   lojaId: string;
   logoUrl: string;
   bannerUrl: string;
-  bannerMobileUrl: string;
+  bannerMobileUrl?: string;
   corPrimaria: string;
   corFundo: string;
   corTextos: string;

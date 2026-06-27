@@ -70,8 +70,7 @@ interface StoreData {
   email: string;
   primaryColor: string;
   logoUrl?: string;
-  bannerUrl?: string;
-  bannerMobileUrl?: string;
+  banners?: Array<{ imageUrl: string | null; position: number | null }>;
   backgroundColor?: string;
   textColor?: string;
   showPrice?: boolean;
@@ -106,8 +105,8 @@ function SettingsPage() {
   const [email, setEmail] = useState("");
   const [primaryColor, setPrimaryColor] = useState("#00C853");
   const [logoUrl, setLogoUrl] = useState("");
-  const [bannerUrl, setBannerUrl] = useState("");
-  const [bannerMobileUrl, setBannerMobileUrl] = useState("");
+  const [bannerImages, setBannerImages] = useState<string[]>([]);
+  const [bannersSaving, setBannersSaving] = useState(false);
   const [backgroundColor, setBackgroundColor] = useState("#ffffff");
   const [textColor, setTextColor] = useState("#0f172a");
   const [showPrice, setShowPrice] = useState(true);
@@ -145,9 +144,25 @@ function SettingsPage() {
 
   // Mercado Pago states
   const [mpToken, setMpToken] = useState("");
+  const [mpPublicKey, setMpPublicKey] = useState("");
   const [mpTokenSaving, setMpTokenSaving] = useState(false);
   const [mpTokenSuccess, setMpTokenSuccess] = useState(false);
   const [mpTokenError, setMpTokenError] = useState("");
+
+  // Payment methods config
+  const [paymentMethodsConfig, setPaymentMethodsConfig] = useState<Array<{
+    key: string; label: string; enabled: boolean; maxInstallments: number; payAtDelivery?: boolean;
+  }>>([
+    { key: "cash",        label: "Dinheiro",          enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
+    { key: "pix",         label: "PIX",               enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
+    { key: "card",        label: "Cartão de Crédito", enabled: true,  maxInstallments: 12, payAtDelivery: true  },
+    { key: "debit",       label: "Cartão de Débito",  enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
+    { key: "mercadopago", label: "Mercado Pago",       enabled: false, maxInstallments: 1                       },
+  ]);
+  const [deliveryPaymentEnabled, setDeliveryPaymentEnabled] = useState(true);
+  const [newMethodLabel, setNewMethodLabel] = useState("");
+  const [pmcSaving, setPmcSaving] = useState(false);
+  const [pmcSuccess, setPmcSuccess] = useState(false);
 
   // User profile states
   const [profileName, setProfileName] = useState("");
@@ -175,19 +190,36 @@ function SettingsPage() {
     setMpTokenSuccess(false);
     setMpTokenError("");
     try {
-      const res = await api.post("/api/payments/mp-token", { storeId: store.id, accessToken: mpToken });
-      const data = await res.json();
+      const res = await api.post("/api/payments/mp-token", {
+        storeId: store.id,
+        accessToken: mpToken,
+        publicKey: mpPublicKey.trim() || undefined,
+      });
+      const data = await res.json() as { error?: string };
       if (res.ok) {
         setMpTokenSuccess(true);
         setTimeout(() => setMpTokenSuccess(false), 3000);
       } else {
-        setMpTokenError(data.error || "Erro ao salvar token");
+        setMpTokenError(data.error || "Erro ao salvar credenciais");
       }
     } catch {
       setMpTokenError("Erro de conexão");
     } finally {
       setMpTokenSaving(false);
     }
+  };
+
+  const savePaymentConfig = async () => {
+    if (!store) return;
+    setPmcSaving(true);
+    setPmcSuccess(false);
+    try {
+      const res = await api.post("/api/store/update", { paymentMethodsConfig, deliveryPaymentEnabled });
+      if (res.ok) {
+        setPmcSuccess(true);
+        setTimeout(() => setPmcSuccess(false), 3000);
+      }
+    } catch {} finally { setPmcSaving(false); }
   };
 
   useEffect(() => {
@@ -221,14 +253,23 @@ function SettingsPage() {
         setEmail(data.store.email || "");
         setPrimaryColor(data.store.primaryColor || "#00C853");
         setLogoUrl(data.store.logoUrl || "");
-        setBannerUrl(data.store.bannerUrl || "");
-        setBannerMobileUrl(data.store.bannerMobileUrl || "");
+        if (data.store.banners && data.store.banners.length > 0) {
+          setBannerImages(
+            [...data.store.banners]
+              .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+              .map((b: { imageUrl: string | null }) => b.imageUrl || "")
+              .filter(Boolean)
+          );
+        }
         setBackgroundColor(data.store.backgroundColor || "#ffffff");
         setTextColor(data.store.textColor || "#0f172a");
         setShowPrice(data.store.showPrice !== false);
         setWhatsappOrderEnabled(data.store.whatsappOrderEnabled === true);
         setWhatsappPhone(data.store.whatsappPhone || data.store.phone || "");
         setHighlightLowStock(data.store.highlightLowStock === true);
+        if (data.store.mpPublicKey) setMpPublicKey(data.store.mpPublicKey);
+        if (data.store.paymentMethodsConfig?.length) setPaymentMethodsConfig(data.store.paymentMethodsConfig);
+        if (data.store.deliveryPaymentEnabled !== undefined) setDeliveryPaymentEnabled(data.store.deliveryPaymentEnabled !== false);
         if (data.store.address) {
           setAddressCep(data.store.address.zip || "");
           setAddressStreet(data.store.address.street || "");
@@ -303,8 +344,6 @@ function SettingsPage() {
       const res = await api.post("/api/store/update", {
         storeId: store.id,
         logoUrl: logoUrl || null,
-        bannerUrl: bannerUrl || null,
-        bannerMobileUrl: bannerMobileUrl || null,
         primaryColor,
         backgroundColor,
         textColor,
@@ -454,16 +493,18 @@ function SettingsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4 sm:grid-cols-8 rounded-xl">
-          <TabsTrigger value="geral" className="rounded-lg">Geral</TabsTrigger>
-          <TabsTrigger value="horarios" className="rounded-lg">Horários</TabsTrigger>
-          <TabsTrigger value="personalizacao" className="rounded-lg">Personalizar</TabsTrigger>
-          <TabsTrigger value="pagamentos" className="rounded-lg">Pagamentos</TabsTrigger>
-          <TabsTrigger value="senha" className="rounded-lg">Senha</TabsTrigger>
-          <TabsTrigger value="perfil" className="rounded-lg">Perfil</TabsTrigger>
-          <TabsTrigger value="planos" className="rounded-lg">Planos</TabsTrigger>
-          <TabsTrigger value="auditoria" className="rounded-lg">Auditoria</TabsTrigger>
-        </TabsList>
+        {/* Scrollable tab bar: fills full width on desktop, scrolls on mobile */}
+        <div className="w-full overflow-x-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
+          <TabsList className="flex w-full min-w-max h-auto justify-start items-center gap-1 p-1.5 rounded-2xl">
+            <TabsTrigger value="geral"          className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Geral</TabsTrigger>
+            <TabsTrigger value="horarios"       className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Horários</TabsTrigger>
+            <TabsTrigger value="personalizacao" className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Personalização</TabsTrigger>
+            <TabsTrigger value="pagamentos"     className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Formas de pagamento</TabsTrigger>
+            <TabsTrigger value="perfil"         className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Perfil</TabsTrigger>
+            <TabsTrigger value="planos"         className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Planos</TabsTrigger>
+            <TabsTrigger value="auditoria"      className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Auditoria</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="geral" className="mt-6 space-y-6">
           {/* Store Info */}
@@ -794,29 +835,87 @@ function SettingsPage() {
                   outputFormat="image/png"
                 />
 
-                <ImageUploadCrop
-                  label="Banner principal (Desktop)"
-                  value={bannerUrl}
-                  onChange={setBannerUrl}
-                  recommendedText="Tamanho recomendado: 1920x450px (Proporção 64:15)"
-                  aspect={64 / 15}
-                  targetWidth={1920}
-                  targetHeight={450}
-                  maxBytes={3 * 1024 * 1024}
-                  outputFormat="image/jpeg"
-                />
+                {/* Multi-banner — até 5 banners, salvos como WebP */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-medium">Banners da loja</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{bannerImages.length}/5 banners</span>
+                      {bannersSaving && <span className="text-xs text-muted-foreground">Salvando...</span>}
+                    </div>
+                  </div>
 
-                <ImageUploadCrop
-                  label="Banner mobile"
-                  value={bannerMobileUrl}
-                  onChange={setBannerMobileUrl}
-                  recommendedText="Tamanho recomendado: 800x600px (Proporção 4:3)"
-                  aspect={4 / 3}
-                  targetWidth={800}
-                  targetHeight={600}
-                  maxBytes={3 * 1024 * 1024}
-                  outputFormat="image/jpeg"
-                />
+                  <div className="space-y-4">
+                    {bannerImages.map((img, idx) => (
+                      <div key={idx} className="relative">
+                        <div className="text-xs text-muted-foreground mb-1">Banner {idx + 1}</div>
+                        <ImageUploadCrop
+                          label=""
+                          value={img}
+                          onChange={(val) => {
+                            const updated = [...bannerImages];
+                            updated[idx] = val;
+                            setBannerImages(updated);
+                          }}
+                          recommendedText="Proporção 16:5 — converte para WebP"
+                          aspect={16 / 5}
+                          targetWidth={1600}
+                          targetHeight={500}
+                          maxBytes={4 * 1024 * 1024}
+                          outputFormat="image/webp"
+                        />
+                        {img && (
+                          <button
+                            type="button"
+                            onClick={() => setBannerImages((prev) => prev.filter((_, i) => i !== idx))}
+                            className="absolute top-0 right-0 text-xs text-destructive hover:underline"
+                          >
+                            Remover banner
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {bannerImages.length < 5 && (
+                    <button
+                      type="button"
+                      onClick={() => setBannerImages((prev) => [...prev, ""])}
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      + Adicionar banner
+                    </button>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 rounded-xl text-sm"
+                      disabled={bannersSaving}
+                      onClick={async () => {
+                        if (!store) return;
+                        setBannersSaving(true);
+                        try {
+                          const res = await api.post("/api/banners/save", {
+                            imageUrls: bannerImages.filter(Boolean),
+                          });
+                          if (!res.ok) {
+                            const d = await res.json() as { error?: string };
+                            setVitrineError(d.error || "Erro ao salvar banners");
+                          }
+                        } catch {
+                          setVitrineError("Erro de conexão ao salvar banners");
+                        } finally {
+                          setBannersSaving(false);
+                        }
+                      }}
+                    >
+                      {bannersSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar banners"}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">Banners são salvos separadamente das demais configurações</span>
+                  </div>
+                </div>
               </div>
 
               <Separator />
@@ -902,109 +1001,222 @@ function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="senha" className="mt-6 space-y-6">
-          <Card className="rounded-2xl border-border/50 shadow-soft">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Shield className="w-4 h-4" />
-                Redefinir Senha
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Senha atual</Label>
-                <Input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="h-11 rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Nova senha</Label>
-                <Input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Mínimo 8 caracteres"
-                  className="h-11 rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Confirmar nova senha</Label>
-                <Input
-                  type="password"
-                  value={confirmNewPassword}
-                  onChange={(e) => setConfirmNewPassword(e.target.value)}
-                  placeholder="Repita a nova senha"
-                  className="h-11 rounded-xl"
-                />
-              </div>
-              {pwError && <p className="text-sm text-red-500">{pwError}</p>}
-              {pwSuccess && (
-                <div className="flex items-center gap-2 text-sm text-green-600">
-                  <Check className="w-4 h-4" />
-                  {pwSuccess}
-                </div>
-              )}
-              <Button
-                onClick={handlePasswordChange}
-                disabled={pwSaving || !currentPassword || !newPassword || !confirmNewPassword}
-                className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
-              >
-                {pwSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Alterar senha"}
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
+        {/* ── Formas de Pagamento ────────────────────────────────────── */}
         <TabsContent value="pagamentos" className="mt-6 space-y-6">
+
+          {/* Card principal: métodos */}
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <CreditCard className="w-4 h-4" />
-                Mercado Pago — Checkout Pro
+                Formas de Pagamento
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-sm text-blue-700 dark:text-blue-300 space-y-1">
-                <p className="font-medium">Como obter o Access Token:</p>
-                <ol className="list-decimal list-inside space-y-0.5 text-xs opacity-90">
-                  <li>Acesse <span className="font-mono">mercadopago.com.br</span> → Sua conta → Ferramentas de integração</li>
-                  <li>Vá em <strong>Credenciais</strong> e copie o <strong>Access Token de produção</strong></li>
-                  <li>Cole abaixo e salve</li>
-                </ol>
+            <CardContent className="space-y-0 pb-5">
+
+              {/* Métodos padrão + custom */}
+              {paymentMethodsConfig.map((m, idx) => (
+                <div key={m.key} className="flex items-center justify-between gap-4 py-4 border-b border-border/40 last:border-0">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{m.label}</p>
+                    {m.key === "mercadopago" && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Pago online — requer credenciais abaixo</p>
+                    )}
+                    {m.key.startsWith("custom_") && (
+                      <p className="text-xs text-muted-foreground mt-0.5">Forma personalizada</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {m.key.startsWith("custom_") && (
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethodsConfig(prev => prev.filter((_, i) => i !== idx))}
+                        className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                        aria-label="Remover"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <Switch
+                      checked={m.enabled}
+                      onCheckedChange={(v) => setPaymentMethodsConfig(prev =>
+                        prev.map((x, i) => i === idx ? { ...x, enabled: v } : x)
+                      )}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              {/* Toggle global — Pagamento na entrega */}
+              <div className="mt-2 mb-1 rounded-xl bg-secondary/50 border border-border/60 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold">Habilitar pagamento na entrega</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Quando ativo, clientes podem pagar ao receber o pedido (Dinheiro, PIX, Cartão).
+                      Quando inativo, o pagamento deve ser feito online antes da confirmação.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={deliveryPaymentEnabled}
+                    onCheckedChange={setDeliveryPaymentEnabled}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label>Access Token</Label>
+
+              {/* Outras formas personalizadas */}
+              <div className="pt-5 space-y-2 border-t border-border/30 mt-4">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Outras formas de pagamento</p>
                 <div className="flex gap-2">
                   <Input
-                    type="password"
-                    value={mpToken}
-                    onChange={(e) => { setMpToken(e.target.value); setMpTokenError(""); }}
-                    placeholder="APP_USR-... ou TEST-..."
-                    className="h-11 rounded-xl font-mono text-sm"
+                    value={newMethodLabel}
+                    onChange={(e) => setNewMethodLabel(e.target.value)}
+                    placeholder="Ex: Vale refeição, Cheque..."
+                    className="h-9 rounded-xl text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newMethodLabel.trim()) {
+                        setPaymentMethodsConfig(prev => [...prev, {
+                          key: `custom_${Date.now()}`,
+                          label: newMethodLabel.trim(),
+                          enabled: true,
+                          maxInstallments: 1,
+                          payAtDelivery: true,
+                        }]);
+                        setNewMethodLabel("");
+                      }
+                    }}
                   />
                   <Button
-                    onClick={saveMpToken}
-                    disabled={mpTokenSaving || !mpToken}
-                    className="h-11 px-5 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow shrink-0"
+                    variant="outline"
+                    className="h-9 px-4 rounded-xl text-sm shrink-0"
+                    disabled={!newMethodLabel.trim()}
+                    onClick={() => {
+                      setPaymentMethodsConfig(prev => [...prev, {
+                        key: `custom_${Date.now()}`,
+                        label: newMethodLabel.trim(),
+                        enabled: true,
+                        maxInstallments: 1,
+                        payAtDelivery: true,
+                      }]);
+                      setNewMethodLabel("");
+                    }}
                   >
-                    {mpTokenSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : mpTokenSuccess ? <Check className="w-4 h-4" /> : "Salvar"}
+                    Adicionar
                   </Button>
                 </div>
-                {mpTokenError && <p className="text-xs text-destructive">{mpTokenError}</p>}
-                {mpTokenSuccess && <p className="text-xs text-green-600">Token salvo com sucesso!</p>}
+                <p className="text-[11px] text-muted-foreground">Pressione Enter ou clique em Adicionar</p>
               </div>
+
+              <div className="pt-5 flex items-center gap-3 border-t border-border/30 mt-4">
+                {pmcSuccess && (
+                  <div className="flex items-center gap-1.5 text-sm text-green-600">
+                    <CheckCircle2 className="w-4 h-4" /> Salvo!
+                  </div>
+                )}
+                <Button
+                  onClick={savePaymentConfig}
+                  disabled={pmcSaving}
+                  className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
+                >
+                  {pmcSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar formas de pagamento"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Card Mercado Pago credenciais */}
+          <Card className="rounded-2xl border-border/50 shadow-soft">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Zap className="w-4 h-4 text-blue-500" />
+                Mercado Pago — Credenciais
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+
+              {/* Guia visual */}
+              <div className="rounded-xl border border-blue-200 bg-blue-50/60 dark:bg-blue-950/30 dark:border-blue-900 p-4 space-y-3">
+                <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">Como encontrar suas credenciais</p>
+                <ol className="space-y-1.5 text-blue-700 dark:text-blue-400 text-xs list-none">
+                  <li className="flex items-start gap-2">
+                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[10px]">1</span>
+                    Acesse <span className="font-mono mx-1 bg-blue-100 dark:bg-blue-900 px-1 rounded">mercadopago.com.br</span> e faça login
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[10px]">2</span>
+                    Vá em <strong>Sua conta → Ferramentas de integração → Credenciais</strong>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[10px]">3</span>
+                    Copie a <strong>Public Key</strong> e o <strong>Access Token</strong> de <strong>produção</strong>
+                  </li>
+                </ol>
+              </div>
+
+              {/* Public Key */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Label className="text-sm font-medium">Public Key</Label>
+                  <Badge variant="secondary" className="text-[10px] rounded-full">Pública — segura para o frontend</Badge>
+                </div>
+                <Input
+                  type="text"
+                  value={mpPublicKey}
+                  onChange={(e) => setMpPublicKey(e.target.value)}
+                  placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  className="h-11 rounded-xl font-mono text-sm"
+                />
+                <p className="text-[11px] text-muted-foreground">Começa com <code className="bg-muted px-1 rounded">APP_USR-</code> ou <code className="bg-muted px-1 rounded">TEST-</code></p>
+              </div>
+
               <Separator />
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Como funciona</p>
+
+              {/* Access Token */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Label className="text-sm font-medium">Access Token</Label>
+                  <Badge className="text-[10px] rounded-full bg-amber-500/15 text-amber-700 border-0 hover:bg-amber-500/15">Privado — nunca compartilhe</Badge>
+                </div>
+                <Input
+                  type="password"
+                  value={mpToken}
+                  onChange={(e) => { setMpToken(e.target.value); setMpTokenError(""); }}
+                  placeholder="APP_USR-0000000000000000-000000-xxxxxxxx-000000000"
+                  className="h-11 rounded-xl font-mono text-sm"
+                />
+                <p className="text-[11px] text-muted-foreground">Armazenado de forma criptografada. Começa com <code className="bg-muted px-1 rounded">APP_USR-</code> (produção) ou <code className="bg-muted px-1 rounded">TEST-</code> (sandbox).</p>
+              </div>
+
+              {mpTokenError && (
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {mpTokenError}
+                </div>
+              )}
+              {mpTokenSuccess && (
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Credenciais salvas com sucesso!
+                </div>
+              )}
+
+              <Button
+                onClick={saveMpToken}
+                disabled={mpTokenSaving || !mpToken}
+                className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
+              >
+                {mpTokenSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar credenciais"}
+              </Button>
+
+              <Separator />
+
+              <div className="space-y-1.5">
+                <p className="text-sm font-medium">Como funciona o Checkout Pro</p>
                 <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
-                  <li>O cliente escolhe "Mercado Pago" no checkout</li>
-                  <li>É redirecionado para a página de pagamento do Mercado Pago</li>
+                  <li>O cliente escolhe "Mercado Pago" e é redirecionado para a página de pagamento</li>
                   <li>Aceita PIX, cartão de crédito/débito e boleto automaticamente</li>
                   <li>O pedido é confirmado via webhook após o pagamento</li>
+                  <li>Ative "Mercado Pago" na lista acima para disponibilizar no checkout</li>
                 </ul>
               </div>
             </CardContent>
@@ -1091,6 +1303,62 @@ function SettingsPage() {
                 className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
               >
                 {profileSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar perfil"}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Alterar Senha */}
+          <Card className="rounded-2xl border-border/50 shadow-soft">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Shield className="w-4 h-4" />
+                Alterar Senha
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Senha atual</Label>
+                <Input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="h-11 rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Nova senha</Label>
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Mínimo 8 caracteres"
+                  className="h-11 rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Confirmar nova senha</Label>
+                <Input
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  placeholder="Repita a nova senha"
+                  className="h-11 rounded-xl"
+                />
+              </div>
+              {pwError && <p className="text-sm text-red-500">{pwError}</p>}
+              {pwSuccess && (
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <Check className="w-4 h-4" />
+                  {pwSuccess}
+                </div>
+              )}
+              <Button
+                onClick={handlePasswordChange}
+                disabled={pwSaving || !currentPassword || !newPassword || !confirmNewPassword}
+                className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
+              >
+                {pwSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Alterar senha"}
               </Button>
             </CardContent>
           </Card>
@@ -2279,14 +2547,14 @@ function AuditoriaSection() {
 
       {/* Filtros */}
       <Card className="rounded-2xl border-border/50">
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+        <CardContent className="p-4 sm:p-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
             {/* Módulo */}
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Módulo</p>
               <div className="relative">
                 <select value={filterModulo} onChange={e => setFilterModulo(e.target.value as ModuloAudit | "TODOS")}
-                  className="w-full h-11 px-3 pr-8 text-sm rounded-xl bg-secondary/40 border border-input appearance-none focus:outline-none focus:ring-2 focus:ring-ring/30 cursor-pointer">
+                  className="w-full h-9 px-3 pr-8 text-sm rounded-xl bg-secondary/40 border border-input appearance-none focus:outline-none focus:ring-2 focus:ring-ring/30 cursor-pointer">
                   <option value="TODOS">Todos os Módulos</option>
                   {MODULOS_AUDIT.map(m => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
                 </select>
@@ -2295,24 +2563,24 @@ function AuditoriaSection() {
             </div>
 
             {/* Período */}
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Período</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <Input type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)}
-                  className="h-11 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+                  className="h-9 w-full rounded-xl text-sm bg-secondary/40 border-input" />
                 <Input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)}
-                  className="h-11 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+                  className="h-9 w-full rounded-xl text-sm bg-secondary/40 border-input" />
               </div>
             </div>
 
             {/* Busca */}
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Buscar</p>
               <div className="relative">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <Input value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Usuário ou ação..."
-                  className="pl-10 h-11 w-full rounded-xl text-sm bg-secondary/40 border-input" />
+                  className="pl-10 h-9 w-full rounded-xl text-sm bg-secondary/40 border-input" />
               </div>
             </div>
           </div>

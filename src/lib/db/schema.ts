@@ -45,6 +45,11 @@ export const stores = pgTable("stores", {
   whatsappPhone: varchar("whatsapp_phone", { length: 20 }),
   highlightLowStock: boolean("highlight_low_stock").default(false),
   mpAccessToken: text("mp_access_token"),
+  mpPublicKey: text("mp_public_key"),
+  paymentMethodsConfig: jsonb("payment_methods_config").$type<Array<{
+    key: string; label: string; enabled: boolean; maxInstallments: number; payAtDelivery?: boolean;
+  }>>(),
+  deliveryPaymentEnabled: boolean("delivery_payment_enabled").default(true),
   plan: varchar("plan", { length: 20 }).default("free"),
   planStatus: varchar("plan_status", { length: 20 }).default("active"),
   planExpiresAt: timestamp("plan_expires_at"),
@@ -273,6 +278,7 @@ export const orders = pgTable("orders", {
   deliveredAt: timestamp("delivered_at"),
   cancelledAt: timestamp("cancelled_at"),
   cancelReason: text("cancel_reason"),
+  installments: integer("installments").default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

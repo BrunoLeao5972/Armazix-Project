@@ -74,8 +74,8 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
     email?: string;
     primaryColor?: string;
     logoUrl?: string;
-    bannerUrl?: string;
-    bannerMobileUrl?: string;
+    paymentMethodsConfig?: Array<{ key: string; label: string; enabled: boolean; maxInstallments: number; payAtDelivery?: boolean }>;
+    deliveryPaymentEnabled?: boolean;
     backgroundColor?: string;
     textColor?: string;
     showPrice?: boolean;
@@ -126,8 +126,8 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
         email: body.email,
         primaryColor: body.primaryColor,
         logoUrl: body.logoUrl,
-        bannerUrl: body.bannerUrl,
-        bannerMobileUrl: body.bannerMobileUrl,
+        ...(body.paymentMethodsConfig !== undefined ? { paymentMethodsConfig: body.paymentMethodsConfig } : {}),
+        ...(body.deliveryPaymentEnabled !== undefined ? { deliveryPaymentEnabled: body.deliveryPaymentEnabled } : {}),
         backgroundColor: body.backgroundColor,
         textColor: body.textColor,
         showPrice: body.showPrice,
