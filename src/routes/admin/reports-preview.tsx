@@ -29,36 +29,11 @@ export const Route = createFileRoute("/admin/reports-preview")({
 // DADOS FICTÍCIOS
 // ============================================
 
-const MOCK_VENDAS = [
-  { id: "V-001", data: "02/06/2026", cliente: "João da Silva", produto: "Arroz Integral 5kg", qtd: 2, unit: 28.90, total: 57.80, vendedor: "Carlos", pagto: "Pix", status: "Concluída" },
-  { id: "V-002", data: "02/06/2026", cliente: "Maria Oliveira", produto: "Feijão Carioca 1kg", qtd: 5, unit: 8.50, total: 42.50, vendedor: "Carlos", pagto: "Débito", status: "Concluída" },
-  { id: "V-003", data: "02/06/2026", cliente: "Restaurante Bom Sabor", produto: "Azeite Extra Virgem 500ml", qtd: 10, unit: 45.00, total: 450.00, vendedor: "Ana", pagto: "Boleto", status: "Pendente" },
-  { id: "V-004", data: "02/06/2026", cliente: "Supermercado Central", produto: "Arroz Integral 5kg", qtd: 20, unit: 26.00, total: 520.00, vendedor: "Ana", pagto: "Transf.", status: "Concluída" },
-  { id: "V-005", data: "02/06/2026", cliente: "Pedro Costa", produto: "Macarrão 500g", qtd: 3, unit: 5.90, total: 17.70, vendedor: "Carlos", pagto: "Dinheiro", status: "Concluída" },
-  { id: "V-006", data: "01/06/2026", cliente: "João da Silva", produto: "Leite Integral 1L", qtd: 6, unit: 6.50, total: 39.00, vendedor: "Carlos", pagto: "Pix", status: "Concluída" },
-  { id: "V-007", data: "01/06/2026", cliente: "Maria Oliveira", produto: "Café Torrado 500g", qtd: 2, unit: 18.90, total: 37.80, vendedor: "Carlos", pagto: "Crédito", status: "Concluída" },
-  { id: "V-008", data: "01/06/2026", cliente: "Distribuidora Silva", produto: "Açúcar 1kg", qtd: 50, unit: 4.50, total: 225.00, vendedor: "Ana", pagto: "Boleto", status: "Concluída" },
-  { id: "V-009", data: "31/05/2026", cliente: "Padaria São José", produto: "Farinha de Trigo 1kg", qtd: 30, unit: 5.20, total: 156.00, vendedor: "Ana", pagto: "Transf.", status: "Concluída" },
-  { id: "V-010", data: "31/05/2026", cliente: "João da Silva", produto: "Óleo de Soja 900ml", qtd: 4, unit: 9.80, total: 39.20, vendedor: "Carlos", pagto: "Pix", status: "Concluída" },
-];
+const MOCK_VENDAS: { id: string; data: string; cliente: string; produto: string; qtd: number; unit: number; total: number; vendedor: string; pagto: string; status: string }[] = [];
 
-const MOCK_FLUXO_CAIXA = [
-  { data: "02/06/2026", historico: "1.01.01 - Vendas à Vista", tipo: "RECEITA", descricao: "Venda PDV Carlos", valor: 157.80, saldo: 1845.20 },
-  { data: "02/06/2026", historico: "2.01.01 - Custo Mercadorias", tipo: "DESPESA", descricao: "Compra fornecedor", valor: -450.00, saldo: 1395.20 },
-  { data: "02/06/2026", historico: "1.01.02 - Vendas a Prazo", tipo: "RECEITA", descricao: "Boleto cliente", valor: 520.00, saldo: 1915.20 },
-  { data: "01/06/2026", historico: "1.01.01 - Vendas à Vista", tipo: "RECEITA", descricao: "Venda PDV Carlos", valor: 301.80, saldo: 2217.00 },
-  { data: "01/06/2026", historico: "2.01.02 - Desp. Administrativas", tipo: "DESPESA", descricao: "Aluguel loja", valor: -2500.00, saldo: -283.00 },
-  { data: "31/05/2026", historico: "1.01.01 - Vendas à Vista", tipo: "RECEITA", descricao: "Transferência cliente", valor: 225.00, saldo: 1942.00 },
-];
+const MOCK_FLUXO_CAIXA: { data: string; historico: string; tipo: string; descricao: string; valor: number; saldo: number }[] = [];
 
-const MOCK_ESTOQUE = [
-  { codigo: "P001", produto: "Arroz Integral 5kg", categoria: "Grãos", estoque: 150, minimo: 50, status: "OK" },
-  { codigo: "P002", produto: "Feijão Carioca 1kg", categoria: "Grãos", estoque: 89, minimo: 30, status: "OK" },
-  { codigo: "P003", produto: "Azeite Extra Virgem", categoria: "Óleos", estoque: 45, minimo: 20, status: "OK" },
-  { codigo: "P004", produto: "Macarrão Espaguete", categoria: "Massas", estoque: 12, minimo: 25, status: "BAIXO" },
-  { codigo: "P005", produto: "Leite Integral 1L", categoria: "Laticínios", estoque: 200, minimo: 60, status: "OK" },
-  { codigo: "P006", produto: "Café Torrado 500g", categoria: "Bebidas", estoque: 8, minimo: 15, status: "BAIXO" },
-];
+const MOCK_ESTOQUE: { codigo: string; produto: string; categoria: string; estoque: number; minimo: number; status: string }[] = [];
 
 // ============================================
 // FUNÇÕES DE EXPORTAÇÃO

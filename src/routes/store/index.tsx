@@ -22,6 +22,7 @@ function StoreHome() {
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [categories, setCategories] = useState<StoreCategory[]>([]);
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const [activeSubCategoryId, setActiveSubCategoryId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { store, configuracaoVitrine, addToCart, toggleFavorite, favorites } = useStore();
 
@@ -37,12 +38,25 @@ function StoreHome() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, [store?.id]);
 
-  // Coleta o ID selecionado + todos os descendentes (recursivo, qualquer profundidade)
+  // Nível 1: apenas categorias raiz (sem parentId)
+  const rootCategories = categories
+    .filter(c => c.active !== false && !c.parentId)
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+  // Nível 2: filhas da categoria pai ativa
+  const subCategories = activeCategoryId
+    ? categories
+        .filter(c => c.active !== false && c.parentId === activeCategoryId)
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    : [];
+
+  // Filtro: subcategoria selecionada tem prioridade; senão, pai + todos os descendentes
   const getDescendantIds = (catId: string): string[] => {
     const children = categories.filter(c => c.active !== false && c.parentId === catId);
     return [catId, ...children.flatMap(c => getDescendantIds(c.id))];
   };
-  const activeCategoryIds = activeCategoryId ? new Set(getDescendantIds(activeCategoryId)) : null;
+  const filterById = activeSubCategoryId ?? activeCategoryId;
+  const activeCategoryIds = filterById ? new Set(getDescendantIds(filterById)) : null;
 
   const activeProducts = products
     .filter((p) => p.active !== false)
@@ -73,74 +87,113 @@ function StoreHome() {
         </section>
       )}
 
-      {/* Categories */}
-      <section className="px-3 md:px-6 mt-5">
-        <h2 className="text-base md:text-lg font-bold mb-3">Categorias</h2>
+      {/* Categories — dois níveis dinâmicos */}
+      <section className="px-3 md:px-6 mt-5 space-y-3">
+        <h2 className="text-base md:text-lg font-bold">Categorias</h2>
 
+        {/* ── Nível 1: categorias raiz ─────────────────────────────── */}
+
+        {/* Mobile: círculos horizontais */}
         <div className="md:hidden overflow-x-auto whitespace-nowrap no-scrollbar">
           <div className="inline-flex gap-3 pb-1">
+            {/* Todos */}
             <button
-              onClick={() => setActiveCategoryId(null)}
+              onClick={() => { setActiveCategoryId(null); setActiveSubCategoryId(null); }}
               className="inline-flex flex-col items-center gap-1.5"
             >
-              <span className={`w-14 h-14 rounded-full flex items-center justify-center shadow-sm ${!activeCategoryId ? "text-white" : "bg-slate-100 text-slate-700"}`} style={!activeCategoryId ? { backgroundColor: configuracaoVitrine.corPrimaria } : undefined}>
+              <span
+                className="w-14 h-14 rounded-full flex items-center justify-center shadow-sm transition-colors"
+                style={!activeCategoryId ? { backgroundColor: configuracaoVitrine.corPrimaria, color: "white" } : { backgroundColor: "rgb(241 245 249)", color: "rgb(51 65 85)" }}
+              >
                 <Layers className="w-5 h-5" />
               </span>
               <span className="text-[11px] font-medium text-slate-700">Todos</span>
             </button>
 
             {loading
-              ? Array.from({ length: 5 }).map((_, i) => (
+              ? Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className="inline-flex flex-col items-center gap-1.5">
                     <Skeleton className="w-14 h-14 rounded-full" />
                     <Skeleton className="h-3 w-12" />
                   </div>
                 ))
-              : categories.filter((c) => c.active !== false).map((cat) => {
-                  const active = activeCategoryId === cat.id;
+              : rootCategories.map((cat) => {
+                  const isActive = activeCategoryId === cat.id;
                   return (
-                    <button key={cat.id} onClick={() => setActiveCategoryId((prev) => (prev === cat.id ? null : cat.id))} className="inline-flex flex-col items-center gap-1.5">
+                    <button
+                      key={cat.id}
+                      onClick={() => { setActiveCategoryId(isActive ? null : cat.id); setActiveSubCategoryId(null); }}
+                      className="inline-flex flex-col items-center gap-1.5"
+                    >
                       <span
-                        className={`w-14 h-14 rounded-full flex items-center justify-center overflow-hidden border ${active ? "text-white" : "bg-slate-100 text-slate-700 border-slate-200"}`}
-                        style={active ? { backgroundColor: configuracaoVitrine.corPrimaria, borderColor: configuracaoVitrine.corPrimaria } : undefined}
+                        className="w-14 h-14 rounded-full flex items-center justify-center overflow-hidden border transition-colors"
+                        style={isActive
+                          ? { backgroundColor: configuracaoVitrine.corPrimaria, borderColor: configuracaoVitrine.corPrimaria, color: "white" }
+                          : { backgroundColor: "rgb(241 245 249)", borderColor: "rgb(226 232 240)", color: "rgb(51 65 85)" }}
                       >
-                        {cat.imageUrl ? (
-                          <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-contain" />
-                        ) : (
-                          <span className="text-xl">{cat.emoji || "📦"}</span>
-                        )}
+                        {cat.imageUrl
+                          ? <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-contain" />
+                          : <span className="text-xl">{cat.emoji || "📦"}</span>}
                       </span>
-                      <span className="text-[11px] font-medium text-slate-700 max-w-16 truncate">{cat.name}</span>
+                      <span className="text-[11px] font-medium text-slate-700 max-w-[60px] text-center whitespace-normal leading-tight">{cat.name}</span>
                     </button>
                   );
                 })}
           </div>
         </div>
 
-        <div className="hidden md:grid md:grid-cols-4 lg:grid-cols-6 gap-3">
+        {/* Desktop: pílulas em linha */}
+        <div className="hidden md:flex flex-wrap gap-2">
           <button
-            onClick={() => setActiveCategoryId(null)}
-            className={`h-11 rounded-xl text-sm font-medium border transition-colors ${!activeCategoryId ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-700"}`}
-            style={!activeCategoryId ? { backgroundColor: configuracaoVitrine.corPrimaria } : undefined}
+            onClick={() => { setActiveCategoryId(null); setActiveSubCategoryId(null); }}
+            className="h-10 px-4 rounded-xl text-sm font-medium border transition-colors"
+            style={!activeCategoryId
+              ? { backgroundColor: configuracaoVitrine.corPrimaria, borderColor: "transparent", color: "white" }
+              : { backgroundColor: "white", borderColor: "rgb(226 232 240)", color: "rgb(51 65 85)" }}
           >
             Todos
           </button>
           {loading
-            ? Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-11 rounded-xl" />)
-            : categories.filter((c) => c.active !== false).map((cat) => {
-                const active = activeCategoryId === cat.id;
+            ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-24 rounded-xl" />)
+            : rootCategories.map((cat) => {
+                const isActive = activeCategoryId === cat.id;
                 return (
                   <button
                     key={cat.id}
-                    onClick={() => setActiveCategoryId((prev) => (prev === cat.id ? null : cat.id))}
-                    className={`h-11 rounded-xl text-sm font-medium border transition-colors ${active ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"}`}
-                    style={active ? { backgroundColor: configuracaoVitrine.corPrimaria } : undefined}
+                    onClick={() => { setActiveCategoryId(isActive ? null : cat.id); setActiveSubCategoryId(null); }}
+                    className="h-10 px-4 rounded-xl text-sm font-medium border transition-colors hover:bg-slate-50"
+                    style={isActive
+                      ? { backgroundColor: configuracaoVitrine.corPrimaria, borderColor: "transparent", color: "white" }
+                      : { backgroundColor: "white", borderColor: "rgb(226 232 240)", color: "rgb(51 65 85)" }}
                   >
-                    {cat.name}
+                    {cat.emoji && !/^[a-z]/i.test(cat.emoji) ? `${cat.emoji} ` : ""}{cat.name}
                   </button>
                 );
               })}
         </div>
+
+        {/* ── Nível 2: subcategorias (renderiza só se a pai selecionada tiver filhas) ── */}
+        {subCategories.length > 0 && (
+          <div className="overflow-x-auto no-scrollbar">
+            <div className="flex gap-2 whitespace-nowrap">
+              {subCategories.map((sub) => {
+                const isActiveSub = activeSubCategoryId === sub.id;
+                return (
+                  <button
+                    key={sub.id}
+                    onClick={() => setActiveSubCategoryId(isActiveSub ? null : sub.id)}
+                    className="h-8 px-3 rounded-full text-xs font-medium border transition-colors"
+                    style={isActiveSub
+                      ? { backgroundColor: configuracaoVitrine.corPrimaria, borderColor: "transparent", color: "white" }
+                      : { backgroundColor: "rgb(248 250 252)", borderColor: "rgb(226 232 240)", color: "rgb(71 85 105)" }}
+                  >
+                    {sub.emoji && !/^[a-z]/i.test(sub.emoji) ? `${sub.emoji} ` : ""}{sub.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* All Products */}

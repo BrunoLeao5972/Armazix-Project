@@ -182,6 +182,11 @@ export const AuditActions = {
   ESTOQUE_SAIDA:     "ESTOQUE_SAIDA",
   ESTOQUE_AJUSTE:    "ESTOQUE_AJUSTE",
 
+  // ── Balanço de Estoque ─────────────────────────────────────────
+  BALANCO_CRIAR:     "BALANCO_CRIAR",
+  BALANCO_EDITAR:    "BALANCO_EDITAR",
+  BALANCO_EXCLUIR:   "BALANCO_EXCLUIR",
+
   // ── Configurações ──────────────────────────────────────────────
   CONFIG_ATUALIZAR:  "CONFIG_ATUALIZAR",
 } as const;
@@ -205,6 +210,8 @@ export const ResourceTypes = {
   CONTA_PAGAR:   "conta_pagar",
   LANCAMENTO:    "lancamento",
   CAIXA:         "caixa",
+  // ── Estoque ────────────────────────────────────────────────────
+  BALANCO:       "balanco",
 } as const;
 
 // Módulos para segmentação dos logs

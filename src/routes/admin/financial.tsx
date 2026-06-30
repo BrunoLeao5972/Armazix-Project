@@ -663,53 +663,6 @@ function ActionMenu({ status, origem, onEfetivar, onEditar, onExcluir }: ActionM
   );
 }
 
-// MOCK DATA
-const MOCK_RECEBER: ContaReceber[] = [
-  { id:"r1", cliente:"Ana Oliveira",    desc:"Venda #1042",       documento:"VD-1042", categoria:"Vendas",    centroCusto:"Loja",     contaFinanceira:"Caixa",   valor:450.00,  juros:0,    desconto:0,   valorRecebido:0,      formaPgto:"PIX",          emissao:"20/05/2026", vencimento:"30/05/2026", recebimento:null,         status:"pendente", origem:"Venda",  responsavel:"Admin",        obs:"",                     parcelas:1, parcelaAtual:1 },
-  { id:"r2", cliente:"Carlos Silva",    desc:"Venda #1038",       documento:"VD-1038", categoria:"Vendas",    centroCusto:"Loja",     contaFinanceira:"Banco",   valor:180.50,  juros:0,    desconto:5,   valorRecebido:175.50, formaPgto:"Cartao",        emissao:"15/05/2026", vencimento:"20/05/2026", recebimento:"20/05/2026", status:"pago",    origem:"Venda",  responsavel:"Carlos Silva", obs:"Desconto fidelidade",  parcelas:1, parcelaAtual:1 },
-  { id:"r3", cliente:"Pedro Costa",     desc:"Venda #1031",       documento:"VD-1031", categoria:"Vendas",    centroCusto:"Loja",     contaFinanceira:"Caixa",   valor:320.00,  juros:12.80, desconto:0,   valorRecebido:0,      formaPgto:"Boleto",        emissao:"01/05/2026", vencimento:"10/05/2026", recebimento:null,         status:"vencido",  origem:"Venda",  responsavel:"Admin",        obs:"",                     parcelas:1, parcelaAtual:1 },
-  { id:"r4", cliente:"Fernanda Lima",   desc:"Servico especial",  documento:"SV-0054", categoria:"Servicos",  centroCusto:"Admin",    contaFinanceira:"Banco",   valor:750.00,  juros:0,    desconto:0,   valorRecebido:250.00, formaPgto:"Transferencia", emissao:"10/05/2026", vencimento:"15/06/2026", recebimento:null,         status:"parcial",  origem:"Manual", responsavel:"Admin",        obs:"Parcial entrada",      parcelas:3, parcelaAtual:1 },
-  { id:"r5", cliente:"Marcos Pereira",  desc:"Consultoria TI",   documento:"SV-0055", categoria:"Servicos",  centroCusto:"Admin",    contaFinanceira:"Banco",   valor:1200.00, juros:0,    desconto:100, valorRecebido:0,      formaPgto:"PIX",          emissao:"22/05/2026", vencimento:"05/06/2026", recebimento:null,         status:"pendente", origem:"Manual", responsavel:"Admin",        obs:"",                     parcelas:1, parcelaAtual:1 },
-  { id:"r6", cliente:"Julia Santos",    desc:"Mensalidade maio",  documento:"MN-0101", categoria:"Mensalidade",centroCusto:"Loja",     contaFinanceira:"Caixa",   valor:299.00,  juros:0,    desconto:0,   valorRecebido:299.00, formaPgto:"PIX",          emissao:"01/05/2026", vencimento:"05/05/2026", recebimento:"05/05/2026", status:"pago",    origem:"Manual", responsavel:"Admin",        obs:"",                     parcelas:1, parcelaAtual:1 },
-  { id:"r7", cliente:"Roberto Alves",   desc:"Venda #1055",       documento:"VD-1055", categoria:"Vendas",    centroCusto:"Loja",     contaFinanceira:"Caixa",   valor:85.00,   juros:0,    desconto:0,   valorRecebido:0,      formaPgto:"Dinheiro",      emissao:"25/05/2026", vencimento:"25/05/2026", recebimento:null,         status:"pendente", origem:"Venda",  responsavel:"Admin",        obs:"",                     parcelas:1, parcelaAtual:1 },
-  { id:"r8", cliente:"Lucia Carvalho",  desc:"Venda #1048 1/3",  documento:"VD-1048", categoria:"Vendas",    centroCusto:"Loja",     contaFinanceira:"Banco",   valor:600.00,  juros:0,    desconto:0,   valorRecebido:0,      formaPgto:"Cartao",        emissao:"18/05/2026", vencimento:"18/06/2026", recebimento:null,         status:"pendente", origem:"Venda",  responsavel:"Admin",        obs:"Parcelado 3x",         parcelas:3, parcelaAtual:1 },
-];
-
-const MOCK_PAGAR: ContaPagar[] = [
-  { id:"p1", fornecedor:"Distribuidora ABC",    desc:"Reposição estoque maio",   documento:"NF-4521",   categoria:"Estoque",       centroCusto:"Compras",     contaFinanceira:"Banco",   valor:1200.00, juros:0,     desconto:0,   valorPago:0,      formaPgto:"Boleto",        emissao:"20/05/2026", vencimento:"31/05/2026", pagamento:null,         status:"pendente", origem:"Entrada de Mercadoria", responsavel:"Admin",  obs:"Parcela 1/3",          parcelas:3, parcelaAtual:1 },
-  { id:"p2", fornecedor:"Fornecedor XYZ",       desc:"Insumos produção",         documento:"NF-3310",   categoria:"Estoque",       centroCusto:"Compras",     contaFinanceira:"PIX",     valor:560.00,  juros:0,     desconto:10,  valorPago:550.00, formaPgto:"PIX",           emissao:"10/05/2026", vencimento:"15/05/2026", pagamento:"15/05/2026", status:"pago",     origem:"Entrada de Mercadoria", responsavel:"Admin",  obs:"Desconto negociado",   parcelas:1, parcelaAtual:1 },
-  { id:"p3", fornecedor:"Imobiliária Central",  desc:"Aluguel maio/2026",        documento:"REC-05/26", categoria:"Despesa Fixa",  centroCusto:"Infraestrutura",contaFinanceira:"Banco",  valor:2500.00, juros:125,   desconto:0,   valorPago:0,      formaPgto:"Transferência", emissao:"01/05/2026", vencimento:"05/05/2026", pagamento:null,         status:"vencido",  origem:"Manual",                responsavel:"Admin",  obs:"Em atraso 20 dias",    parcelas:1, parcelaAtual:1 },
-  { id:"p4", fornecedor:"CPFL Energia",         desc:"Fatura energia elétrica",  documento:"FAT-2605",  categoria:"Utilidades",    centroCusto:"Infraestrutura",contaFinanceira:"Débito", valor:380.00,  juros:0,     desconto:0,   valorPago:0,      formaPgto:"Débito Auto",   emissao:"01/06/2026", vencimento:"10/06/2026", pagamento:null,         status:"pendente", origem:"Manual",                responsavel:"Admin",  obs:"",                     parcelas:1, parcelaAtual:1 },
-  { id:"p5", fornecedor:"Agência Criativa Co.", desc:"Serviço marketing digital", documento:"SV-0210",  categoria:"Marketing",     centroCusto:"Marketing",   contaFinanceira:"Banco",   valor:850.00,  juros:0,     desconto:0,   valorPago:425.00, formaPgto:"Transferência", emissao:"05/05/2026", vencimento:"20/05/2026", pagamento:"20/05/2026", status:"parcial",  origem:"Manual",                responsavel:"Admin",  obs:"50% entrada",          parcelas:2, parcelaAtual:1 },
-  { id:"p6", fornecedor:"Folha de Pagamento",   desc:"Salários maio/2026",       documento:"FP-05/26",  categoria:"Pessoal",       centroCusto:"RH",          contaFinanceira:"Banco",   valor:8500.00, juros:0,     desconto:0,   valorPago:8500.00,formaPgto:"Transferência", emissao:"25/05/2026", vencimento:"05/06/2026", pagamento:"05/06/2026", status:"pago",     origem:"Manual",                responsavel:"Admin",  obs:"",                     parcelas:1, parcelaAtual:1 },
-  { id:"p7", fornecedor:"Softwarehouse LTDA",   desc:"Licença ERP anual",        documento:"LIC-2026",  categoria:"Tecnologia",    centroCusto:"TI",          contaFinanceira:"Cartão",  valor:3600.00, juros:0,     desconto:360, valorPago:0,      formaPgto:"Cartão",        emissao:"01/01/2026", vencimento:"01/06/2026", pagamento:null,         status:"pendente", origem:"Manual",                responsavel:"Admin",  obs:"Desconto anualidade",  parcelas:12,parcelaAtual:5 },
-  { id:"p8", fornecedor:"Contabilidade Souza",  desc:"Honorários contábeis",     documento:"HN-05/26",  categoria:"Serviços",      centroCusto:"Admin",       contaFinanceira:"Banco",   valor:600.00,  juros:0,     desconto:0,   valorPago:0,      formaPgto:"PIX",           emissao:"28/05/2026", vencimento:"05/06/2026", pagamento:null,         status:"pendente", origem:"Manual",                responsavel:"Admin",  obs:"",                     parcelas:1, parcelaAtual:1 },
-];
-
-const MOCK_MOV: Movimentacao[] = [
-  { id: "m1", tipo: "entrada", categoria: "Vendas",       valor: 450.00,  data: "25/05/2026 14:32", origem: "Venda #1042",           desc: "Recebimento de venda",              responsavel: "Admin"        },
-  { id: "m2", tipo: "saida",   categoria: "Estoque",      valor: 1200.00, data: "24/05/2026 10:15", origem: "Entrada de Mercadoria", desc: "Pgto NF-4521 - Distribuidora ABC", responsavel: "Admin"        },
-  { id: "m3", tipo: "entrada", categoria: "Vendas",       valor: 180.50,  data: "23/05/2026 09:00", origem: "Venda #1038",           desc: "Recebimento cartao",               responsavel: "Carlos Silva" },
-  { id: "m4", tipo: "saida",   categoria: "Despesa Fixa", valor: 2500.00, data: "22/05/2026 08:00", origem: "Manual",                desc: "Aluguel maio/2026",                responsavel: "Admin"        },
-  { id: "m5", tipo: "ajuste",  categoria: "Ajuste",       valor: 50.00,   data: "21/05/2026 16:00", origem: "Manual",                desc: "Ajuste de caixa",                  responsavel: "Admin"        },
-];
-
-const MOCK_CATS: Categoria[] = [
-  { id: "c1", nome: "Vendas",       tipo: "receita", cor: "#00C853", status: "ativo" },
-  { id: "c2", nome: "Servicos",     tipo: "receita", cor: "#3b82f6", status: "ativo" },
-  { id: "c3", nome: "Estoque",      tipo: "despesa", cor: "#f59e0b", status: "ativo" },
-  { id: "c4", nome: "Despesa Fixa", tipo: "despesa", cor: "#ef4444", status: "ativo" },
-  { id: "c5", nome: "Utilidades",   tipo: "despesa", cor: "#8b5cf6", status: "ativo" },
-];
-
-const MOCK_CASHFLOW = [
-  { name: "Jan", receita: 3200, despesa: 2100 },
-  { name: "Fev", receita: 4100, despesa: 2800 },
-  { name: "Mar", receita: 3800, despesa: 3200 },
-  { name: "Abr", receita: 5200, despesa: 3100 },
-  { name: "Mai", receita: 4600, despesa: 2900 },
-];
-
 // ─────────────────────────────────────────────────
 // HISTÓRICOS ESTRUTURADOS — seed ERP
 // ─────────────────────────────────────────────────
@@ -2786,24 +2739,7 @@ function SecaoDre() {
   const [dtrInicio, setDtrInicio] = useState("");
   const [dtrFim,    setDtrFim]    = useState("");
 
-  const lancamentos = useMemo<LancamentoDRE[]>(() => {
-    const receber: LancamentoDRE[] = MOCK_RECEBER.map(c => ({
-      categoria: c.categoria,
-      valor: c.valorRecebido > 0 ? c.valorRecebido : c.valor,
-      tipo: "entrada" as const,
-    }));
-    const pagar: LancamentoDRE[] = MOCK_PAGAR.map(c => ({
-      categoria: c.categoria,
-      valor: c.valorPago > 0 ? c.valorPago : c.valor,
-      tipo: "saida" as const,
-    }));
-    const movs: LancamentoDRE[] = MOCK_MOV.map(m => ({
-      categoria: m.categoria,
-      valor: m.valor,
-      tipo: m.tipo,
-    }));
-    return [...receber, ...pagar, ...movs];
-  }, []);
+  const lancamentos = useMemo<LancamentoDRE[]>(() => [], []);
 
   const nodes = useMemo(() => calcularDRE(HISTORICOS, lancamentos), [lancamentos]);
 
@@ -3081,14 +3017,7 @@ function SecaoHistoricos() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2800); };
 
-  const emUso = (h: HistoricoFinanceiro) => {
-    const desc = h.descricao;
-    return (
-      MOCK_RECEBER.some(c => c.categoria === desc) ||
-      MOCK_PAGAR.some(c => c.categoria === desc) ||
-      MOCK_MOV.some(m => m.categoria === desc)
-    );
-  };
+  const emUso = (_h: HistoricoFinanceiro) => false;
 
   const handleSave = (novo: HistoricoFinanceiro, anterior: HistoricoFinanceiro | null) => {
     if (anterior) {
@@ -3273,19 +3202,6 @@ interface LogAudit {
   dados_novos: Record<string, unknown> | null;
 }
 
-const MOCK_AUDIT: LogAudit[] = [
-  { id:"al1",  data_hora:"25/05/2026 14:32", nome_usuario:"Admin",        acao:"RECEBER_EFETIVAR",  modulo:"FINANCEIRO_RECEBER", recurso_id:"r1",      recurso_tipo:"conta_receber", status:"success", ip_origem:"189.28.10.1",   dispositivo:"Chrome / Windows", dados_anteriores:{status:"pendente",valorRecebido:0},        dados_novos:{status:"pago",valorRecebido:450.00} },
-  { id:"al2",  data_hora:"25/05/2026 14:15", nome_usuario:"Admin",        acao:"PAGAR_CRIAR",       modulo:"FINANCEIRO_PAGAR",   recurso_id:"p8",      recurso_tipo:"conta_pagar",   status:"success", ip_origem:"189.28.10.1",   dispositivo:"Chrome / Windows", dados_anteriores:null,                                           dados_novos:{fornecedor:"Contabilidade Souza",valor:600} },
-  { id:"al3",  data_hora:"25/05/2026 13:55", nome_usuario:"Carlos Silva", acao:"LOGIN_SUCESSO",     modulo:"AUTENTICACAO",       recurso_id:"u2",      recurso_tipo:"user",          status:"success", ip_origem:"201.17.44.8",   dispositivo:"Safari / macOS",   dados_anteriores:null,                                           dados_novos:null },
-  { id:"al4",  data_hora:"25/05/2026 11:02", nome_usuario:"Admin",        acao:"PAGAR_EXCLUIR",     modulo:"FINANCEIRO_PAGAR",   recurso_id:"p3",      recurso_tipo:"conta_pagar",   status:"denied",  ip_origem:"189.28.10.1",   dispositivo:"Chrome / Windows", dados_anteriores:{status:"vencido",origem:"Manual"},             dados_novos:null },
-  { id:"al5",  data_hora:"24/05/2026 10:15", nome_usuario:"Admin",        acao:"ESTOQUE_ENTRADA",   modulo:"ESTOQUE",             recurso_id:"prod-12", recurso_tipo:"product",       status:"success", ip_origem:"189.28.10.1",   dispositivo:"Chrome / Windows", dados_anteriores:{estoque:8},                                    dados_novos:{estoque:50} },
-  { id:"al6",  data_hora:"24/05/2026 09:00", nome_usuario:"Carlos Silva", acao:"RECEBER_ATUALIZAR", modulo:"FINANCEIRO_RECEBER", recurso_id:"r2",      recurso_tipo:"conta_receber", status:"success", ip_origem:"201.17.44.8",   dispositivo:"Chrome / Windows", dados_anteriores:{obs:""},                                       dados_novos:{obs:"Desconto fidelidade"} },
-  { id:"al7",  data_hora:"23/05/2026 16:45", nome_usuario:"Sistema",      acao:"PAGAR_EFETIVAR",    modulo:"FINANCEIRO_PAGAR",   recurso_id:"p6",      recurso_tipo:"conta_pagar",   status:"success", ip_origem:"system",        dispositivo:"Sistema Armazix",  dados_anteriores:{status:"pendente",valorPago:0},               dados_novos:{status:"pago",valorPago:8500} },
-  { id:"al8",  data_hora:"23/05/2026 08:00", nome_usuario:"Admin",        acao:"LOGIN_FALHA",       modulo:"AUTENTICACAO",       recurso_id:"u-unknown",recurso_tipo:"user",          status:"failure", ip_origem:"45.83.10.234",  dispositivo:"Firefox / Linux",  dados_anteriores:null,                                           dados_novos:null },
-  { id:"al9",  data_hora:"22/05/2026 17:30", nome_usuario:"Admin",        acao:"CONFIG_ATUALIZAR",  modulo:"CONFIGURACOES",      recurso_id:"store-1", recurso_tipo:"store",         status:"success", ip_origem:"189.28.10.1",   dispositivo:"Chrome / Windows", dados_anteriores:{deliveryFee:"5.00"},                          dados_novos:{deliveryFee:"8.00"} },
-  { id:"al10", data_hora:"22/05/2026 14:00", nome_usuario:"Admin",        acao:"RECEBER_EXCLUIR",   modulo:"FINANCEIRO_RECEBER", recurso_id:"r9-del",  recurso_tipo:"conta_receber", status:"denied",  ip_origem:"189.28.10.1",   dispositivo:"Chrome / Windows", dados_anteriores:{status:"pago",origem:"Venda"},                dados_novos:null },
-];
-
 const MODULOS_AUDIT: ModuloAudit[] = ["FINANCEIRO_RECEBER","FINANCEIRO_PAGAR","FINANCEIRO_FLUXO","VENDAS_PDV","ESTOQUE","AUTENTICACAO","CONFIGURACOES"];
 const STATUS_AUDIT: StatusAudit[] = ["success","failure","denied"];
 
@@ -3315,7 +3231,7 @@ function ModuloBadge({ modulo }: { modulo: ModuloAudit }) {
 
 // 7. AUDITORIA
 function SecaoAuditoria() {
-  const [logs] = useState<LogAudit[]>(MOCK_AUDIT);
+  const [logs] = useState<LogAudit[]>([]);
   const [filterModulo,  setFilterModulo]  = useState<ModuloAudit | "TODOS">("TODOS");
   const [search,        setSearch]        = useState("");
   const [expanded,      setExpanded]      = useState<string | null>(null);

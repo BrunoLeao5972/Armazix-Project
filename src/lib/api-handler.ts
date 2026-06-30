@@ -42,10 +42,32 @@ import {
   updateOrderStatusHandler,
   createCouponHandler,
   listCustomersHandler,
+  listSuppliersHandler,
   createCustomerHandler,
+  updateCustomerHandler,
   validatePublicCouponHandler,
 } from "./api/crud-handler";
 import { saveBannersHandler } from "./api/banners-handler";
+import {
+  listBalancesHandler,
+  createBalanceHandler,
+  updateBalanceHandler,
+  deleteBalanceHandler,
+} from "./api/balance-handler";
+import {
+  stockEntryHandler,
+  stockExitHandler,
+  stockAdjustmentHandler,
+  listStockMovementsHandler,
+  listStockAdjustmentsHandler,
+} from "./api/stock-movement-handler";
+import {
+  connectWhatsAppHandler,
+  getWhatsAppStatusHandler,
+  disconnectWhatsAppHandler,
+  getWppConfigHandler,
+  saveWppConfigHandler,
+} from "./api/whatsapp-handler";
 import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
 import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler, createPixPaymentHandler, pixWebhookHandler } from "./api/subscription-handler";
 import { requireAuth, AuthContext } from "./middleware/auth";
@@ -101,9 +123,19 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/orders/update-status": updateOrderStatusHandler,
   "/api/coupons/create": createCouponHandler,
   "/api/customers/create": createCustomerHandler,
+  "/api/customers/update": updateCustomerHandler,
+  "/api/balances/create": createBalanceHandler,
+  "/api/balances/update": updateBalanceHandler,
+  "/api/balances/delete": deleteBalanceHandler,
+  "/api/stock/entry":      stockEntryHandler,
+  "/api/stock/exit":       stockExitHandler,
+  "/api/stock/adjustment": stockAdjustmentHandler,
   "/api/payments/mp-checkout": createMpCheckoutHandler,
   "/api/payments/mp-token": saveMpTokenHandler,
   "/api/banners/save": saveBannersHandler,
+  "/api/whatsapp/connect": connectWhatsAppHandler,
+  "/api/whatsapp/disconnect": disconnectWhatsAppHandler,
+  "/api/whatsapp/config": saveWppConfigHandler,
   "/api/subscriptions/create": createSubscriptionHandler,
   "/api/subscriptions/create-pix": createPixPaymentHandler,
 };
@@ -121,7 +153,13 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/dashboard/charts": getDashboardChartDataHandler,
   "/api/orders/list": listOrdersHandler,
   "/api/customers/list": listCustomersHandler,
+  "/api/customers/suppliers": listSuppliersHandler,
+  "/api/balances/list":     listBalancesHandler,
+  "/api/stock/movements":   listStockMovementsHandler,
+  "/api/stock/adjustments": listStockAdjustmentsHandler,
   "/api/subscriptions/status": getSubscriptionStatusHandler,
+  "/api/whatsapp/status": getWhatsAppStatusHandler,
+  "/api/whatsapp/config": getWppConfigHandler,
 };
 
 // Mapeamento de rotas para configurações de rate limit

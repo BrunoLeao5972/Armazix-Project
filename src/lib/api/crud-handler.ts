@@ -2,8 +2,9 @@ import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, desc, sql, and } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
+import { notifyOwnerNewOrder, notifyCustomerStatus } from "@/lib/whatsapp-sender";
 
-const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions } = schema;
+const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements } = schema;
 
 // ─── Create Product ──────────────────────────────────────────────
 export async function createProductHandler(request: Request, auth?: AuthContext): Promise<Response> {
@@ -23,10 +24,8 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     name: string;
     description?: string;
     price: string;
-    compareAtPrice?: string;
     costPrice?: string;
     categoryId?: string;
-    stock?: number;
     lowStockThreshold?: number;
     sku?: string;
     barcode?: string;
@@ -34,6 +33,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     emoji?: string;
     imageUrl?: string;
     badge?: string;
+    trackStock?: boolean;
     active?: boolean;
     allowObservation?: boolean;
   };
@@ -53,10 +53,9 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
       name: body.name,
       description: body.description || null,
       price: body.price,
-      compareAtPrice: body.compareAtPrice || null,
       costPrice: body.costPrice || null,
       categoryId: body.categoryId || null,
-      stock: body.stock ?? 0,
+      stock: 0,
       lowStockThreshold: body.lowStockThreshold ?? 5,
       sku: body.sku || null,
       barcode: body.barcode || null,
@@ -64,6 +63,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
       emoji: body.emoji || null,
       imageUrl: body.imageUrl || null,
       badge: body.badge || null,
+      trackStock: body.trackStock ?? false,
       active: body.active !== false,
       allowObservation: body.allowObservation ?? false,
     }).returning();
@@ -133,10 +133,8 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     name?: string;
     description?: string;
     price?: string;
-    compareAtPrice?: string;
     costPrice?: string;
     categoryId?: string;
-    stock?: number;
     lowStockThreshold?: number;
     sku?: string;
     barcode?: string;
@@ -144,6 +142,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     emoji?: string;
     imageUrl?: string;
     badge?: string;
+    trackStock?: boolean;
     active?: boolean;
     allowObservation?: boolean;
   };
@@ -156,34 +155,34 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    // IDOR Fix: Verify product belongs to the tenant before updating
-    const existingProduct = await db.query.products.findFirst({
-      where: and(eq(products.id, body.productId), eq(products.storeId, storeId))
-    });
+    // IDOR: verify product belongs to this tenant
+    const [existing] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.id, body.productId), eq(products.storeId, storeId)))
+      .limit(1);
 
-    if (!existingProduct) {
+    if (!existing) {
       return new Response(JSON.stringify({ error: "Product not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
     }
 
-    const updates: Record<string, any> = { updatedAt: new Date() };
-    if (body.name !== undefined) updates.name = body.name;
-    if (body.description !== undefined) updates.description = body.description;
-    if (body.price !== undefined) updates.price = body.price;
-    if (body.compareAtPrice !== undefined) updates.compareAtPrice = body.compareAtPrice;
-    if (body.costPrice !== undefined) updates.costPrice = body.costPrice;
-    if (body.categoryId !== undefined) updates.categoryId = body.categoryId;
-    if (body.stock !== undefined) updates.stock = body.stock;
+    const updates: Partial<typeof products.$inferInsert> & { updatedAt: Date } = { updatedAt: new Date() };
+    if (body.name        !== undefined) updates.name        = body.name;
+    if (body.description !== undefined) updates.description = body.description || null;
+    if (body.price       !== undefined) updates.price       = body.price;
+    if (body.costPrice   !== undefined) updates.costPrice   = body.costPrice   || null;
+    if (body.categoryId  !== undefined) updates.categoryId  = body.categoryId  || null;
     if (body.lowStockThreshold !== undefined) updates.lowStockThreshold = body.lowStockThreshold;
-    if (body.sku !== undefined) updates.sku = body.sku;
-    if (body.barcode !== undefined) updates.barcode = body.barcode;
-    if (body.unit !== undefined) updates.unit = body.unit;
-    if (body.emoji !== undefined) updates.emoji = body.emoji;
-    if (body.imageUrl !== undefined) updates.imageUrl = body.imageUrl;
-    if (body.badge !== undefined) updates.badge = body.badge;
-    if (body.active !== undefined) updates.active = body.active;
+    if (body.sku         !== undefined) updates.sku         = body.sku         || null;
+    if (body.barcode     !== undefined) updates.barcode     = body.barcode     || null;
+    if (body.unit        !== undefined) updates.unit        = body.unit;
+    if (body.emoji       !== undefined) updates.emoji       = body.emoji       || null;
+    if (body.imageUrl    !== undefined) updates.imageUrl    = body.imageUrl    || null;
+    if (body.badge       !== undefined) updates.badge       = body.badge       || null;
+    if (body.trackStock  !== undefined) updates.trackStock  = body.trackStock;
+    if (body.active      !== undefined) updates.active      = body.active;
     if (body.allowObservation !== undefined) updates.allowObservation = body.allowObservation;
 
-    // IDOR Fix: Include storeId in WHERE clause
     const [updated] = await db.update(products)
       .set(updates)
       .where(and(eq(products.id, body.productId), eq(products.storeId, storeId)))
@@ -193,8 +192,9 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
       status: 200, headers: { "content-type": "application/json" },
     });
   } catch (error) {
-    console.error("Update product error:", error);
-    return new Response(JSON.stringify({ error: "Failed to update product" }), { status: 500, headers: { "content-type": "application/json" } });
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Update product error:", msg, { productId: body.productId, storeId });
+    return new Response(JSON.stringify({ error: msg || "Failed to update product" }), { status: 500, headers: { "content-type": "application/json" } });
   }
 }
 
@@ -219,21 +219,24 @@ export async function deleteProductHandler(request: Request, auth?: AuthContext)
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    // IDOR Fix: Verify product belongs to tenant before deleting
-    const existingProduct = await db.query.products.findFirst({
-      where: and(eq(products.id, body.productId), eq(products.storeId, storeId))
-    });
+    // IDOR: verify product belongs to tenant before deleting
+    const [existing] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(and(eq(products.id, body.productId), eq(products.storeId, storeId)))
+      .limit(1);
 
-    if (!existingProduct) {
+    if (!existing) {
       return new Response(JSON.stringify({ error: "Product not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
     }
 
-    // IDOR Fix: Include storeId in WHERE clause
-    await db.delete(products).where(and(eq(products.id, body.productId), eq(products.storeId, storeId)));
+    // Soft delete: preserves product history in orders and stock movements
+    await db.update(products).set({ active: false, updatedAt: new Date() }).where(and(eq(products.id, body.productId), eq(products.storeId, storeId)));
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
-    console.error("Delete product error:", error);
-    return new Response(JSON.stringify({ error: "Failed to delete product" }), { status: 500, headers: { "content-type": "application/json" } });
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Delete product error:", msg);
+    return new Response(JSON.stringify({ error: msg || "Failed to delete product" }), { status: 500, headers: { "content-type": "application/json" } });
   }
 }
 
@@ -488,21 +491,94 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       note: "Pedido recebido",
     });
 
-    // Update stock for each item
-    for (const item of body.items) {
-      if (item.productId) {
-        await db.update(products)
-          .set({ stock: sql`${products.stock} - ${item.quantity}`, updatedAt: new Date() })
-          .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)));
-      }
-    }
+    // ── Atualizar estoque + registrar movimentação (transação ACID) ──
+    // Se qualquer parte falhar → rollback automático; saldo nunca fica inconsistente.
+    await db.transaction(async (tx) => {
+      for (const item of body.items) {
+        if (!item.productId) continue;
 
-    // Update coupon usage if applicable — SECURITY: verify coupon belongs to THIS store
-    if (body.couponId) {
-      await db.update(coupons)
-        .set({ usedCount: sql`${coupons.usedCount} + 1` })
-        .where(and(eq(coupons.id, body.couponId), eq(coupons.storeId, body.storeId)));
-    }
+        // Lê saldo atual antes de decrementar
+        const [currentProd] = await tx
+          .select({ stock: products.stock })
+          .from(products)
+          .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)))
+          .limit(1);
+
+        if (!currentProd) continue;
+
+        const balanceBefore = currentProd.stock ?? 0;
+        const balanceAfter  = Math.max(0, balanceBefore - item.quantity);
+
+        // Decrementa saldo
+        await tx
+          .update(products)
+          .set({ stock: balanceAfter, updatedAt: new Date() })
+          .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)));
+
+        // Registra movimentação de saída por venda
+        await tx
+          .insert(stockMovements)
+          .values({
+            storeId:      body.storeId,
+            productId:    item.productId,
+            productName:  item.productName,
+            type:         "VENDA",
+            quantity:     item.quantity,
+            balanceBefore,
+            balanceAfter,
+            origem:       `Venda — Pedido #${nextNumber}`,
+            orderId:      order.id,
+          });
+      }
+
+      // Atualiza uso do cupom dentro da mesma tx
+      if (body.couponId) {
+        await tx
+          .update(coupons)
+          .set({ usedCount: sql`${coupons.usedCount} + 1` })
+          .where(and(eq(coupons.id, body.couponId), eq(coupons.storeId, body.storeId)));
+      }
+    });
+
+    // ── WhatsApp notifications (fire-and-forget) ──────────────────
+    (async () => {
+      try {
+        const [storeRow] = await db.select({ name: stores.name, wppConfig: stores.wppConfig })
+          .from(stores).where(eq(stores.id, body.storeId)).limit(1);
+        if (!storeRow?.wppConfig) return;
+
+        let customerName = "Cliente";
+        let customerPhone: string | null = null;
+        if (body.customerId) {
+          const [cust] = await db.select({ name: customers.name, phone: customers.phone })
+            .from(customers).where(eq(customers.id, body.customerId)).limit(1);
+          if (cust) { customerName = cust.name; customerPhone = cust.phone ?? null; }
+        }
+
+        const itemsSummary = body.items
+          .slice(0, 3)
+          .map((i) => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`)
+          .join("\n");
+
+        const params = {
+          storeId: body.storeId,
+          storeName: storeRow.name,
+          orderNumber: nextNumber,
+          customerName,
+          customerPhone,
+          total: body.total,
+          items: itemsSummary,
+          status: "received",
+          wppConfig: storeRow.wppConfig,
+        };
+
+        await notifyOwnerNewOrder(params);
+        await notifyCustomerStatus(params);
+      } catch (e) {
+        console.error("[wpp] new order notify error:", e);
+      }
+    })();
+    // ──────────────────────────────────────────────────────────────
 
     return new Response(JSON.stringify({ success: true, order: { id: order.id, number: nextNumber } }), {
       status: 201, headers: { "content-type": "application/json" },
@@ -615,6 +691,41 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     if (body.status === "cancelled") {
       await db.update(orders).set({ cancelledAt: new Date() }).where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
     }
+
+    // ── WhatsApp notification (fire-and-forget) ───────────────────
+    (async () => {
+      try {
+        const [storeRow] = await db.select({ name: stores.name, wppConfig: stores.wppConfig })
+          .from(stores).where(eq(stores.id, storeId)).limit(1);
+        if (!storeRow?.wppConfig?.notifyCustomer) return;
+
+        const orderWithCustomer = await db.query.orders.findFirst({
+          where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)),
+          with: { customer: true, items: true },
+        });
+        if (!orderWithCustomer?.customer?.phone) return;
+
+        const itemsSummary = (orderWithCustomer.items ?? [])
+          .slice(0, 3)
+          .map((i) => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`)
+          .join("\n");
+
+        await notifyCustomerStatus({
+          storeId,
+          storeName: storeRow.name,
+          orderNumber: orderWithCustomer.number,
+          customerName: orderWithCustomer.customer.name,
+          customerPhone: orderWithCustomer.customer.phone,
+          total: orderWithCustomer.total,
+          items: itemsSummary,
+          status: body.status,
+          wppConfig: storeRow.wppConfig,
+        });
+      } catch (e) {
+        console.error("[wpp] status notify error:", e);
+      }
+    })();
+    // ──────────────────────────────────────────────────────────────
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
@@ -730,6 +841,8 @@ export async function listCustomersHandler(request: Request, auth?: AuthContext)
         email: maskEmail(c.email),
         phone: maskPhone(c.phone),
         cpf: maskCPF(c.cpf),
+        isSupplier: c.isSupplier ?? false,
+        status: c.status ?? "ativo",
         ordersCount: customerOrders.length,
         totalSpent: `R$ ${totalSpent.toFixed(2).replace(".", ",")}`,
         since: new Date(c.createdAt).toLocaleDateString("pt-BR", { month: "short", year: "numeric" }),
@@ -739,6 +852,38 @@ export async function listCustomersHandler(request: Request, auth?: AuthContext)
     return new Response(JSON.stringify({ customers: customersWithStats }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("List customers error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── List Suppliers (autocomplete) ───────────────────────────────
+export async function listSuppliersHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const url = new URL(request.url);
+  const q = (url.searchParams.get("q") || "").toLowerCase();
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = await createTenantDb(dbUrl, storeId);
+
+  try {
+    const rows = await db.select({ id: customers.id, name: customers.name, phone: customers.phone })
+      .from(customers)
+      .where(and(eq(customers.storeId, storeId), eq(customers.isSupplier, true), eq(customers.active, true)));
+
+    const filtered = q ? rows.filter(s => s.name.toLowerCase().includes(q)) : rows;
+    return new Response(JSON.stringify({ suppliers: filtered.slice(0, 20) }), { status: 200, headers: { "content-type": "application/json" } });
+  } catch (error) {
+    console.error("List suppliers error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
   }
 }
@@ -757,7 +902,7 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
     });
   }
 
-  const body = await request.json() as { name: string; email?: string; phone?: string; cpf?: string };
+  const body = await request.json() as { name: string; email?: string; phone?: string; cpf?: string; isSupplier?: boolean; status?: string };
   if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -770,12 +915,80 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
       email: body.email || null,
       phone: body.phone || null,
       cpf: body.cpf || null,
+      isSupplier: body.isSupplier ?? false,
+      status: body.status ?? "ativo",
+      active: (body.status ?? "ativo") === "ativo",
     }).returning();
 
     return new Response(JSON.stringify({ success: true, customer }), { status: 201, headers: { "content-type": "application/json" } });
   } catch (error) {
-    console.error("Create customer error:", error);
-    return new Response(JSON.stringify({ error: "Failed to create customer" }), { status: 500, headers: { "content-type": "application/json" } });
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Create customer error:", msg);
+    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── Update Customer ─────────────────────────────────────────────
+export async function updateCustomerHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const body = await request.json() as {
+    customerId: string;
+    name?: string;
+    email?: string;
+    phone?: string;
+    cpf?: string;
+    isSupplier?: boolean;
+    status?: string;
+  };
+
+  if (!body.customerId) {
+    return new Response(JSON.stringify({ error: "customerId obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
+  }
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = await createTenantDb(dbUrl, storeId);
+
+  try {
+    // IDOR: verify the customer belongs to this store before updating
+    const existing = await db.query.customers.findFirst({
+      where: and(eq(customers.id, body.customerId), eq(customers.storeId, storeId)),
+    });
+
+    if (!existing) {
+      return new Response(JSON.stringify({ error: "Contato não encontrado" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+
+    const newStatus = body.status ?? existing.status ?? "ativo";
+
+    const [customer] = await db.update(customers)
+      .set({
+        name:       body.name       ?? existing.name,
+        email:      body.email      !== undefined ? (body.email || null)  : existing.email,
+        phone:      body.phone      !== undefined ? (body.phone || null)  : existing.phone,
+        cpf:        body.cpf        !== undefined ? (body.cpf   || null)  : existing.cpf,
+        isSupplier: body.isSupplier !== undefined ? body.isSupplier       : existing.isSupplier,
+        status:     newStatus,
+        active:     newStatus === "ativo",
+        updatedAt:  new Date(),
+      })
+      .where(and(eq(customers.id, body.customerId), eq(customers.storeId, storeId)))
+      .returning();
+
+    return new Response(JSON.stringify({ success: true, customer }), { status: 200, headers: { "content-type": "application/json" } });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Update customer error:", msg);
+    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: { "content-type": "application/json" } });
   }
 }
 

@@ -13,7 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 const StockMovementChart = lazy(() => import("@/components/armazix/StockMovementChart"));
-import { getStockProducts, getStockMovements } from "@/services/api";
+import { api } from "@/lib/api-client";
+import SupplierCombobox from "@/components/admin/SupplierCombobox";
+import ProductCombobox from "@/components/admin/ProductCombobox";
 
 export const Route = createFileRoute("/admin/stock")({
   component: StockPage,
@@ -37,13 +39,51 @@ interface Movement {
   user: string; note: string;
 }
 
-interface EntryItem { product: string; qty: string; cost: string; lot: string; expiry: string; }
-interface ExitItem  { product: string; qty: string; }
+interface EntryItem { productId: string; productName: string; qty: string; cost: string; lot: string; expiry: string; }
+interface ExitItem  { productId: string; productName: string; qty: string; }
 interface TransferItem { product: string; qty: string; }
 
-const PAYMENT_METHODS = ["Dinheiro", "Boleto", "Pix", "Cartão de crédito", "Cartão de débito", "Transferência", "Cheque"];
-const MOCK_USERS = ["Admin", "Carlos Silva", "Ana Oliveira", "Pedro Costa", "Fernanda Lima"];
+interface DbMovement {
+  id: string;
+  productId: string | null;
+  productName: string;
+  type: string;
+  quantity: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  origem: string;
+  createdByName: string | null;
+  createdAt: string;
+}
 
+interface DbAdjustment {
+  id: string;
+  productId: string | null;
+  productName: string;
+  balanceBefore: number;
+  balanceAfter: number;
+  qty: number;
+  tipo: string;
+  motivo: string | null;
+  observations: string | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+const PAYMENT_METHODS = ["Dinheiro", "Boleto", "Pix", "Cartão de crédito", "Cartão de débito", "Transferência", "Cheque"];
+
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+const dbTypeToKey = (type: string): string => {
+  const map: Record<string, string> = {
+    ENTRADA: "entrada", SAIDA: "saida", VENDA: "saida",
+    AJUSTE: "ajuste", RECONTAGEM: "ajuste",
+    PERDA: "perda", AVARIA: "perda",
+    TRANSFERENCIA: "transferencia",
+  };
+  return map[type.toUpperCase()] ?? "ajuste";
+};
 // ─── Helpers ──────────────────────────────────────────────────────
 const MOV_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
   entrada:      { label: "Entrada",      color: "text-emerald-600", bg: "bg-emerald-500/15", icon: ArrowUpCircle },
@@ -120,17 +160,28 @@ function SecaoEstoque() {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const data = await getStockProducts();
-        if (mounted) setProducts(Array.isArray(data) ? data as StockProduct[] : []);
-      } catch {
-        if (mounted) setProducts([]);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
+    const storeId = localStorage.getItem("storeId");
+    if (!storeId) { setLoading(false); return; }
+    setLoading(true);
+    fetch(`/api/products/list?storeId=${storeId}`)
+      .then(r => r.json())
+      .then((d: { products?: Array<{ id: string; name: string; sku?: string | null; stock?: number | null; lowStockThreshold?: number | null; costPrice?: string | null; price?: string | null; active?: boolean }> }) => {
+        if (!mounted) return;
+        setProducts((d.products ?? []).filter(p => p.active !== false).map(p => ({
+          id:           p.id,
+          name:         p.name,
+          sku:          p.sku ?? "—",
+          category:     "—",
+          stock:        p.stock ?? 0,
+          minStock:     p.lowStockThreshold ?? 5,
+          location:     "—",
+          lastMovement: "—",
+          costPrice:    p.costPrice ? parseFloat(p.costPrice) : 0,
+          price:        p.price    ? parseFloat(p.price)     : 0,
+        })));
+      })
+      .catch(() => { if (mounted) setProducts([]); })
+      .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
   }, []);
 
@@ -316,8 +367,8 @@ function SecaoEntrada() {
   const [showForm, setShowForm] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [alertaBaixa, setAlertaBaixa] = useState<string | null>(null);
-  const [items, setItems] = useState<EntryItem[]>([{ product: "", qty: "", cost: "", lot: "", expiry: "" }]);
-  const [supplier, setSupplier] = useState("");
+  const [items, setItems] = useState<EntryItem[]>([{ productId: "", productName: "", qty: "", cost: "", lot: "", expiry: "" }]);
+  const [supplierRecord, setSupplierRecord] = useState<{ id: string; name: string; phone: string | null } | null>(null);
   const [nf, setNf] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [obs, setObs] = useState("");
@@ -327,17 +378,19 @@ function SecaoEntrada() {
   const [sendToFinancial, setSendToFinancial] = useState(true);
   const [saved, setSaved] = useState(false);
 
-  const addItem = () => setItems(v => [...v, { product: "", qty: "", cost: "", lot: "", expiry: "" }]);
+  const addItem = () => setItems(v => [...v, { productId: "", productName: "", qty: "", cost: "", lot: "", expiry: "" }]);
   const removeItem = (i: number) => setItems(v => v.filter((_, idx) => idx !== i));
   const setItem = (i: number, k: keyof EntryItem, v: string) =>
     setItems(prev => prev.map((it, idx) => idx === i ? { ...it, [k]: v } : it));
+  const setItemProduct = (i: number, p: { id: string; name: string; sku: string | null; stock: number } | null) =>
+    setItems(prev => prev.map((it, idx) => idx === i ? { ...it, productId: p?.id ?? "", productName: p?.name ?? "" } : it));
 
   const total = items.reduce((s, it) => s + (parseFloat(it.qty || "0") * parseFloat(it.cost || "0")), 0);
   const parcelValue = installments && parseInt(installments) > 0 ? total / parseInt(installments) : total;
 
   const resetForm = () => {
-    setItems([{ product: "", qty: "", cost: "", lot: "", expiry: "" }]);
-    setSupplier("");
+    setItems([{ productId: "", productName: "", qty: "", cost: "", lot: "", expiry: "" }]);
+    setSupplierRecord(null);
     setNf("");
     setDate(new Date().toISOString().split("T")[0]);
     setObs("");
@@ -348,20 +401,59 @@ function SecaoEntrada() {
     setEditandoId(null);
   };
 
-  const handleSave = () => {
-    if (editandoId) {
-      // Modo edição: atualiza sem duplicar no financeiro
-      console.log(`[EDITAR ENTRADA] ID: ${editandoId} - Atualizando sem duplicar no financeiro`);
-    } else {
-      // Modo criação: cria novo
-      console.log(`[CRIAR ENTRADA] Nova entrada registrada`);
+  const [entradaErrors, setEntradaErrors] = useState<{ supplier?: boolean; products?: boolean }>({});
+  const [entradaSaving, setEntradaSaving] = useState(false);
+  const [entradaApiError, setEntradaApiError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    const errs: { supplier?: boolean; products?: boolean } = {};
+    if (!supplierRecord) errs.supplier = true;
+    if (items.some(it => !it.productId)) errs.products = true;
+    if (Object.keys(errs).length > 0) { setEntradaErrors(errs); return; }
+    setEntradaErrors({});
+    setEntradaApiError(null);
+    setEntradaSaving(true);
+
+    try {
+      const payload = {
+        supplierId:   supplierRecord!.id,
+        supplierName: supplierRecord!.name,
+        nf:           nf || undefined,
+        date,
+        obs:          obs || undefined,
+        payMethod:    payMethod || undefined,
+        installments: parseInt(installments) || 1,
+        dueDate:      dueDate || undefined,
+        items: items
+          .filter(it => it.productId && parseFloat(it.qty) > 0)
+          .map(it => ({
+            productId:   it.productId,
+            productName: it.productName,
+            qty:         parseFloat(it.qty),
+            cost:        it.cost ? parseFloat(it.cost) : undefined,
+            lot:         it.lot  || undefined,
+            expiry:      it.expiry || undefined,
+          })),
+      };
+
+      const res  = await api.post("/api/stock/entry", payload);
+      const data = await res.json() as { success?: boolean; error?: string };
+
+      if (res.ok && data.success) {
+        setSaved(true);
+        setTimeout(() => {
+          setSaved(false);
+          setShowForm(false);
+          resetForm();
+        }, 2000);
+      } else {
+        setEntradaApiError(data.error ?? "Erro ao registrar entrada. Tente novamente.");
+      }
+    } catch {
+      setEntradaApiError("Erro de conexão. Verifique sua internet.");
+    } finally {
+      setEntradaSaving(false);
     }
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-      setShowForm(false);
-      resetForm();
-    }, 2500);
   };
 
   const handleEditar = (entrada: Movement) => {
@@ -376,10 +468,10 @@ function SecaoEntrada() {
 
     // Carrega dados para edição
     setEditandoId(entrada.id);
-    setSupplier(entrada.note?.includes("NF") ? "" : entrada.note || "");
+    setSupplierRecord(null);
     setObs(entrada.note || "");
     setDate(entrada.date.split(" ")[0].split("/").reverse().join("-"));
-    setItems([{ product: entrada.product, qty: String(entrada.qty), cost: "", lot: "", expiry: "" }]);
+    setItems([{ productId: "", productName: entrada.product, qty: String(entrada.qty), cost: "", lot: "", expiry: "" }]);
     setShowForm(true);
   };
 
@@ -392,18 +484,32 @@ function SecaoEntrada() {
   const [movements, setMovements] = useState<Movement[]>([]);
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const data = await getStockMovements();
-        if (mounted) setMovements(Array.isArray(data) ? data as Movement[] : []);
-      } catch {
-        if (mounted) setMovements([]);
-      }
-    })();
+    api.get("/api/stock/movements?limit=50")
+      .then(r => r.json())
+      .then((d: { movements?: DbMovement[] }) => {
+        if (!mounted) return;
+        setMovements(
+          (d.movements ?? [])
+            .filter(m => m.type === "ENTRADA")
+            .slice(0, 6)
+            .map(m => ({
+              id:            m.id,
+              date:          fmtDate(m.createdAt),
+              product:       m.productName,
+              type:          "entrada",
+              qty:           m.quantity,
+              balanceBefore: m.balanceBefore,
+              balanceAfter:  m.balanceAfter,
+              user:          m.createdByName ?? "—",
+              note:          m.origem,
+            }))
+        );
+      })
+      .catch(() => { if (mounted) setMovements([]); });
     return () => { mounted = false; };
   }, []);
 
-  const ultimasEntradas = movements.filter(m => m.type === "entrada").slice(0, 6);
+  const ultimasEntradas = movements;
 
   if (!showForm) {
     return (
@@ -476,7 +582,7 @@ function SecaoEntrada() {
         <CardHeader className="pb-3"><CardTitle className="text-base">Dados da entrada</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Fornecedor</Label>
-            <Input placeholder="Nome do fornecedor" value={supplier} onChange={e => setSupplier(e.target.value)} className="h-10 rounded-xl" /></div>
+            <SupplierCombobox value={supplierRecord} onChange={setSupplierRecord} error={entradaErrors.supplier} /></div>
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Nº da Nota Fiscal</Label>
             <Input placeholder="Ex: 00123" value={nf} onChange={e => setNf(e.target.value)} className="h-10 rounded-xl" /></div>
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Data de entrada</Label>
@@ -493,8 +599,12 @@ function SecaoEntrada() {
         </CardHeader>
         <CardContent className="space-y-3">
           {items.map((it, i) => (
-            <div key={i} className="grid grid-cols-[1fr_70px_90px_90px_110px_36px] gap-2 items-center">
-              <Input placeholder="Produto" value={it.product} onChange={e => setItem(i, "product", e.target.value)} className="h-9 rounded-xl text-sm" />
+            <div key={i} className="grid grid-cols-[1fr_70px_90px_90px_110px_36px] gap-2 items-start">
+              <ProductCombobox
+                value={it.productId ? { id: it.productId, name: it.productName, sku: null, stock: 0 } : null}
+                onChange={p => setItemProduct(i, p)}
+                error={entradaErrors.products && !it.productId}
+              />
               <Input placeholder="Qtd" type="number" value={it.qty} onChange={e => setItem(i, "qty", e.target.value)} className="h-9 rounded-xl text-sm" />
               <Input placeholder="Custo" type="number" value={it.cost} onChange={e => setItem(i, "cost", e.target.value)} className="h-9 rounded-xl text-sm" />
               <Input placeholder="Lote" value={it.lot} onChange={e => setItem(i, "lot", e.target.value)} className="h-9 rounded-xl text-sm" />
@@ -580,12 +690,20 @@ function SecaoEntrada() {
         </CardContent>
       </Card>
 
-      <div className="flex gap-3">
-        <Button variant="outline" className="rounded-xl gap-2" onClick={handleCancelar}><ArrowLeftRight className="w-4 h-4 rotate-180" />Voltar</Button>
-        <Button variant="outline" className="rounded-xl gap-2"><FileText className="w-4 h-4" />Salvar rascunho</Button>
-        <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={handleSave}>
-          {saved ? <><Check className="w-4 h-4" />{editandoId ? "Atualizado!" : "Confirmado!"}</> : <><CheckCircle2 className="w-4 h-4" />{editandoId ? "Salvar alterações" : "Confirmar entrada"}</>}
-        </Button>
+      <div className="space-y-2">
+        <div className="flex gap-3">
+          <Button variant="outline" className="rounded-xl gap-2" onClick={handleCancelar}><ArrowLeftRight className="w-4 h-4 rotate-180" />Voltar</Button>
+          <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={handleSave} disabled={entradaSaving}>
+            {entradaSaving
+              ? <><Loader2 className="w-4 h-4 animate-spin" />Processando...</>
+              : saved
+                ? <><Check className="w-4 h-4" />{editandoId ? "Atualizado!" : "Confirmado!"}</>
+                : <><CheckCircle2 className="w-4 h-4" />{editandoId ? "Salvar alterações" : "Confirmar entrada"}</>}
+          </Button>
+        </div>
+        {entradaApiError && (
+          <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-2">{entradaApiError}</p>
+        )}
       </div>
     </div>
   );
@@ -598,39 +716,63 @@ function SecaoSaida() {
   const [showForm, setShowForm] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [alertaBaixa, setAlertaBaixa] = useState<string | null>(null);
-  const [items, setItems] = useState<ExitItem[]>([{ product: "", qty: "" }]);
+  const [items, setItems] = useState<ExitItem[]>([{ productId: "", productName: "", qty: "" }]);
   const [tipo, setTipo] = useState("Venda");
   const [responsavel, setResponsavel] = useState("");
   const [obs, setObs] = useState("");
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [saidaErrors, setSaidaErrors] = useState<{ products?: boolean }>({});
 
-  const addItem = () => setItems(v => [...v, { product: "", qty: "" }]);
+  const addItem = () => setItems(v => [...v, { productId: "", productName: "", qty: "" }]);
   const removeItem = (i: number) => setItems(v => v.filter((_, idx) => idx !== i));
   const setItem = (i: number, k: keyof ExitItem, v: string) =>
     setItems(prev => prev.map((it, idx) => idx === i ? { ...it, [k]: v } : it));
+  const setItemProduct = (i: number, p: { id: string; name: string; sku: string | null; stock: number } | null) =>
+    setItems(prev => prev.map((it, idx) => idx === i ? { ...it, productId: p?.id ?? "", productName: p?.name ?? "" } : it));
 
   const resetForm = () => {
-    setItems([{ product: "", qty: "" }]);
+    setItems([{ productId: "", productName: "", qty: "" }]);
     setTipo("Venda");
     setResponsavel("");
     setObs("");
     setEditandoId(null);
   };
 
-  const handleSave = () => {
-    if (editandoId) {
-      // Modo edição: atualiza sem duplicar no financeiro
-      console.log(`[EDITAR SAÍDA] ID: ${editandoId} - Atualizando sem duplicar no financeiro`);
-    } else {
-      // Modo criação: cria novo
-      console.log(`[CRIAR SAÍDA] Nova saída registrada`);
+  const EXIT_TYPE_MAP: Record<string, string> = {
+    Venda: "SAIDA", Perda: "PERDA", "Uso interno": "SAIDA", Troca: "SAIDA", Avaria: "AVARIA",
+  };
+
+  const handleSave = async () => {
+    const validItems = items.filter(it => it.productId && parseFloat(it.qty) > 0);
+    if (validItems.length === 0) { setSaidaErrors({ products: true }); return; }
+    setSaidaErrors({});
+    setApiError(null);
+    setSaving(true);
+    try {
+      const res = await api.post("/api/stock/exit", {
+        tipo:        EXIT_TYPE_MAP[tipo] ?? "SAIDA",
+        responsavel: responsavel || undefined,
+        obs:         obs || undefined,
+        items:       validItems.map(it => ({
+          productId:   it.productId,
+          productName: it.productName,
+          qty:         parseFloat(it.qty),
+        })),
+      });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (res.ok && data.success) {
+        setSaved(true);
+        setTimeout(() => { setSaved(false); setShowForm(false); resetForm(); }, 2000);
+      } else {
+        setApiError(data.error ?? "Erro ao registrar saída. Tente novamente.");
+      }
+    } catch {
+      setApiError("Erro de conexão. Verifique sua internet.");
+    } finally {
+      setSaving(false);
     }
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-      setShowForm(false);
-      resetForm();
-    }, 2000);
   };
 
   const handleEditar = (saida: Movement) => {
@@ -646,7 +788,7 @@ function SecaoSaida() {
     // Carrega dados para edição
     setEditandoId(saida.id);
     setObs(saida.note || "");
-    setItems([{ product: saida.product, qty: String(saida.qty) }]);
+    setItems([{ productId: "", productName: saida.product, qty: String(saida.qty) }]);
     setShowForm(true);
   };
 
@@ -659,14 +801,28 @@ function SecaoSaida() {
   const [saidaMovs, setSaidaMovs] = useState<Movement[]>([]);
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const data = await getStockMovements();
-        if (mounted) setSaidaMovs((Array.isArray(data) ? data as Movement[] : []).filter(m => m.type === "saida").slice(0, 6));
-      } catch {
-        if (mounted) setSaidaMovs([]);
-      }
-    })();
+    api.get("/api/stock/movements?limit=50")
+      .then(r => r.json())
+      .then((d: { movements?: DbMovement[] }) => {
+        if (!mounted) return;
+        setSaidaMovs(
+          (d.movements ?? [])
+            .filter(m => ["SAIDA", "VENDA", "PERDA", "AVARIA"].includes(m.type))
+            .slice(0, 6)
+            .map(m => ({
+              id:            m.id,
+              date:          fmtDate(m.createdAt),
+              product:       m.productName,
+              type:          dbTypeToKey(m.type),
+              qty:           m.quantity,
+              balanceBefore: m.balanceBefore,
+              balanceAfter:  m.balanceAfter,
+              user:          m.createdByName ?? "—",
+              note:          m.origem,
+            }))
+        );
+      })
+      .catch(() => { if (mounted) setSaidaMovs([]); });
     return () => { mounted = false; };
   }, []);
   const ultimasSaidas = saidaMovs;
@@ -769,7 +925,11 @@ function SecaoSaida() {
         <CardContent className="space-y-3">
           {items.map((it, i) => (
             <div key={i} className="grid grid-cols-[1fr_100px_36px] gap-2 items-center">
-              <Input placeholder="Produto" value={it.product} onChange={e => setItem(i, "product", e.target.value)} className="h-9 rounded-xl text-sm" />
+              <ProductCombobox
+                value={it.productId ? { id: it.productId, name: it.productName, sku: null, stock: 0 } : null}
+                onChange={p => setItemProduct(i, p)}
+                error={saidaErrors.products && !it.productId}
+              />
               <Input placeholder="Qtd" type="number" value={it.qty} onChange={e => setItem(i, "qty", e.target.value)} className="h-9 rounded-xl text-sm" />
               <button onClick={() => removeItem(i)} className="w-9 h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
                 <X className="w-3.5 h-3.5" />
@@ -779,11 +939,18 @@ function SecaoSaida() {
         </CardContent>
       </Card>
 
-      <div className="flex gap-3">
-        <Button variant="outline" className="rounded-xl gap-2" onClick={handleCancelar}><ArrowLeftRight className="w-4 h-4 rotate-180" />Voltar</Button>
-        <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={handleSave}>
-          {saved ? <><Check className="w-4 h-4" />{editandoId ? "Atualizado!" : "Registrado!"}</> : <><ArrowDownCircle className="w-4 h-4" />{editandoId ? "Salvar alterações" : "Confirmar saída"}</>}
-        </Button>
+      <div className="space-y-2">
+        <div className="flex gap-3">
+          <Button variant="outline" className="rounded-xl gap-2" onClick={handleCancelar}><ArrowLeftRight className="w-4 h-4 rotate-180" />Voltar</Button>
+          <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={handleSave} disabled={saving}>
+            {saving
+              ? <><Loader2 className="w-4 h-4 animate-spin" />Processando...</>
+              : saved
+                ? <><Check className="w-4 h-4" />{editandoId ? "Atualizado!" : "Registrado!"}</>
+                : <><ArrowDownCircle className="w-4 h-4" />{editandoId ? "Salvar alterações" : "Confirmar saída"}</>}
+          </Button>
+        </div>
+        {apiError && <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-2">{apiError}</p>}
       </div>
     </div>
   );
@@ -823,14 +990,25 @@ function SecaoExtrato() {
   const [movements, setMovements] = useState<Movement[]>([]);
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const data = await getStockMovements();
-        if (mounted) setMovements(Array.isArray(data) ? data as Movement[] : []);
-      } catch {
-        if (mounted) setMovements([]);
-      }
-    })();
+    api.get("/api/stock/movements?limit=500")
+      .then(r => r.json())
+      .then((d: { movements?: DbMovement[] }) => {
+        if (!mounted) return;
+        setMovements(
+          (d.movements ?? []).map(m => ({
+            id:            m.id,
+            date:          fmtDate(m.createdAt),
+            product:       m.productName,
+            type:          dbTypeToKey(m.type),
+            qty:           m.quantity,
+            balanceBefore: m.balanceBefore,
+            balanceAfter:  m.balanceAfter,
+            user:          m.createdByName ?? "—",
+            note:          m.origem,
+          }))
+        );
+      })
+      .catch(() => { if (mounted) setMovements([]); });
     return () => { mounted = false; };
   }, []);
 
@@ -901,21 +1079,39 @@ function SecaoExtrato() {
   );
 }
 
-// ─── SEÇÃO: BALANÇO (antigo Inventário) ───────────────────────────
-interface BalancoRecord {
-  codigo: string;
-  contagem: string;
-  encerramento: string;
-  status: "aberto" | "encerrado";
-  produtos: "todos" | "alguns";
-  preco: string;
+// ─── SEÇÃO: BALANÇO ───────────────────────────────────────────────
+interface BalancoItemJson {
+  productId: string;
+  productName: string;
+  sku: string | null;
+  systemStock: number;
+  counted: number | null;
+  diff: number | null;
+  costPrice: number | null;
+  unit: string;
 }
 
-const MOCK_BALANCOS: BalancoRecord[] = [
-  { codigo: "100.001.077", contagem: "31/07/2025 10:39", encerramento: "31/07/2025 10:47", status: "encerrado", produtos: "todos", preco: "Preço de custo" },
-  { codigo: "100.001.111", contagem: "31/07/2025 10:50", encerramento: "31/07/2025 10:50", status: "encerrado", produtos: "alguns", preco: "Preço de custo" },
-  { codigo: "100.001.112", contagem: "31/07/2025 10:43", encerramento: "31/07/2025 10:43", status: "aberto",    produtos: "todos", preco: "Preço de custo" },
-];
+interface BalancoRecord {
+  id: string;
+  codigo: string;
+  prodScope: string;
+  preco: string;
+  dataContagem: string;
+  dataEncerramento: string | null;
+  status: "aberto" | "encerrado";
+  items: BalancoItemJson[];
+  createdByName: string | null;
+  createdAt: string;
+}
+
+interface BalanceProduct {
+  id: string;
+  name: string;
+  sku: string | null;
+  stock: number;
+  costPrice: number | null;
+  unit: string;
+}
 
 function gerarCodigo() {
   const n = Math.floor(100000000 + Math.random() * 900000000);
@@ -923,24 +1119,48 @@ function gerarCodigo() {
 }
 
 function SecaoInventario() {
-  const [allProducts, setAllProducts] = useState<StockProduct[]>([]);
+  // ── Produtos reais da API ──
+  const [realProducts, setRealProducts] = useState<BalanceProduct[]>([]);
+  const [loadingProds, setLoadingProds] = useState(false);
+
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const data = await getStockProducts();
-        if (mounted) setAllProducts(Array.isArray(data) ? data as StockProduct[] : []);
-      } catch {
-        if (mounted) setAllProducts([]);
-      }
-    })();
-    return () => { mounted = false; };
+    const storeId = localStorage.getItem("storeId");
+    if (!storeId) return;
+    setLoadingProds(true);
+    fetch(`/api/products/list?storeId=${storeId}`)
+      .then(r => r.json())
+      .then((d: { products?: Array<{ id: string; name: string; sku?: string | null; stock?: number | null; costPrice?: string | null; unit?: string | null; active?: boolean }> }) => {
+        const active = (d.products ?? []).filter(p => p.active !== false);
+        setRealProducts(active.map(p => ({
+          id:        p.id,
+          name:      p.name,
+          sku:       p.sku   ?? null,
+          stock:     p.stock ?? 0,
+          costPrice: p.costPrice ? parseFloat(p.costPrice) : null,
+          unit:      p.unit  ?? "un",
+        })));
+      })
+      .catch(() => {})
+      .finally(() => setLoadingProds(false));
   }, []);
 
-  const [view, setView] = useState<"lista" | "novo">("lista");
+  // ── Balanços persistidos ──
   const [balancos, setBalancos] = useState<BalancoRecord[]>([]);
+  const [loadingBalancos, setLoadingBalancos] = useState(false);
 
-  // form state
+  const fetchBalancos = () => {
+    setLoadingBalancos(true);
+    api.get("/api/balances/list")
+      .then(r => r.json())
+      .then((d: { balances?: BalancoRecord[] }) => setBalancos(d.balances ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingBalancos(false));
+  };
+
+  useEffect(fetchBalancos, []);
+
+  // ── form state ──
+  const [view, setView] = useState<"lista" | "novo">("lista");
   const [prodScope, setProdScope] = useState<"todos" | "alguns">("todos");
   const [preco, setPreco] = useState("Preço de custo");
   const [dataContagem, setDataContagem] = useState(new Date().toISOString().split("T")[0]);
@@ -949,16 +1169,20 @@ function SecaoInventario() {
   const [addSearch, setAddSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [encerrado, setEncerrado] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const setCount = (id: string, v: string) => setCounts(prev => ({ ...prev, [id]: v }));
 
   const visibleProducts = prodScope === "todos"
-    ? allProducts
-    : allProducts.filter(p => selectedIds.includes(p.id));
+    ? realProducts
+    : realProducts.filter(p => selectedIds.includes(p.id));
 
-  const filteredAdd = allProducts.filter(p =>
+  const filteredAdd = realProducts.filter(p =>
     !selectedIds.includes(p.id) &&
-    (p.name.toLowerCase().includes(addSearch.toLowerCase()) || p.sku.toLowerCase().includes(addSearch.toLowerCase()))
+    (p.name.toLowerCase().includes(addSearch.toLowerCase()) ||
+     (p.sku ?? "").toLowerCase().includes(addSearch.toLowerCase()))
   );
 
   const divergencias = visibleProducts.filter(p => {
@@ -970,24 +1194,84 @@ function SecaoInventario() {
     return !isNaN(c) && c !== p.stock;
   });
 
-  const handleEncerrar = () => {
-    setEncerrado(true);
-    setDataEnc(new Date().toLocaleString("pt-BR"));
+  const resetForm = () => {
+    setProdScope("todos"); setPreco("Preço de custo");
+    setDataContagem(new Date().toISOString().split("T")[0]);
+    setDataEnc(""); setCounts({}); setSelectedIds([]);
+    setEncerrado(false); setSaveError(null);
   };
 
-  const handleSalvar = () => {
-    const novo: BalancoRecord = {
-      codigo: gerarCodigo(),
-      contagem: new Date(dataContagem + "T00:00:00").toLocaleDateString("pt-BR") + " " + new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-      encerramento: encerrado ? dataEnc : "—",
-      status: encerrado ? "encerrado" : "aberto",
-      produtos: prodScope,
-      preco,
-    };
-    setBalancos(prev => [novo, ...prev]);
-    setView("lista");
-    setProdScope("todos"); setPreco("Preço de custo"); setCounts({}); setSelectedIds([]); setEncerrado(false); setDataEnc("");
+  const handleEncerrar = () => {
+    setEncerrado(true);
+    setDataEnc(new Date().toISOString().split("T")[0]);
   };
+
+  const handleSalvar = async () => {
+    setSaveError(null);
+    setSaving(true);
+    try {
+      const items = visibleProducts.map(p => {
+        const rawCounted = counts[p.id];
+        const efectivo = prodScope === "todos" ? (rawCounted ?? "0") : (rawCounted ?? "");
+        const counted = efectivo !== "" ? parseInt(efectivo) : null;
+        const diff = counted !== null ? counted - p.stock : null;
+        return {
+          productId:   p.id,
+          productName: p.name,
+          sku:         p.sku,
+          systemStock: p.stock,
+          counted,
+          diff,
+          costPrice:   p.costPrice,
+          unit:        p.unit,
+        };
+      });
+
+      const payload = {
+        codigo:           gerarCodigo(),
+        prodScope,
+        preco,
+        dataContagem:     dataContagem + "T00:00:00.000Z",
+        dataEncerramento: encerrado && dataEnc ? dataEnc + "T00:00:00.000Z" : null,
+        status:           encerrado ? "encerrado" : "aberto",
+        items,
+      };
+
+      const res  = await api.post("/api/balances/create", payload);
+      const data = await res.json() as { success?: boolean; balance?: BalancoRecord; error?: string };
+
+      if (res.ok && data.balance) {
+        setBalancos(prev => [data.balance!, ...prev]);
+        resetForm();
+        setView("lista");
+      } else {
+        setSaveError(data.error ?? "Erro ao salvar balanço. Tente novamente.");
+      }
+    } catch {
+      setSaveError("Erro de conexão. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (balanceId: string) => {
+    if (!confirm("Excluir este balanço permanentemente?")) return;
+    setDeletingId(balanceId);
+    try {
+      const res  = await api.post("/api/balances/delete", { balanceId });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (res.ok && data.success) {
+        setBalancos(prev => prev.filter(b => b.id !== balanceId));
+      } else {
+        alert(data.error ?? "Erro ao excluir balanço.");
+      }
+    } catch {
+      alert("Erro de conexão.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
 
   const handleDownloadPDF = () => {
     const divergCount = visibleProducts.filter(p => { const ef = prodScope === "todos" ? (counts[p.id] ?? "0") : (counts[p.id] ?? ""); const c = parseInt(ef); return !isNaN(c) && c !== p.stock; }).length;
@@ -1086,11 +1370,16 @@ function SecaoInventario() {
 
   // ── Lista de balanços ──
   if (view === "lista") {
+    const fmtDate = (iso: string | null) => iso
+      ? new Date(iso).toLocaleDateString("pt-BR")
+      : "—";
+
     return (
       <div className="space-y-5">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">Histórico de balanços realizados.</p>
-          <Button className="rounded-xl gap-2 h-9 bg-gradient-primary text-primary-foreground" onClick={() => setView("novo")}>
+          <Button className="rounded-xl gap-2 h-9 bg-gradient-primary text-primary-foreground"
+            onClick={() => { resetForm(); setView("novo"); }}>
             <Plus className="w-4 h-4" />Novo Balanço
           </Button>
         </div>
@@ -1100,20 +1389,26 @@ function SecaoInventario() {
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 border-b border-border/40">
                 <tr>
-                  {["Código", "Produtos", "Data contagem", "Data encerramento", "Status", "Ações"].map(h => (
+                  {["Código", "Itens", "Produtos", "Data contagem", "Encerramento", "Criado por", "Status", "Ações"].map(h => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30">
-                {balancos.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">Nenhum balanço registrado.</td></tr>
+                {loadingBalancos ? (
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" />Carregando...
+                  </td></tr>
+                ) : balancos.length === 0 ? (
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-muted-foreground text-sm">Nenhum balanço registrado.</td></tr>
                 ) : balancos.map(b => (
-                  <tr key={b.codigo} className="hover:bg-secondary/30 transition-colors">
+                  <tr key={b.id} className="hover:bg-secondary/30 transition-colors">
                     <td className="px-4 py-3 font-mono text-xs font-semibold">{b.codigo}</td>
-                    <td className="px-4 py-3 text-xs capitalize">{b.produtos}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{b.contagem}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{b.encerramento}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{b.items?.length ?? 0}</td>
+                    <td className="px-4 py-3 text-xs capitalize">{b.prodScope === "todos" ? "Todos" : "Selecionados"}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(b.dataContagem)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(b.dataEncerramento)}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{b.createdByName ?? "—"}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${b.status === "encerrado" ? "bg-secondary text-muted-foreground" : "bg-emerald-500/15 text-emerald-600"}`}>
                         {b.status === "encerrado" ? "Encerrado" : "Em aberto"}
@@ -1121,20 +1416,29 @@ function SecaoInventario() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1.5">
-                        <button className="text-xs px-2 py-1 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors flex items-center gap-1">
-                          <FileText className="w-3 h-3" />Visualizar
-                        </button>
                         <div className="relative">
-                          <button onClick={() => setExportRowOpen(v => v === b.codigo ? null : b.codigo)} className="text-xs px-2 py-1 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors flex items-center gap-1">
+                          <button onClick={() => setExportRowOpen(v => v === b.id ? null : b.id)}
+                            className="text-xs px-2 py-1 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors flex items-center gap-1">
                             <Download className="w-3 h-3" />Exportar<ChevronDown className="w-2.5 h-2.5" />
                           </button>
-                          {exportRowOpen === b.codigo && (
+                          {exportRowOpen === b.id && (
                             <div className="absolute right-0 top-full mt-1 z-20 bg-background border border-border/50 rounded-xl shadow-lg overflow-hidden min-w-[150px]">
-                              <button onClick={() => { handleDownload(); setExportRowOpen(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-secondary/60 flex items-center gap-2"><Download className="w-3 h-3" />Excel (.csv)</button>
-                              <button onClick={() => { handleDownloadPDF(); setExportRowOpen(null); }} className="w-full text-left px-3 py-2 text-xs hover:bg-secondary/60 flex items-center gap-2"><FileText className="w-3 h-3" />PDF (download)</button>
+                              <button onClick={() => { handleDownload(); setExportRowOpen(null); }}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-secondary/60 flex items-center gap-2">
+                                <Download className="w-3 h-3" />Excel (.csv)
+                              </button>
+                              <button onClick={() => { handleDownloadPDF(); setExportRowOpen(null); }}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-secondary/60 flex items-center gap-2">
+                                <FileText className="w-3 h-3" />PDF (download)
+                              </button>
                             </div>
                           )}
                         </div>
+                        <button onClick={() => handleDelete(b.id)} disabled={deletingId === b.id}
+                          className="text-xs px-2 py-1 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors flex items-center gap-1 disabled:opacity-50">
+                          {deletingId === b.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                          Excluir
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1194,7 +1498,7 @@ function SecaoInventario() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-muted-foreground uppercase">Data de encerramento</Label>
-              <Input type="date" value={typeof dataEnc === "string" && dataEnc.includes("/") ? "" : dataEnc} onChange={e => setDataEnc(e.target.value)} disabled={encerrado} className="h-9 rounded-xl text-sm disabled:opacity-50" />
+              <Input type="date" value={dataEnc} onChange={e => setDataEnc(e.target.value)} disabled={encerrado} className="h-9 rounded-xl text-sm disabled:opacity-50" />
             </div>
           </div>
         </CardContent>
@@ -1223,7 +1527,7 @@ function SecaoInventario() {
             {selectedIds.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {selectedIds.map(id => {
-                  const p = allProducts.find(x => x.id === id);
+                  const p = realProducts.find(x => x.id === id);
                   return p ? (
                     <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary font-medium">
                       {p.name}
@@ -1259,8 +1563,14 @@ function SecaoInventario() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/30">
-              {visibleProducts.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">Nenhum produto selecionado.</td></tr>
+              {loadingProds && prodScope === "todos" ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" />Carregando produtos...
+                </td></tr>
+              ) : visibleProducts.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  {prodScope === "alguns" ? "Busque e adicione produtos acima." : "Nenhum produto ativo encontrado."}
+                </td></tr>
               ) : visibleProducts.map(p => {
                 const rawCounted = counts[p.id];
                 const efectivo = prodScope === "todos" ? (rawCounted ?? "0") : (rawCounted ?? "");
@@ -1269,9 +1579,11 @@ function SecaoInventario() {
                 return (
                   <tr key={p.id} className={`transition-colors ${diff !== null && diff !== 0 ? "bg-amber-500/5" : "hover:bg-secondary/30"}`}>
                     <td className="px-4 py-2.5 font-medium">{p.name}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{p.sku}</td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground">R$ {p.costPrice.toFixed(2).replace(".", ",")}</td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground">un</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">{p.sku ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                      {p.costPrice != null ? `R$ ${p.costPrice.toFixed(2).replace(".", ",")}` : "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">{p.unit}</td>
                     <td className="px-4 py-2.5 font-bold">{p.stock}</td>
                     <td className="px-4 py-2.5">
                       <Input type="number" placeholder={prodScope === "todos" ? "0" : "Contar..."} value={rawCounted ?? ""}
@@ -1320,13 +1632,19 @@ function SecaoInventario() {
           <Download className="w-4 h-4" />Download PDF
         </Button>
         <div className="flex-1" />
-        <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={() => setView("lista")}>
+        <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={() => { resetForm(); setView("lista"); }}>
           Cancelar
         </Button>
-        <Button className="rounded-xl gap-1.5 h-9 text-sm bg-gradient-primary text-primary-foreground" onClick={handleSalvar}>
-          <Check className="w-4 h-4" />Salvar balanço
+        <Button className="rounded-xl gap-1.5 h-9 text-sm bg-gradient-primary text-primary-foreground"
+          onClick={handleSalvar} disabled={saving}>
+          {saving
+            ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</>
+            : <><Check className="w-4 h-4" />Salvar balanço</>}
         </Button>
       </div>
+      {saveError && (
+        <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-2">{saveError}</p>
+      )}
     </div>
   );
 }
@@ -1335,21 +1653,73 @@ function SecaoInventario() {
 const ADJUST_TYPES = ["Correção", "Perda", "Avaria", "Recontagem"];
 
 function SecaoAjustes() {
-  const [product, setProduct] = useState("");
+  const [productRecord, setProductRecord] = useState<{ id: string; name: string; sku: string | null; stock: number } | null>(null);
   const [qty, setQty] = useState("");
   const [tipo, setTipo] = useState("Correção");
   const [motivo, setMotivo] = useState("");
   const [obs, setObs] = useState("");
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [ajusteErrors, setAjusteErrors] = useState<{ product?: boolean; qty?: boolean }>({});
+  const [adjustments, setAdjustments] = useState<DbAdjustment[]>([]);
+  const [loadingAdj, setLoadingAdj] = useState(false);
+
+  const fetchAdjustments = useCallback(() => {
+    setLoadingAdj(true);
+    api.get("/api/stock/adjustments?limit=100")
+      .then(r => r.json())
+      .then((d: { adjustments?: DbAdjustment[] }) => setAdjustments(d.adjustments ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingAdj(false));
+  }, []);
+
+  useEffect(() => { fetchAdjustments(); }, [fetchAdjustments]);
+
+  const handleAjuste = async () => {
+    const errs: { product?: boolean; qty?: boolean } = {};
+    if (!productRecord) errs.product = true;
+    const qtyNum = parseFloat(qty);
+    if (!qty || isNaN(qtyNum) || qtyNum === 0) errs.qty = true;
+    if (Object.keys(errs).length > 0) { setAjusteErrors(errs); return; }
+    setAjusteErrors({});
+    setApiError(null);
+    setSaving(true);
+
+    try {
+      const res  = await api.post("/api/stock/adjustment", {
+        productId:    productRecord!.id,
+        productName:  productRecord!.name,
+        qty:          qtyNum,
+        tipo,
+        motivo:       motivo || undefined,
+        observations: obs    || undefined,
+      });
+      const data = await res.json() as { success?: boolean; error?: string };
+
+      if (res.ok && data.success) {
+        setSaved(true);
+        setProductRecord(null); setQty(""); setMotivo(""); setObs(""); setTipo("Correção");
+        setTimeout(() => setSaved(false), 2000);
+        fetchAdjustments();
+      } else {
+        setApiError(data.error ?? "Erro ao registrar ajuste. Tente novamente.");
+      }
+    } catch {
+      setApiError("Erro de conexão. Verifique sua internet.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="space-y-5 max-w-xl">
+    <div className="space-y-5 max-w-2xl">
       <p className="text-sm text-muted-foreground">Realize ajustes pontuais no estoque. Cada ajuste é registrado automaticamente no extrato.</p>
       <Card className="rounded-2xl border-border/50 shadow-soft">
         <CardHeader className="pb-3"><CardTitle className="text-base">Novo ajuste</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Produto</Label>
-            <Input placeholder="Nome ou SKU do produto" value={product} onChange={e => setProduct(e.target.value)} className="h-10 rounded-xl" /></div>
+            <ProductCombobox value={productRecord} onChange={setProductRecord} error={ajusteErrors.product} /></div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Tipo de ajuste</Label>
               <div className="relative">
@@ -1359,8 +1729,11 @@ function SecaoAjustes() {
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               </div>
             </div>
-            <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Quantidade (+ / -)</Label>
-              <Input type="number" placeholder="Ex: -3 ou +5" value={qty} onChange={e => setQty(e.target.value)} className="h-10 rounded-xl" /></div>
+            <div className="space-y-1.5">
+              <Label className={`text-xs font-semibold uppercase ${ajusteErrors.qty ? "text-destructive" : "text-muted-foreground"}`}>Quantidade (+ / -)</Label>
+              <Input type="number" placeholder="Ex: -3 ou +5" value={qty} onChange={e => setQty(e.target.value)}
+                className={`h-10 rounded-xl ${ajusteErrors.qty ? "border-destructive" : ""}`} />
+            </div>
           </div>
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Motivo</Label>
             <Input placeholder="Descreva o motivo" value={motivo} onChange={e => setMotivo(e.target.value)} className="h-10 rounded-xl" /></div>
@@ -1368,9 +1741,63 @@ function SecaoAjustes() {
             <Input placeholder="Detalhes adicionais" value={obs} onChange={e => setObs(e.target.value)} className="h-10 rounded-xl" /></div>
         </CardContent>
       </Card>
-      <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2000); }}>
-        {saved ? <><Check className="w-4 h-4" />Ajuste registrado!</> : <><Settings2 className="w-4 h-4" />Registrar ajuste</>}
-      </Button>
+      <div className="space-y-2">
+        <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={handleAjuste} disabled={saving}>
+          {saving
+            ? <><Loader2 className="w-4 h-4 animate-spin" />Processando...</>
+            : saved
+              ? <><Check className="w-4 h-4" />Ajuste registrado!</>
+              : <><Settings2 className="w-4 h-4" />Registrar ajuste</>}
+        </Button>
+        {apiError && (
+          <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-2">{apiError}</p>
+        )}
+      </div>
+
+      {/* Histórico de ajustes */}
+      <div className="space-y-3 pt-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Histórico de ajustes</h3>
+          <button onClick={fetchAdjustments} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+            <RefreshCw className="w-3 h-3" />Atualizar
+          </button>
+        </div>
+        {loadingAdj ? (
+          <div className="flex items-center gap-2 py-8 justify-center text-sm text-muted-foreground">
+            <Loader2 className="w-4 h-4 animate-spin" />Carregando...
+          </div>
+        ) : adjustments.length === 0 ? (
+          <EmptyState icon={Settings2} title="Nenhum ajuste" desc="Os ajustes manuais registrados aparecerão aqui." />
+        ) : (
+          <div className="relative pl-6 space-y-0 before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-px before:bg-border/60">
+            {adjustments.map(a => {
+              const isPositive = a.qty > 0;
+              return (
+                <div key={a.id} className="relative pb-4">
+                  <div className={`absolute -left-[19px] w-4 h-4 rounded-full ${isPositive ? "bg-emerald-500/15" : "bg-destructive/15"} border-2 border-background flex items-center justify-center`}>
+                    <Settings2 className={`w-2 h-2 ${isPositive ? "text-emerald-600" : "text-destructive"}`} />
+                  </div>
+                  <div className="pl-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{a.productName}</span>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-500/15 text-violet-600">{a.tipo}</span>
+                      <span className={`text-sm font-bold ${isPositive ? "text-emerald-600" : "text-destructive"}`}>
+                        {isPositive ? "+" : ""}{a.qty} un
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
+                      <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{fmtDate(a.createdAt)}</span>
+                      {a.createdByName && <span>Por {a.createdByName}</span>}
+                      {a.motivo && <span>{a.motivo}</span>}
+                      <span>Saldo: {a.balanceBefore} → {a.balanceAfter}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1378,23 +1805,24 @@ function SecaoAjustes() {
 // ─── SEÇÃO: HISTÓRICO ─────────────────────────────────────────────
 function SecaoHistorico() {
   const [search, setSearch] = useState("");
-  const [movements, setMovements] = useState<Movement[]>([]);
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const data = await getStockMovements();
-        if (mounted) setMovements(Array.isArray(data) ? data as Movement[] : []);
-      } catch {
-        if (mounted) setMovements([]);
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
+  const [movements, setMovements] = useState<DbMovement[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchMovements = () => {
+    setLoading(true);
+    api.get("/api/stock/movements?limit=200")
+      .then(r => r.json())
+      .then((d: { movements?: DbMovement[] }) => setMovements(d.movements ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(fetchMovements, []);
+
   const filtered = movements.filter(m =>
-    m.product.toLowerCase().includes(search.toLowerCase()) ||
-    m.user.toLowerCase().includes(search.toLowerCase()) ||
-    m.note.toLowerCase().includes(search.toLowerCase())
+    m.productName.toLowerCase().includes(search.toLowerCase()) ||
+    (m.createdByName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    m.origem.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -1407,13 +1835,26 @@ function SecaoHistorico() {
         <Button variant="outline" size="sm" className="rounded-xl h-9 gap-1.5"><Download className="w-3.5 h-3.5" />Exportar log</Button>
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={History} title="Sem registros" desc="Nenhuma movimentação encontrada com os filtros atuais." />
+      {loading ? (
+        <div className="flex items-center justify-center py-12 text-muted-foreground text-sm gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />Carregando movimentações...
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={History} title="Sem registros" desc="Nenhuma movimentação de estoque registrada ainda." />
       ) : (
         <div className="relative pl-6 space-y-0 before:absolute before:left-[9px] before:top-2 before:bottom-2 before:w-px before:bg-border/60">
-          {filtered.map((m, i) => {
-            const cfg = MOV_TYPE_CONFIG[m.type] ?? { label: m.type, color: "text-foreground", bg: "bg-secondary", icon: Activity };
-            const Icon = cfg.icon;
+          {filtered.map(m => {
+            // DB usa uppercase (ENTRADA, VENDA, AJUSTE); config usa lowercase
+            const typeKey = m.type.toLowerCase();
+            const cfg = MOV_TYPE_CONFIG[typeKey] ?? MOV_TYPE_CONFIG[
+              typeKey === "venda" ? "saida" : typeKey === "perda" || typeKey === "avaria" ? "perda" : "ajuste"
+            ] ?? { label: m.type, color: "text-foreground", bg: "bg-secondary", icon: Activity };
+            const Icon    = cfg.icon;
+            // Entradas aumentam estoque; vendas/saídas/perdas reduzem
+            const isPositive = ["entrada", "ENTRADA"].includes(m.type) || m.balanceAfter > m.balanceBefore;
+            const displayQty = isPositive ? `+${m.quantity}` : `-${m.quantity}`;
+            const fmtDate = new Date(m.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
             return (
               <div key={m.id} className="relative pb-5">
                 <div className={`absolute -left-[19px] w-4 h-4 rounded-full ${cfg.bg} border-2 border-background flex items-center justify-center`}>
@@ -1421,16 +1862,16 @@ function SecaoHistorico() {
                 </div>
                 <div className="pl-4">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-sm">{m.product}</span>
-                    <MovTypeBadge type={m.type} />
-                    <span className={`text-sm font-bold ${m.qty > 0 ? "text-emerald-600" : "text-destructive"}`}>
-                      {m.qty > 0 ? "+" : ""}{m.qty} un
+                    <span className="font-medium text-sm">{m.productName}</span>
+                    <MovTypeBadge type={typeKey} />
+                    <span className={`text-sm font-bold ${isPositive ? "text-emerald-600" : "text-destructive"}`}>
+                      {displayQty} un
                     </span>
                   </div>
                   <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground flex-wrap">
-                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{m.date}</span>
-                    <span>Por {m.user}</span>
-                    {m.note && <span>{m.note}</span>}
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{fmtDate}</span>
+                    {m.createdByName && <span>Por {m.createdByName}</span>}
+                    <span className="text-muted-foreground/70">{m.origem}</span>
                     <span>Saldo: {m.balanceBefore} → {m.balanceAfter}</span>
                   </div>
                 </div>
@@ -1446,32 +1887,67 @@ function SecaoHistorico() {
 // ─── SEÇÃO: BALANÇO ───────────────────────────────────────────────
 function SecaoBalanco() {
   const [products, setProducts] = useState<StockProduct[]>([]);
+  const [movements, setMovements] = useState<DbMovement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState("7");
+
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const data = await getStockProducts();
-        if (mounted) setProducts(Array.isArray(data) ? data as StockProduct[] : []);
-      } catch {
-        if (mounted) setProducts([]);
-      }
-    })();
-    return () => { mounted = false; };
+    const storeId = localStorage.getItem("storeId");
+    setLoading(true);
+    Promise.all([
+      storeId ? fetch(`/api/products/list?storeId=${storeId}`).then(r => r.json()) : Promise.resolve({ products: [] }),
+      api.get("/api/stock/movements?limit=500").then(r => r.json()),
+    ])
+      .then(([pd, md]: [{ products?: Array<{ id: string; name: string; sku?: string | null; stock?: number | null; lowStockThreshold?: number | null; costPrice?: string | null; price?: string | null; active?: boolean }> }, { movements?: DbMovement[] }]) => {
+        setProducts((pd.products ?? []).filter(p => p.active !== false).map(p => ({
+          id: p.id, name: p.name, sku: p.sku ?? "—", category: "—",
+          stock: p.stock ?? 0, minStock: p.lowStockThreshold ?? 5,
+          location: "—", lastMovement: "—",
+          costPrice: p.costPrice ? parseFloat(p.costPrice) : 0,
+          price: p.price ? parseFloat(p.price) : 0,
+        })));
+        setMovements(md.movements ?? []);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
-  const totalValue = products.reduce((s, p) => s + p.stock * p.costPrice, 0);
-  const totalItems = products.reduce((s, p) => s + p.stock, 0);
-  const semEstoque = products.filter(p => p.stock === 0).length;
-  const baixo = products.filter(p => p.stock > 0 && p.stock <= p.minStock).length;
+
+  const days = parseInt(period);
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const periodMovements = movements.filter(m => new Date(m.createdAt) >= cutoff);
+
+  const totalValue  = products.reduce((s, p) => s + p.stock * p.costPrice, 0);
+  const totalItems  = products.reduce((s, p) => s + p.stock, 0);
+  const semEstoque  = products.filter(p => p.stock === 0).length;
+  const baixo       = products.filter(p => p.stock > 0 && p.stock <= p.minStock).length;
+  const entradas    = periodMovements.filter(m => m.type === "ENTRADA").reduce((s, m) => s + m.quantity, 0);
+  const saidas      = periodMovements.filter(m => ["SAIDA", "VENDA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0);
+  const perdas      = periodMovements.filter(m => ["PERDA", "AVARIA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0);
+  const movProdIds  = new Set(periodMovements.map(m => m.productId).filter(Boolean));
+  const movimentados = movProdIds.size;
+
+  // Build chart data: group by day for the last N days
+  const chartData = Array.from({ length: Math.min(days, 7) }, (_, i) => {
+    const d = new Date(Date.now() - (Math.min(days, 7) - 1 - i) * 24 * 60 * 60 * 1000);
+    const label = d.toLocaleDateString("pt-BR", { weekday: "short" });
+    const dayStr = d.toISOString().slice(0, 10);
+    const dayMovs = periodMovements.filter(m => m.createdAt.slice(0, 10) === dayStr);
+    return {
+      name: label,
+      entrada: dayMovs.filter(m => m.type === "ENTRADA").reduce((s, m) => s + m.quantity, 0),
+      saida:   dayMovs.filter(m => ["SAIDA", "VENDA", "PERDA", "AVARIA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0),
+    };
+  });
 
   const kpis = [
-    { icon: TrendingUp,    label: "Valor total em estoque", value: `R$ ${totalValue.toFixed(2).replace(".", ",")}`, color: "text-emerald-600", bg: "bg-emerald-500/15" },
-    { icon: Package,       label: "Total de itens",         value: totalItems,                                       color: "text-primary",     bg: "bg-primary/15" },
-    { icon: XCircle,       label: "Produtos sem estoque",   value: semEstoque,                                       color: "text-destructive", bg: "bg-destructive/15" },
-    { icon: AlertTriangle, label: "Estoque baixo",          value: baixo,                                            color: "text-amber-600",   bg: "bg-amber-500/15" },
-    { icon: ArrowUpCircle, label: "Entradas no período",    value: 3,                                                color: "text-emerald-600", bg: "bg-emerald-500/15" },
-    { icon: ArrowDownCircle,label:"Saídas no período",      value: 1,                                                color: "text-blue-600",    bg: "bg-blue-500/15" },
-    { icon: AlertCircle,   label: "Perdas / Avarias",       value: 1,                                                color: "text-destructive", bg: "bg-destructive/15" },
-    { icon: Activity,      label: "Produtos movimentados",  value: 5,                                                color: "text-violet-600",  bg: "bg-violet-500/15" },
+    { icon: TrendingUp,      label: "Valor total em estoque", value: `R$ ${totalValue.toFixed(2).replace(".", ",")}`, color: "text-emerald-600", bg: "bg-emerald-500/15" },
+    { icon: Package,         label: "Total de itens",         value: totalItems,                                       color: "text-primary",     bg: "bg-primary/15" },
+    { icon: XCircle,         label: "Produtos sem estoque",   value: semEstoque,                                       color: "text-destructive", bg: "bg-destructive/15" },
+    { icon: AlertTriangle,   label: "Estoque baixo",          value: baixo,                                            color: "text-amber-600",   bg: "bg-amber-500/15" },
+    { icon: ArrowUpCircle,   label: "Entradas no período",    value: entradas,                                         color: "text-emerald-600", bg: "bg-emerald-500/15" },
+    { icon: ArrowDownCircle, label: "Saídas no período",      value: saidas,                                           color: "text-blue-600",    bg: "bg-blue-500/15" },
+    { icon: AlertCircle,     label: "Perdas / Avarias",       value: perdas,                                           color: "text-destructive", bg: "bg-destructive/15" },
+    { icon: Activity,        label: "Produtos movimentados",  value: movimentados,                                     color: "text-violet-600",  bg: "bg-violet-500/15" },
   ];
 
   return (
@@ -1479,34 +1955,32 @@ function SecaoBalanco() {
       {/* Filtros */}
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative">
-          <select className="h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring">
-            <option>Últimos 7 dias</option><option>Últimos 30 dias</option><option>Este mês</option><option>Este ano</option>
+          <select value={period} onChange={e => setPeriod(e.target.value)} className="h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring">
+            <option value="7">Últimos 7 dias</option>
+            <option value="30">Últimos 30 dias</option>
+            <option value="90">Últimos 90 dias</option>
           </select>
           <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
         </div>
-        <Button variant="outline" size="sm" className="rounded-xl h-9 gap-1.5"><Download className="w-3.5 h-3.5" />Exportar</Button>
+        <Button variant="outline" size="sm" className="rounded-xl h-9 gap-1.5" disabled={loading}>
+          <Download className="w-3.5 h-3.5" />Exportar
+        </Button>
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {kpis.map(k => <SummaryCard key={k.label} {...k} />)}
-      </div>
+      {loading ? <SkeletonRows n={2} /> : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {kpis.map(k => <SummaryCard key={k.label} {...k} />)}
+        </div>
+      )}
 
-      {/* Gráfico placeholder */}
+      {/* Gráfico */}
       <Card className="rounded-2xl border-border/50 shadow-soft">
         <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Entradas × Saídas</CardTitle></CardHeader>
         <CardContent>
           <div className="h-[200px]">
             <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando gráfico...</div>}>
-              <StockMovementChart data={[
-                { name: "Seg", entrada: 8, saida: 3 },
-                { name: "Ter", entrada: 5, saida: 2 },
-                { name: "Qua", entrada: 12, saida: 7 },
-                { name: "Qui", entrada: 3, saida: 1 },
-                { name: "Sex", entrada: 9, saida: 4 },
-                { name: "Sáb", entrada: 2, saida: 1 },
-                { name: "Dom", entrada: 0, saida: 0 },
-              ]} />
+              <StockMovementChart data={loading ? [] : chartData} />
             </Suspense>
           </div>
         </CardContent>
@@ -1519,14 +1993,20 @@ function SecaoBalanco() {
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 border-b border-border/40">
               <tr>
-                {["Produto", "Estoque atual", "Valor unitário", "Valor total", "Última mov.", "Giro", "Risco"].map(h => (
+                {["Produto", "Estoque atual", "Valor unitário", "Valor total", "Giro", "Risco"].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-border/30">
-              {products.map(p => {
-                const vt = p.stock * p.costPrice;
+              {loading ? (
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin inline mr-2" />Carregando...
+                </td></tr>
+              ) : products.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">Nenhum produto cadastrado.</td></tr>
+              ) : products.map(p => {
+                const vt   = p.stock * p.costPrice;
                 const giro = p.stock > 50 ? "Alto" : p.stock > 15 ? "Médio" : "Baixo";
                 const risco = p.stock === 0 ? "Ruptura" : p.stock <= p.minStock ? "Atenção" : "Normal";
                 return (
@@ -1535,16 +2015,11 @@ function SecaoBalanco() {
                     <td className="px-4 py-3 font-bold">{p.stock}</td>
                     <td className="px-4 py-3 text-muted-foreground">R$ {p.costPrice.toFixed(2).replace(".", ",")}</td>
                     <td className="px-4 py-3 font-semibold">R$ {vt.toFixed(2).replace(".", ",")}</td>
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{p.lastMovement}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${giro === "Alto" ? "bg-emerald-500/15 text-emerald-600" : giro === "Médio" ? "bg-blue-500/15 text-blue-600" : "bg-secondary text-muted-foreground"}`}>
-                        {giro}
-                      </span>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${giro === "Alto" ? "bg-emerald-500/15 text-emerald-600" : giro === "Médio" ? "bg-blue-500/15 text-blue-600" : "bg-secondary text-muted-foreground"}`}>{giro}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${risco === "Ruptura" ? "bg-destructive/15 text-destructive" : risco === "Atenção" ? "bg-amber-500/15 text-amber-600" : "bg-emerald-500/15 text-emerald-600"}`}>
-                        {risco}
-                      </span>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${risco === "Ruptura" ? "bg-destructive/15 text-destructive" : risco === "Atenção" ? "bg-amber-500/15 text-amber-600" : "bg-emerald-500/15 text-emerald-600"}`}>{risco}</span>
                     </td>
                   </tr>
                 );

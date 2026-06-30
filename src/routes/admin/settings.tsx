@@ -38,6 +38,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ExternalLink,
+  Fingerprint,
 } from "lucide-react";
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -615,6 +616,16 @@ function SettingsPage() {
                   </div>
                 </div>
               </div>
+              {/* Store ID */}
+              <div className="flex items-center justify-between py-1">
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
+                  <Fingerprint className="w-3 h-3" />
+                  Store ID:
+                  <span className="font-mono">{store?.id ?? "—"}</span>
+                </span>
+                <CopyStoreUrlButton url={store?.id ?? ""} />
+              </div>
+
               {success && (
                 <div className="flex items-center gap-2 text-sm text-green-600">
                   <Check className="w-4 h-4" />
@@ -2485,19 +2496,6 @@ interface LogAudit {
   dados_novos: Record<string, unknown> | null;
 }
 
-const MOCK_AUDIT: LogAudit[] = [
-  { id:"al1",  data_hora:"25/05/2026 14:32", nome_usuario:"Admin",        acao:"RECEBER_EFETIVAR",  modulo:"FINANCEIRO_RECEBER", recurso_id:"r1",       recurso_tipo:"conta_receber", status:"success", ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{status:"pendente",valorRecebido:0},    dados_novos:{status:"pago",valorRecebido:450} },
-  { id:"al2",  data_hora:"25/05/2026 14:15", nome_usuario:"Admin",        acao:"PAGAR_CRIAR",       modulo:"FINANCEIRO_PAGAR",   recurso_id:"p8",       recurso_tipo:"conta_pagar",   status:"success", ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:null,                                   dados_novos:{fornecedor:"Contabilidade Souza",valor:600} },
-  { id:"al3",  data_hora:"25/05/2026 13:55", nome_usuario:"Carlos Silva", acao:"LOGIN_SUCESSO",     modulo:"AUTENTICACAO",       recurso_id:"u2",       recurso_tipo:"user",          status:"success", ip_origem:"201.17.44.8",  dispositivo:"Safari / macOS",   dados_anteriores:null,                                   dados_novos:null },
-  { id:"al4",  data_hora:"25/05/2026 11:02", nome_usuario:"Admin",        acao:"PAGAR_EXCLUIR",     modulo:"FINANCEIRO_PAGAR",   recurso_id:"p3",       recurso_tipo:"conta_pagar",   status:"denied",  ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{status:"vencido",origem:"Manual"},     dados_novos:null },
-  { id:"al5",  data_hora:"24/05/2026 10:15", nome_usuario:"Admin",        acao:"ESTOQUE_ENTRADA",   modulo:"ESTOQUE",             recurso_id:"prod-12",  recurso_tipo:"product",       status:"success", ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{estoque:8},                            dados_novos:{estoque:50} },
-  { id:"al6",  data_hora:"24/05/2026 09:00", nome_usuario:"Carlos Silva", acao:"RECEBER_ATUALIZAR", modulo:"FINANCEIRO_RECEBER", recurso_id:"r2",       recurso_tipo:"conta_receber", status:"success", ip_origem:"201.17.44.8",  dispositivo:"Chrome / Windows", dados_anteriores:{obs:""},                               dados_novos:{obs:"Desconto fidelidade"} },
-  { id:"al7",  data_hora:"23/05/2026 16:45", nome_usuario:"Sistema",      acao:"PAGAR_EFETIVAR",    modulo:"FINANCEIRO_PAGAR",   recurso_id:"p6",       recurso_tipo:"conta_pagar",   status:"success", ip_origem:"system",       dispositivo:"Sistema Armazix",  dados_anteriores:{status:"pendente",valorPago:0},        dados_novos:{status:"pago",valorPago:8500} },
-  { id:"al8",  data_hora:"23/05/2026 08:00", nome_usuario:"Admin",        acao:"LOGIN_FALHA",       modulo:"AUTENTICACAO",       recurso_id:"u-unknown",recurso_tipo:"user",          status:"failure", ip_origem:"45.83.10.234", dispositivo:"Firefox / Linux",  dados_anteriores:null,                                   dados_novos:null },
-  { id:"al9",  data_hora:"22/05/2026 17:30", nome_usuario:"Admin",        acao:"CONFIG_ATUALIZAR",  modulo:"CONFIGURACOES",      recurso_id:"store-1",  recurso_tipo:"store",         status:"success", ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{deliveryFee:"5.00"},                   dados_novos:{deliveryFee:"8.00"} },
-  { id:"al10", data_hora:"22/05/2026 14:00", nome_usuario:"Admin",        acao:"RECEBER_EXCLUIR",   modulo:"FINANCEIRO_RECEBER", recurso_id:"r9-del",   recurso_tipo:"conta_receber", status:"denied",  ip_origem:"189.28.10.1",  dispositivo:"Chrome / Windows", dados_anteriores:{status:"pago",origem:"Venda"},         dados_novos:null },
-];
-
 const MODULOS_AUDIT: ModuloAudit[] = ["FINANCEIRO_RECEBER","FINANCEIRO_PAGAR","FINANCEIRO_FLUXO","VENDAS_PDV","ESTOQUE","AUTENTICACAO","CONFIGURACOES"];
 const STATUS_AUDIT_LIST: StatusAudit[] = ["success","failure","denied"];
 
@@ -2531,7 +2529,7 @@ function AuditoriaSection() {
   const [dataInicio,   setDataInicio]   = useState("");
   const [dataFim,      setDataFim]      = useState("");
 
-  const filtered = useMemo(() => MOCK_AUDIT.filter(l => {
+  const filtered = useMemo(() => ([] as LogAudit[]).filter(l => {
     if (filterModulo !== "TODOS" && l.modulo !== filterModulo) return false;
     if (search && !l.nome_usuario.toLowerCase().includes(search.toLowerCase())
       && !l.acao.toLowerCase().includes(search.toLowerCase())) return false;
@@ -2539,7 +2537,7 @@ function AuditoriaSection() {
   }), [filterModulo, search]);
 
   const kpis = useMemo(() => ({
-    total: MOCK_AUDIT.length,
+    total: 0,
   }), []);
 
   return (
@@ -2598,7 +2596,7 @@ function AuditoriaSection() {
 
       {/* Tabela */}
       <div>
-        <p className="text-sm text-muted-foreground px-1 mb-3">{filtered.length} de {MOCK_AUDIT.length} eventos</p>
+        <p className="text-sm text-muted-foreground px-1 mb-3">{filtered.length} de {kpis.total} eventos</p>
         <Card className="rounded-2xl border-border/50 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

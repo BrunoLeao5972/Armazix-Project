@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 
 export const Route = createFileRoute("/admin/customers")({
   component: CustomersPage,
-  head: () => ({ meta: [{ title: "Clientes — ARMAZIX" }] }),
+  head: () => ({ meta: [{ title: "Clientes/Fornecedores — ARMAZIX" }] }),
 });
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -29,6 +29,8 @@ interface Customer {
   email: string | null;
   phone: string | null;
   cpf: string | null;
+  isSupplier?: boolean;
+  status?: string;
   ordersCount?: number;
   totalSpent?: string;
   createdAt?: string;
@@ -51,6 +53,8 @@ interface CustomerForm {
   city: string;
   state: string;
   notes: string;
+  isSupplier: boolean;
+  status: "ativo" | "inativo" | "suspenso";
 }
 
 const EMPTY: CustomerForm = {
@@ -58,6 +62,8 @@ const EMPTY: CustomerForm = {
   phone: "", whatsapp: "", email: "", instagram: "",
   cep: "", street: "", number: "", complement: "",
   neighborhood: "", city: "", state: "", notes: "",
+  isSupplier: false,
+  status: "ativo",
 };
 
 const BR_STATES = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS",
@@ -118,14 +124,14 @@ function CustomerFormModal({
 
   useEffect(() => {
     if (editing) {
-      setForm({ ...EMPTY, name: editing.name, email: editing.email || "", phone: maskPhone(editing.phone || ""), cpf: editing.cpf ? maskCPF(editing.cpf) : "" });
+      setForm({ ...EMPTY, name: editing.name, email: editing.email || "", phone: maskPhone(editing.phone || ""), cpf: editing.cpf ? maskCPF(editing.cpf) : "", isSupplier: editing.isSupplier ?? false, status: (editing.status as CustomerForm["status"]) ?? "ativo" });
     } else {
       setForm(EMPTY);
     }
     setTab("basic");
   }, [editing, open]);
 
-  const set = (k: keyof CustomerForm, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k: keyof CustomerForm, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
 
   const lookupCEP = async (cep: string) => {
     const raw = cep.replace(/\D/g, "");
@@ -140,28 +146,62 @@ function CustomerFormModal({
     } catch {} finally { setCepLoading(false); }
   };
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const handleSave = async () => {
     if (!form.name.trim()) {
-      setErrors({ name: "O nome do cliente é obrigatório." });
+      setErrors({ name: "O nome do contato é obrigatório." });
       setTab("basic");
       return;
     }
     setErrors({});
+    setSaveError(null);
     setSaving(true);
     try {
-      const payload = {
-        name: form.name,
-        email: form.email || undefined,
-        phone: form.phone.replace(/\D/g, "") || undefined,
-        cpf: form.cpf.replace(/\D/g, "") || undefined,
-      };
-      const res = await api.post("/api/customers/create", payload);
-      const data = await res.json();
-      if (res.ok && (data.success || data.customer)) {
-        onSaved(data.customer, true);
-        onClose();
+      let res: Response;
+      let data: { success?: boolean; customer?: Customer; error?: string };
+
+      if (editing?.id) {
+        // UPDATE — envia o id do registro existente; nunca cria duplicata
+        res = await api.post("/api/customers/update", {
+          customerId:  editing.id,
+          name:        form.name,
+          email:       form.email || undefined,
+          phone:       form.phone.replace(/\D/g, "") || undefined,
+          cpf:         form.cpf.replace(/\D/g, "")   || undefined,
+          isSupplier:  form.isSupplier,
+          status:      form.status,
+        });
+        data = await res.json();
+        if (res.ok && data.customer) {
+          onSaved(data.customer, false);
+          onClose();
+        } else {
+          setSaveError(data.error || "Erro ao atualizar. Tente novamente.");
+        }
+      } else {
+        // INSERT — apenas quando não há id (contato novo)
+        res = await api.post("/api/customers/create", {
+          name:       form.name,
+          email:      form.email || undefined,
+          phone:      form.phone.replace(/\D/g, "") || undefined,
+          cpf:        form.cpf.replace(/\D/g, "")   || undefined,
+          isSupplier: form.isSupplier,
+          status:     form.status,
+        });
+        data = await res.json();
+        if (res.ok && data.customer) {
+          onSaved(data.customer, true);
+          onClose();
+        } else {
+          setSaveError(data.error || "Erro ao cadastrar. Tente novamente.");
+        }
       }
-    } finally { setSaving(false); }
+    } catch {
+      setSaveError("Erro de conexão. Verifique sua internet e tente novamente.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const TABS = [
@@ -176,10 +216,10 @@ function CustomerFormModal({
       <DialogContent className="rounded-2xl max-w-2xl p-0 overflow-hidden max-h-[90vh] flex flex-col">
         <DialogHeader className="px-6 pt-5 pb-0">
           <DialogTitle className="text-lg font-bold">
-            {editing ? "Editar cliente" : "Novo cliente"}
+            {editing ? "Editar contato" : "Novo contato"}
           </DialogTitle>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {editing ? "Atualize as informações do cliente" : "Preencha os dados para cadastrar"}
+            {editing ? "Atualize as informações do contato" : "Preencha os dados para cadastrar"}
           </p>
         </DialogHeader>
 
@@ -235,14 +275,42 @@ function CustomerFormModal({
                 )}
               </div>
 
-              {/* Status toggle */}
-              <div className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20">
+              {/* Supplier toggle */}
+              <button
+                type="button"
+                onClick={() => set("isSupplier", !form.isSupplier)}
+                className="w-full flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20 hover:bg-secondary/40 transition-colors text-left"
+              >
                 <div>
-                  <p className="text-sm font-medium">Cliente ativo</p>
-                  <p className="text-xs text-muted-foreground">Aparece nas buscas e pedidos</p>
+                  <p className="text-sm font-medium">Fornecedor</p>
+                  <p className="text-xs text-muted-foreground">Usar como fornecedor nas entradas de estoque</p>
                 </div>
-                <div className="w-11 h-6 rounded-full bg-primary relative shrink-0">
-                  <span className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow translate-x-5 transition-transform duration-200" />
+                <div className={`w-11 h-6 rounded-full relative shrink-0 transition-colors duration-200 ${form.isSupplier ? "bg-primary" : "bg-border"}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${form.isSupplier ? "translate-x-5" : "translate-x-0"}`} />
+                </div>
+              </button>
+
+              {/* Status */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Status</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: "ativo",    label: "Ativo",    color: "emerald" },
+                    { value: "inativo",  label: "Inativo",  color: "secondary" },
+                    { value: "suspenso", label: "Suspenso", color: "amber" },
+                  ] as const).map(({ value, label, color }) => {
+                    const active = form.status === value;
+                    const colorClass =
+                      color === "emerald"   ? (active ? "border-emerald-500 bg-emerald-500/10 text-emerald-700" : "border-border text-muted-foreground hover:border-emerald-300") :
+                      color === "amber"     ? (active ? "border-amber-500 bg-amber-500/10 text-amber-700"       : "border-border text-muted-foreground hover:border-amber-300") :
+                                              (active ? "border-border bg-secondary text-foreground"            : "border-border text-muted-foreground hover:bg-secondary/50");
+                    return (
+                      <button key={value} type="button" onClick={() => set("status", value)}
+                        className={`h-9 rounded-xl border text-xs font-semibold transition-all ${colorClass}`}>
+                        {label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </>
@@ -364,15 +432,20 @@ function CustomerFormModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-border/50 bg-surface flex items-center justify-between gap-3">
-          <button type="button" onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Cancelar
-          </button>
-          <Button onClick={handleSave} disabled={saving || !form.name.trim()}
-            className="h-10 px-6 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            {editing ? "Salvar alterações" : "Criar cliente"}
-          </Button>
+        <div className="px-6 py-4 border-t border-border/50 bg-surface space-y-2">
+          {saveError && (
+            <p className="text-xs text-destructive text-center">{saveError}</p>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <button type="button" onClick={onClose} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              Cancelar
+            </button>
+            <Button onClick={handleSave} disabled={saving || !form.name.trim()}
+              className="h-10 px-6 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {editing ? "Salvar alterações" : "Cadastrar"}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -380,9 +453,12 @@ function CustomerFormModal({
 }
 
 // ─── Main Page ────────────────────────────────────────────────────
+type ContactFilter = "all" | "clients" | "suppliers";
+
 function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch] = useState("");
+  const [contactFilter, setContactFilter] = useState<ContactFilter>("all");
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
@@ -407,17 +483,21 @@ function CustomersPage() {
 
   const handleSaved = (customer: Customer, isNew: boolean) => {
     setCustomers(prev => isNew ? [customer, ...prev] : prev.map(c => c.id === customer.id ? customer : c));
-    showToast(isNew ? "Cliente criado com sucesso!" : "Cliente atualizado!", "success");
+    showToast(isNew ? "Contato criado com sucesso!" : "Contato atualizado!", "success");
   };
 
   const openCreate = () => { setEditing(null); setModalOpen(true); };
   const openEdit   = (c: Customer) => { setEditing(c); setModalOpen(true); };
 
-  const filtered = customers.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.email || "").toLowerCase().includes(search.toLowerCase()) ||
-    (c.phone || "").includes(search)
-  );
+  const filtered = customers.filter(c => {
+    if (contactFilter === "clients" && c.isSupplier) return false;
+    if (contactFilter === "suppliers" && !c.isSupplier) return false;
+    return (
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      (c.email || "").toLowerCase().includes(search.toLowerCase()) ||
+      (c.phone || "").includes(search)
+    );
+  });
 
   const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString("pt-BR", { month: "short", year: "numeric" }) : "—";
 
@@ -438,7 +518,7 @@ function CustomersPage() {
       </tr>`;
     }).join("");
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <title>Relatório de Clientes — ARMAZIX</title>
+      <title>Relatório de Contatos — ARMAZIX</title>
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: Arial, sans-serif; font-size: 12px; color: #111; padding: 32px; }
@@ -452,7 +532,7 @@ function CustomersPage() {
         @media print { body { padding: 16px; } }
       </style></head><body>
       <h1>Relatório de Clientes</h1>
-      <p class="sub">Gerado em ${new Date().toLocaleString("pt-BR")} &mdash; ${filtered.length} cliente(s)</p>
+      <p class="sub">Gerado em ${new Date().toLocaleString("pt-BR")} &mdash; ${filtered.length} contato(s)</p>
       <table>
         <thead><tr><th>Nome</th><th>Telefone</th><th>E-mail</th><th>Endereço</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -492,9 +572,9 @@ function CustomersPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Clientes</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Clientes e Fornecedores</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {customers.length} cliente{customers.length !== 1 ? "s" : ""} cadastrado{customers.length !== 1 ? "s" : ""}
+            {customers.length} cadastrado{customers.length !== 1 ? "s" : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -508,16 +588,29 @@ function CustomersPage() {
           </Button>
           <Button onClick={openCreate}
             className="h-9 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2">
-            <Plus className="w-4 h-4" /> Novo cliente
+            <Plus className="w-4 h-4" /> Novo contato
           </Button>
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input placeholder="Buscar por nome, e-mail ou telefone..." value={search}
-          onChange={e => setSearch(e.target.value)} className="pl-9 h-9 rounded-xl" />
+      {/* Filter tabs + Search */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        <div className="flex gap-1 p-1 bg-secondary/40 rounded-xl">
+          {([["all", "Todos"], ["clients", "Clientes"], ["suppliers", "Fornecedores"]] as const).map(([v, label]) => (
+            <button key={v} onClick={() => setContactFilter(v)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${contactFilter === v ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+              {label}
+              {v === "all" && customers.length > 0 && <span className="ml-1.5 text-[10px] opacity-60">{customers.length}</span>}
+              {v === "clients" && <span className="ml-1.5 text-[10px] opacity-60">{customers.filter(c => !c.isSupplier).length}</span>}
+              {v === "suppliers" && <span className="ml-1.5 text-[10px] opacity-60">{customers.filter(c => c.isSupplier).length}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input placeholder="Buscar por nome, e-mail ou telefone..." value={search}
+            onChange={e => setSearch(e.target.value)} className="pl-9 h-9 rounded-xl" />
+        </div>
       </div>
 
       {/* Empty state */}
@@ -526,13 +619,13 @@ function CustomersPage() {
           <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
             <Users className="w-8 h-8 text-muted-foreground" />
           </div>
-          <h3 className="font-semibold">{search ? "Nenhum resultado" : "Nenhum cliente ainda"}</h3>
+          <h3 className="font-semibold">{search || contactFilter !== "all" ? "Nenhum resultado" : "Nenhum contato ainda"}</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-xs">
-            {search ? `Não encontramos clientes para "${search}"` : "Comece cadastrando seu primeiro cliente"}
+            {search ? `Não encontramos contatos para "${search}"` : contactFilter === "suppliers" ? "Nenhum fornecedor cadastrado. Crie um contato e marque como fornecedor." : contactFilter === "clients" ? "Nenhum cliente cadastrado." : "Comece cadastrando seu primeiro contato"}
           </p>
-          {!search && (
+          {!search && contactFilter === "all" && (
             <Button onClick={openCreate} className="mt-5 h-9 rounded-xl bg-gradient-primary text-primary-foreground gap-2">
-              <Plus className="w-4 h-4" /> Cadastrar primeiro cliente
+              <Plus className="w-4 h-4" /> Cadastrar primeiro contato
             </Button>
           )}
         </div>
@@ -555,7 +648,24 @@ function CustomersPage() {
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">{c.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold truncate">{c.name}</p>
+                        {c.isSupplier && (
+                          <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/15 text-amber-700">
+                            Fornecedor
+                          </span>
+                        )}
+                        {c.status === "inativo" && (
+                          <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-secondary text-muted-foreground">
+                            Inativo
+                          </span>
+                        )}
+                        {c.status === "suspenso" && (
+                          <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-destructive/10 text-destructive">
+                            Suspenso
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                         {c.email && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">

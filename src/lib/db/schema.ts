@@ -50,6 +50,7 @@ export const stores = pgTable("stores", {
     key: string; label: string; enabled: boolean; maxInstallments: number; payAtDelivery?: boolean;
   }>>(),
   deliveryPaymentEnabled: boolean("delivery_payment_enabled").default(true),
+  wppConfig: jsonb("wpp_config").$type<import("@/lib/whatsapp-sender").WppConfig>(),
   plan: varchar("plan", { length: 20 }).default("free"),
   planStatus: varchar("plan_status", { length: 20 }).default("active"),
   planExpiresAt: timestamp("plan_expires_at"),
@@ -147,6 +148,7 @@ export const products = pgTable("products", {
   lowStockThreshold: integer("low_stock_threshold").default(5),
   unit: varchar("unit", { length: 20 }).default("un"),
   badge: varchar("badge", { length: 30 }),
+  trackStock: boolean("track_stock").default(false),
   featured: boolean("featured").default(false),
   active: boolean("active").default(true),
   rating: numeric("rating", { precision: 2, scale: 1 }).default("0"),
@@ -218,6 +220,8 @@ export const customers = pgTable("customers", {
   cpf: varchar("cpf", { length: 14 }),
   avatarUrl: text("avatar_url"),
   active: boolean("active").default(true),
+  isSupplier: boolean("is_supplier").default(false),
+  status: varchar("status", { length: 20 }).default("ativo"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -486,4 +490,104 @@ export const auditLogs = pgTable("audit_logs", {
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   user: one(users, { fields: [auditLogs.userId], references: [users.id] }),
   store: one(stores, { fields: [auditLogs.storeId], references: [stores.id] }),
+}));
+
+// ─── STOCK MOVEMENTS (Movimentações de Estoque) ──────────────────
+// Tipos: VENDA | ENTRADA | SAIDA | AJUSTE | PERDA | AVARIA | RECONTAGEM
+export const stockMovements = pgTable("stock_movements", {
+  id:            uuid("id").defaultRandom().primaryKey(),
+  storeId:       uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  productId:     uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+  productName:   varchar("product_name", { length: 150 }).notNull(),
+  type:          varchar("type", { length: 20 }).notNull(),
+  quantity:      integer("quantity").notNull(),           // sempre positivo; direção pelo type
+  balanceBefore: integer("balance_before").notNull(),
+  balanceAfter:  integer("balance_after").notNull(),
+  origem:        varchar("origem", { length: 250 }).notNull(),
+  orderId:       uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+  supplierId:    uuid("supplier_id").references(() => customers.id, { onDelete: "set null" }),
+  nf:            varchar("nf",          { length: 50 }),
+  lot:           varchar("lot",         { length: 50 }),
+  expiry:        varchar("expiry",      { length: 20 }),
+  costPrice:     numeric("cost_price",  { precision: 10, scale: 2 }),
+  payMethod:     varchar("pay_method",  { length: 50 }),
+  dueDate:       varchar("due_date",    { length: 20 }),
+  observations:  text("observations"),
+  createdBy:     uuid("created_by"),
+  createdByName: varchar("created_by_name", { length: 120 }),
+  createdAt:     timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("stock_movements_store_idx").on(t.storeId),
+  index("stock_movements_product_idx").on(t.productId),
+  index("stock_movements_type_idx").on(t.type),
+  index("stock_movements_created_idx").on(t.createdAt),
+]);
+
+export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
+  store:    one(stores,    { fields: [stockMovements.storeId],    references: [stores.id] }),
+  product:  one(products,  { fields: [stockMovements.productId],  references: [products.id] }),
+  order:    one(orders,    { fields: [stockMovements.orderId],    references: [orders.id] }),
+  supplier: one(customers, { fields: [stockMovements.supplierId], references: [customers.id] }),
+}));
+
+// ─── STOCK BALANCES (Balanços de estoque) ────────────────────────
+export interface BalancoItemJson {
+  productId: string;
+  productName: string;
+  sku: string | null;
+  systemStock: number;
+  counted: number | null;
+  diff: number | null;
+  costPrice: number | null;
+  unit: string;
+}
+
+export const stockBalances = pgTable("stock_balances", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  codigo: varchar("codigo", { length: 20 }).notNull(),
+  prodScope: varchar("prod_scope", { length: 10 }).default("todos").notNull(),
+  preco: varchar("preco", { length: 50 }).default("Preço de custo").notNull(),
+  dataContagem: timestamp("data_contagem").notNull(),
+  dataEncerramento: timestamp("data_encerramento"),
+  status: varchar("status", { length: 20 }).default("aberto").notNull(),
+  items: jsonb("items").$type<BalancoItemJson[]>().notNull().default([]),
+  createdBy: uuid("created_by"),
+  createdByName: varchar("created_by_name", { length: 120 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("stock_balances_store_idx").on(t.storeId),
+  index("stock_balances_status_idx").on(t.status),
+]);
+
+export const stockBalancesRelations = relations(stockBalances, ({ one }) => ({
+  store: one(stores, { fields: [stockBalances.storeId], references: [stores.id] }),
+}));
+
+// ─── STOCK ADJUSTMENTS (Histórico dedicado de ajustes manuais) ────────────────
+export const stockAdjustments = pgTable("stock_adjustments", {
+  id:            uuid("id").defaultRandom().primaryKey(),
+  storeId:       uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  productId:     uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+  productName:   varchar("product_name", { length: 150 }).notNull(),
+  balanceBefore: integer("balance_before").notNull(),
+  balanceAfter:  integer("balance_after").notNull(),
+  qty:           integer("qty").notNull(),
+  tipo:          varchar("tipo", { length: 30 }).notNull(),
+  motivo:        varchar("motivo", { length: 250 }),
+  observations:  text("observations"),
+  movementId:    uuid("movement_id"),
+  createdBy:     uuid("created_by"),
+  createdByName: varchar("created_by_name", { length: 120 }),
+  createdAt:     timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("stock_adjustments_store_idx").on(t.storeId),
+  index("stock_adjustments_product_idx").on(t.productId),
+  index("stock_adjustments_created_idx").on(t.createdAt),
+]);
+
+export const stockAdjustmentsRelations = relations(stockAdjustments, ({ one }) => ({
+  store:   one(stores,   { fields: [stockAdjustments.storeId],   references: [stores.id] }),
+  product: one(products, { fields: [stockAdjustments.productId], references: [products.id] }),
 }));

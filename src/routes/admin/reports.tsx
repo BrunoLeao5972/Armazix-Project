@@ -69,12 +69,12 @@ const CATALOGO_RELATORIOS: ReportConfig[] = [
   { id: "aud-002", nome: "Logs de Alterações Críticas", descricao: "Rastreamento de alterações em valores, exclusões e estornos", modulo: "auditoria", uso: "auditoria", permissao: ["admin"], icone: Shield, destaque: true, filtrosDisponiveis: ["periodo", "vendedor", "status"] },
 ];
 
-const MOCK_USUARIOS = [{ id: "usr_001", nome: "Carlos Silva", cargo: "Vendedor" }, { id: "usr_002", nome: "Ana Oliveira", cargo: "Caixa" }, { id: "usr_003", nome: "Pedro Costa", cargo: "Estoque" }, { id: "usr_004", nome: "Maria Santos", cargo: "Gerente" }, { id: "usr_005", nome: "João Pereira", cargo: "Financeiro" }];
-const MOCK_CLIENTES = [{ id: "cli_001", nome: "João da Silva", doc: "123.456.789-00" }, { id: "cli_002", nome: "Maria Oliveira", doc: "987.654.321-00" }, { id: "cli_003", nome: "Restaurante Bom Sabor", doc: "12.345.678/0001-90" }, { id: "cli_004", nome: "Supermercado Central", doc: "98.765.432/0001-10" }];
-const MOCK_FORNECEDORES = [{ id: "for_001", nome: "Distribuidora Silva", cnpj: "12.345.678/0001-90" }, { id: "for_002", nome: "Atacadão Paulista", cnpj: "98.765.432/0001-10" }, { id: "for_003", nome: "Importadora Olive", cnpj: "11.222.333/0001-44" }];
-const MOCK_PRODUTOS = [{ id: "prod_001", nome: "Arroz Integral 5kg", codigo: "P001" }, { id: "prod_002", nome: "Feijão Carioca 1kg", codigo: "P002" }, { id: "prod_003", nome: "Azeite Extra Virgem 500ml", codigo: "P003" }];
-const MOCK_CONTAS = [{ id: "conta_001", nome: "Caixa Interno PDV", tipo: "Caixa" }, { id: "conta_002", nome: "Banco do Brasil", tipo: "Banco" }, { id: "conta_003", nome: "Bradesco", tipo: "Banco" }];
-const MOCK_HISTORICOS = [{ id: "1.01", nome: "RECEITAS OPERACIONAIS", nivel: 1 }, { id: "1.01.01", nome: "Vendas à Vista", nivel: 2 }, { id: "2.01", nome: "DESPESAS OPERACIONAIS", nivel: 1 }, { id: "2.01.01", nome: "Custo das Mercadorias", nivel: 2 }];
+const MOCK_USUARIOS: { id: string; nome: string; cargo: string }[] = [];
+const MOCK_CLIENTES: { id: string; nome: string; doc: string }[] = [];
+const MOCK_FORNECEDORES: { id: string; nome: string; cnpj: string }[] = [];
+const MOCK_PRODUTOS: { id: string; nome: string; codigo: string }[] = [];
+const MOCK_CONTAS: { id: string; nome: string; tipo: string }[] = [];
+const MOCK_HISTORICOS: { id: string; nome: string; nivel: number }[] = [];
 const TIPOS_DATA = [{ id: "emissao", nome: "Data de Emissão" }, { id: "vencimento", nome: "Data de Vencimento" }, { id: "recebimento", nome: "Data de Recebimento/Pagamento" }, { id: "inclusao", nome: "Data de Inclusão no Sistema" }];
 const FORMAS_PAGAMENTO = ["Dinheiro", "Cartão de Crédito", "Cartão de Débito", "Pix", "Boleto", "Transferência"];
 const CANAIS = ["PDV - Balcão", "Delivery", "E-commerce", "WhatsApp"];

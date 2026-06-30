@@ -1,4 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
+
+const WhatsAppModal = lazy(() =>
+  import("@/components/admin/WhatsAppModal").then((m) => ({ default: m.WhatsAppModal }))
+);
 import { createFileRoute, Link, Outlet, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   ShoppingBag,
@@ -21,6 +25,7 @@ import {
   Menu,
   X,
   LogOut,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +53,7 @@ const NAV_ITEMS = [
   { label: "Pedidos", icon: ShoppingCart, href: "/admin/orders" },
   { label: "Produtos", icon: Package, href: "/admin/products" },
   { label: "Categorias", icon: Tags, href: "/admin/categories" },
-  { label: "Clientes", icon: Users, href: "/admin/customers" },
+  { label: "Clientes/Fornecedores", icon: Users, href: "/admin/customers" },
   { label: "Estoque", icon: Warehouse, href: "/admin/stock" },
   { label: "Financeiro", icon: DollarSign, href: "/admin/financial" },
   { label: "PDV", icon: Monitor, href: "/admin/pdv" },
@@ -61,6 +66,7 @@ const NAV_ITEMS = [
 function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [wppModalOpen, setWppModalOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
 
@@ -163,7 +169,16 @@ function AdminLayout() {
           })}
         </nav>
         <Separator className="opacity-50" />
-        <div className="p-3">
+        <div className="p-3 space-y-1">
+          {/* WhatsApp Connect — desktop sidebar */}
+          <button
+            type="button"
+            onClick={() => setWppModalOpen(true)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-600 transition-colors"
+          >
+            <MessageCircle className="w-5 h-5 shrink-0" />
+            {!collapsed && <span>WhatsApp</span>}
+          </button>
           <button
             type="button"
             onClick={handleLogout}
@@ -223,7 +238,16 @@ function AdminLayout() {
               })}
             </nav>
             <Separator className="opacity-50" />
-            <div className="p-3">
+            <div className="p-3 space-y-1">
+              {/* WhatsApp Connect — mobile sidebar */}
+              <button
+                type="button"
+                onClick={() => { setMobileOpen(false); setWppModalOpen(true); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-600 transition-colors"
+              >
+                <MessageCircle className="w-5 h-5" />
+                <span>WhatsApp</span>
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -326,6 +350,11 @@ function AdminLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* WhatsApp Modal — lazy loaded */}
+      <Suspense fallback={null}>
+        <WhatsAppModal open={wppModalOpen} onClose={() => setWppModalOpen(false)} />
+      </Suspense>
     </div>
   );
 }

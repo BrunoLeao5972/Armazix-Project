@@ -6,7 +6,7 @@ import {
   Loader2, X, ChevronDown, Tag, DollarSign,
   Box, Barcode, Hash, LayoutGrid, List, ImagePlus, Check,
   TrendingUp, AlertTriangle, CheckCircle2, XCircle, RefreshCw,
-  Layers, Pencil, FileDown,
+  Layers, Pencil, FileDown, ToggleLeft, Percent,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,6 @@ interface Product {
   name: string;
   description: string | null;
   price: string;
-  compareAtPrice: string | null;
   costPrice: string | null;
   stock: number | null;
   lowStockThreshold: number | null;
@@ -44,6 +43,7 @@ interface Product {
   emoji: string | null;
   imageUrl: string | null;
   badge: string | null;
+  trackStock: boolean | null;
   active: boolean | null;
   allowObservation: boolean | null;
   categoryId: string | null;
@@ -62,7 +62,6 @@ interface VariationOption {
   name: string;
   price: string;
   imageUrl: string;
-  stock: string;
 }
 
 interface VariationGroup {
@@ -75,9 +74,7 @@ interface ProductForm {
   name: string;
   description: string;
   price: string;
-  compareAtPrice: string;
   costPrice: string;
-  stock: string;
   lowStockThreshold: string;
   sku: string;
   barcode: string;
@@ -85,21 +82,22 @@ interface ProductForm {
   imageUrl: string;
   badge: string;
   categoryId: string;
+  trackStock: boolean;
   active: boolean;
   allowObservation: boolean;
   variationGroups: VariationGroup[];
 }
 
 const EMPTY_FORM: ProductForm = {
-  name: "", description: "", price: "", compareAtPrice: "",
-  costPrice: "", stock: "", lowStockThreshold: "5",
+  name: "", description: "", price: "",
+  costPrice: "", lowStockThreshold: "5",
   sku: "", barcode: "", unit: "un", imageUrl: "",
-  badge: "", categoryId: "", active: true, allowObservation: false, variationGroups: [],
+  badge: "", categoryId: "", trackStock: false, active: true, allowObservation: false, variationGroups: [],
 };
 
 const uid = () => Math.random().toString(36).slice(2);
 
-const newOption = (): VariationOption => ({ id: uid(), name: "", price: "", imageUrl: "", stock: "" });
+const newOption = (): VariationOption => ({ id: uid(), name: "", price: "", imageUrl: "" });
 
 const newGroup = (): VariationGroup => ({ id: uid(), groupName: "", options: [newOption()] });
 
@@ -109,8 +107,15 @@ const UNITS = ["un", "kg", "g", "l", "ml", "cx", "pç", "par"];
 const fmt = (v: string | null | undefined) =>
   v ? `R$ ${parseFloat(v).toFixed(2).replace(".", ",")}` : "—";
 
-const parseCurrency = (v: string) =>
-  v.replace(/[^0-9,]/g, "").replace(",", ".");
+const parseCurrency = (v: string): string => {
+  const stripped = v.replace(/[^\d,.]/g, "");
+  // BR format: has comma as decimal separator ("10,00" or "1.000,00")
+  if (stripped.includes(",")) {
+    return stripped.replace(/\./g, "").replace(",", ".") || "0";
+  }
+  // Already decimal ("10.00" from DB or typed with dot)
+  return stripped || "0";
+};
 
 function calcMargin(price: string, cost: string) {
   const p = parseFloat(parseCurrency(price));
@@ -174,17 +179,22 @@ function ImageUploadZone({ value, onChange }: { value: string; onChange: (v: str
       onDragLeave={() => setDrag(false)}
       onDrop={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
       onClick={() => !value && inputRef.current?.click()}
-      className={`relative rounded-2xl border-2 border-dashed transition-colors cursor-pointer overflow-hidden
+      className={`relative rounded-2xl border-2 border-dashed transition-colors cursor-pointer overflow-hidden aspect-square w-full max-w-[200px] mx-auto
         ${drag ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-secondary/30"}
-        ${value ? "h-40 cursor-default" : "h-40 flex flex-col items-center justify-center gap-2"}`}
+        ${value ? "cursor-default" : "flex flex-col items-center justify-center gap-2"}`}
     >
       {value ? (
         <>
-          <img src={value} alt="preview" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-secondary/20" />
+          <img
+            src={value}
+            alt="preview"
+            className="absolute inset-0 w-full h-full object-contain p-2"
+          />
           <button
             type="button"
             onClick={e => { e.stopPropagation(); onChange(""); }}
-            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+            className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -246,7 +256,7 @@ function ProductFormModal({
 }) {
   const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"basic" | "price" | "stock" | "variations">("basic");
+  const [tab, setTab] = useState<"basic" | "price" | "stock" | "variations" | "promocoes">("basic");
   const [errors, setErrors] = useState<{ categoryId?: string; price?: string }>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [newCatName, setNewCatName] = useState("");
@@ -259,9 +269,7 @@ function ProductFormModal({
         name: editing.name,
         description: editing.description || "",
         price: editing.price,
-        compareAtPrice: editing.compareAtPrice || "",
         costPrice: editing.costPrice || "",
-        stock: String(editing.stock ?? ""),
         lowStockThreshold: String(editing.lowStockThreshold ?? 5),
         sku: editing.sku || "",
         barcode: editing.barcode || "",
@@ -269,6 +277,7 @@ function ProductFormModal({
         imageUrl: editing.imageUrl || "",
         badge: editing.badge || "",
         categoryId: editing.categoryId || "",
+        trackStock: editing.trackStock === true,
         active: editing.active !== false,
         allowObservation: editing.allowObservation === true,
         variationGroups: [],
@@ -322,9 +331,7 @@ function ProductFormModal({
         name: form.name,
         description: form.description || undefined,
         price: parseCurrency(form.price),
-        compareAtPrice: form.compareAtPrice ? parseCurrency(form.compareAtPrice) : undefined,
         costPrice: form.costPrice ? parseCurrency(form.costPrice) : undefined,
-        stock: form.stock !== "" ? Number(form.stock) : 0,
         lowStockThreshold: form.lowStockThreshold !== "" ? Number(form.lowStockThreshold) : 5,
         sku: form.sku || undefined,
         barcode: form.barcode || undefined,
@@ -332,6 +339,7 @@ function ProductFormModal({
         imageUrl: form.imageUrl || undefined,
         badge: form.badge || undefined,
         categoryId: form.categoryId || undefined,
+        trackStock: form.trackStock,
         active: form.active,
         allowObservation: form.allowObservation,
       };
@@ -360,6 +368,7 @@ function ProductFormModal({
     { id: "price",      label: "Preços",      icon: DollarSign },
     { id: "stock",      label: "Estoque",     icon: Box },
     { id: "variations", label: "Variações",   icon: Layers },
+    { id: "promocoes",  label: "Promoções",   icon: Percent },
   ] as const;
 
   return (
@@ -370,7 +379,9 @@ function ProductFormModal({
             {editing ? "Editar produto" : "Novo produto"}
           </DialogTitle>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {editing ? "Atualize as informações do produto" : "Preencha os dados para cadastrar"}
+            {editing
+              ? <span>Atualize as informações do produto &mdash; <span className="font-mono text-[11px] select-all">{editing.id}</span></span>
+              : "Preencha os dados para cadastrar"}
           </p>
         </DialogHeader>
 
@@ -603,22 +614,13 @@ function ProductFormModal({
                 </div>
               </Field>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Preço promocional" hint="Preço riscado">
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <Input placeholder="0,00" value={form.compareAtPrice}
-                      onChange={e => set("compareAtPrice", e.target.value)} className="h-10 rounded-xl pl-8" />
-                  </div>
-                </Field>
-                <Field label="Preço de custo">
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <Input placeholder="0,00" value={form.costPrice}
-                      onChange={e => set("costPrice", e.target.value)} className="h-10 rounded-xl pl-8" />
-                  </div>
-                </Field>
-              </div>
+              <Field label="Preço de custo">
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input placeholder="0,00" value={form.costPrice}
+                    onChange={e => set("costPrice", e.target.value)} className="h-10 rounded-xl pl-8" />
+                </div>
+              </Field>
 
               {margin !== null && (
                 <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
@@ -643,51 +645,69 @@ function ProductFormModal({
           {/* ── Tab: Estoque ── */}
           {tab === "stock" && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Quantidade em estoque">
-                  <div className="relative">
-                    <Box className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                    <Input type="number" min="0" placeholder="0" value={form.stock}
-                      onChange={e => set("stock", e.target.value)} className="h-10 rounded-xl pl-8" />
-                  </div>
-                </Field>
-                <Field label="Estoque mínimo" hint="Alerta abaixo disso">
+              {/* Controlar estoque toggle */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20">
+                <div>
+                  <p className="text-sm font-medium">Controlar Estoque</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Quando ativo, o saldo é gerenciado pelo módulo de estoque via movimentações
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.trackStock}
+                  onClick={() => set("trackStock", !form.trackStock)}
+                  className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                    form.trackStock ? "bg-primary" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                    form.trackStock ? "translate-x-5" : "translate-x-0"
+                  }`} />
+                </button>
+              </div>
+
+              {form.trackStock && (
+                <Field label="Estoque mínimo" hint="Alerta de reposição abaixo deste valor">
                   <div className="relative">
                     <AlertTriangle className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                     <Input type="number" min="0" placeholder="5" value={form.lowStockThreshold}
                       onChange={e => set("lowStockThreshold", e.target.value)} className="h-10 rounded-xl pl-8" />
                   </div>
                 </Field>
-              </div>
-
-              {form.stock !== "" && (
-                <div className={`flex items-center gap-3 p-4 rounded-xl border ${
-                  Number(form.stock) <= 0
-                    ? "bg-destructive/10 border-destructive/20"
-                    : Number(form.stock) <= Number(form.lowStockThreshold || 5)
-                    ? "bg-amber-500/10 border-amber-500/20"
-                    : "bg-emerald-500/10 border-emerald-500/20"
-                }`}>
-                  {Number(form.stock) <= 0 ? <XCircle className="w-5 h-5 text-destructive" />
-                    : Number(form.stock) <= Number(form.lowStockThreshold || 5) ? <AlertTriangle className="w-5 h-5 text-amber-600" />
-                    : <CheckCircle2 className="w-5 h-5 text-emerald-600" />}
-                  <div>
-                    <p className={`text-sm font-semibold ${
-                      Number(form.stock) <= 0 ? "text-destructive"
-                      : Number(form.stock) <= Number(form.lowStockThreshold || 5) ? "text-amber-700"
-                      : "text-emerald-700"
-                    }`}>
-                      {Number(form.stock) <= 0 ? "Sem estoque"
-                        : Number(form.stock) <= Number(form.lowStockThreshold || 5) ? "Estoque baixo"
-                        : "Em estoque"}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {form.stock} {form.unit || "un"} disponíveis
-                    </p>
-                  </div>
-                </div>
               )}
+
+              <div className="rounded-xl border border-border/50 bg-secondary/10 p-4 flex items-start gap-3">
+                <Box className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p className="font-medium text-foreground">Quantidade controlada por movimentações</p>
+                  <p>O saldo atual do produto é atualizado exclusivamente pelo módulo de <strong>Estoque</strong> — via entradas, saídas, ajustes e balanços. Não é possível editar a quantidade diretamente aqui.</p>
+                </div>
+              </div>
             </>
+          )}
+
+          {/* ── Tab: Promoções ── (esqueleto — implementação futura) */}
+          {tab === "promocoes" && (
+            <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-violet-500/10 flex items-center justify-center">
+                <Percent className="w-7 h-7 text-violet-500" />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-sm font-semibold">Promoções em breve</p>
+                <p className="text-xs text-muted-foreground max-w-xs">
+                  Esta aba irá concentrar preços promocionais, descontos por período e regras de cupom por produto.
+                  A implementação completa será feita em módulo dedicado.
+                </p>
+              </div>
+              {/* Placeholder dos campos que serão implementados:
+                  - compareAtPrice (preço original riscado)
+                  - discountPercent
+                  - promoStartAt / promoEndAt
+                  - appliesToVariations: boolean
+              */}
+            </div>
           )}
 
           {/* ── Tab: Variações ── */}
@@ -749,7 +769,7 @@ function ProductFormModal({
                                 </button>
                               )}
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-3 gap-2">
                               <div className="space-y-1">
                                 <Label className="text-[11px] text-muted-foreground">Nome</Label>
                                 <Input placeholder="Ex: Azul, P, 500ml"
@@ -762,15 +782,6 @@ function ProductFormModal({
                                   <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
                                   <Input placeholder="0,00"
                                     value={opt.price} onChange={e => setOption(group.id, opt.id, "price", e.target.value)}
-                                    className="h-8 rounded-lg text-xs pl-6" />
-                                </div>
-                              </div>
-                              <div className="space-y-1">
-                                <Label className="text-[11px] text-muted-foreground">Estoque</Label>
-                                <div className="relative">
-                                  <Box className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-                                  <Input type="number" min="0" placeholder="0"
-                                    value={opt.stock} onChange={e => setOption(group.id, opt.id, "stock", e.target.value)}
                                     className="h-8 rounded-lg text-xs pl-6" />
                                 </div>
                               </div>
@@ -874,18 +885,18 @@ function ProductsPage() {
 
   const handleDelete = async (productId: string) => {
     const ok = await confirmDialog(
-      "Remover produto?",
-      "Esta ação não pode ser desfeita.",
-      "Remover",
+      "Desativar produto?",
+      "O produto será desativado e não aparecerá mais na loja. Os dados históricos (pedidos e estoque) são preservados.",
+      "Desativar",
     );
     if (!ok) return;
     try {
       const res = await api.post("/api/products/delete", { productId });
       if (res.ok) {
         setProducts(prev => prev.filter(p => p.id !== productId));
-        showToast("Produto removido", "success");
+        showToast("Produto desativado", "success");
       }
-    } catch { showToast("Erro ao remover", "error"); }
+    } catch { showToast("Erro ao desativar", "error"); }
   };
 
   const openCreate = () => { setEditing(null); setModalOpen(true); };
@@ -906,7 +917,7 @@ function ProductsPage() {
         <td>${p.sku || "—"}</td>
         <td>${p.barcode || "—"}</td>
         <td>${fmt(p.price)}</td>
-        <td>${p.compareAtPrice ? fmt(p.compareAtPrice) : "—"}</td>
+        <td>—</td>
         <td>${p.stock ?? 0} ${p.unit || "un"}</td>
       </tr>`).join("");
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -1083,9 +1094,6 @@ function ProductsPage() {
                 {/* Price */}
                 <div className="hidden sm:block">
                   <span className="text-sm font-bold">{fmt(p.price)}</span>
-                  {p.compareAtPrice && (
-                    <span className="text-xs text-muted-foreground line-through ml-1.5">{fmt(p.compareAtPrice)}</span>
-                  )}
                 </div>
                 {/* Stock */}
                 <div className="hidden sm:flex">
@@ -1105,7 +1113,7 @@ function ProductsPage() {
                       </DropdownMenuItem>
                       <DropdownMenuItem className="rounded-lg gap-2 text-destructive focus:text-destructive"
                         onClick={() => handleDelete(p.id)}>
-                        <Trash2 className="w-3.5 h-3.5" /> Remover
+                        <Trash2 className="w-3.5 h-3.5" /> Desativar
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
