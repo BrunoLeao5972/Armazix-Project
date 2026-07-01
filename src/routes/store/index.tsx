@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
@@ -8,35 +8,109 @@ import {
   ShoppingBag,
   Heart,
   Star,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStore } from "../store";
 import { type StoreProduct, type StoreCategory, formatPrice } from "@/lib/store-context";
+import { getEffectivePrice } from "@/lib/promo-engine";
 
 export const Route = createFileRoute("/store/")({
   component: StoreHome,
 });
 
+const PAGE_LIMIT = 20;
+
+// Pura — calcula IDs de categoria + todos os descendentes para filtro server-side
+function getDescendantIds(catId: string, cats: StoreCategory[]): string[] {
+  const children = cats.filter(c => c.active !== false && c.parentId === catId);
+  return [catId, ...children.flatMap(c => getDescendantIds(c.id, cats))];
+}
+
 function StoreHome() {
-  const [products, setProducts] = useState<StoreProduct[]>([]);
-  const [categories, setCategories] = useState<StoreCategory[]>([]);
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+  const [products, setProducts]             = useState<StoreProduct[]>([]);
+  const [total, setTotal]                   = useState(0);
+  const [hasMore, setHasMore]               = useState(false);
+  const [offset, setOffset]                 = useState(0);
+  const [categories, setCategories]         = useState<StoreCategory[]>([]);
+  const [activeCategoryId, setActiveCategoryId]     = useState<string | null>(null);
   const [activeSubCategoryId, setActiveSubCategoryId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading]               = useState(true);
+  const [loadingMore, setLoadingMore]       = useState(false);
   const { store, configuracaoVitrine, addToCart, toggleFavorite, favorites } = useStore();
 
+  // Ref mantém o filtro ativo para uso no handleLoadMore sem re-criar o callback
+  const activeFilterRef = useRef<string[] | null>(null);
+
+  const fetchProducts = useCallback(async (
+    storeId: string,
+    filterIds: string[] | null,
+    startOffset: number,
+    append: boolean,
+  ) => {
+    const params = new URLSearchParams({
+      storeId,
+      scope:  "public",
+      limit:  String(PAGE_LIMIT),
+      offset: String(startOffset),
+    });
+    if (filterIds?.length) params.set("categoryIds", filterIds.join(","));
+
+    append ? setLoadingMore(true) : setLoading(true);
+
+    try {
+      const data = await fetch(`/api/products/list?${params}`).then(r => r.json()) as {
+        products?: StoreProduct[];
+        total?: number;
+        hasMore?: boolean;
+      };
+      if (data.products) {
+        setProducts(prev => append ? [...prev, ...data.products!] : data.products!);
+        setTotal(data.total ?? 0);
+        setHasMore(data.hasMore ?? false);
+        setOffset(startOffset + data.products.length);
+      }
+    } catch {
+      // falha silenciosa — estado permanece o anterior
+    } finally {
+      append ? setLoadingMore(false) : setLoading(false);
+    }
+  }, []); // estável — sem deps externas
+
+  // ── Categorias: carregamento único, projeção mínima (sem N+1) ────
   useEffect(() => {
     if (!store?.id) return;
-    setLoading(true);
-    Promise.all([
-      fetch(`/api/products/list?storeId=${store.id}`).then(r => r.json()),
-      fetch(`/api/categories/list?storeId=${store.id}`).then(r => r.json()),
-    ]).then(([pd, cd]) => {
-      if (pd.products) setProducts(pd.products);
-      if (cd.categories) setCategories(cd.categories);
-    }).catch(() => {}).finally(() => setLoading(false));
+    fetch(`/api/categories/list?storeId=${store.id}&scope=public`)
+      .then(r => r.json())
+      .then((cd: { categories?: StoreCategory[] }) => {
+        if (cd.categories) setCategories(cd.categories);
+      })
+      .catch(() => {});
   }, [store?.id]);
+
+  // ── Produtos: re-fetch quando loja ou categoria ativa muda ───────
+  // `categories` e `fetchProducts` omitidos das deps intencionalmente:
+  //   - fetchProducts é estável (useCallback sem deps)
+  //   - categories está carregado antes do usuário conseguir clicar em categoria
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!store?.id) return;
+    const filterById = activeSubCategoryId ?? activeCategoryId;
+    const filterIds  = filterById ? getDescendantIds(filterById, categories) : null;
+    activeFilterRef.current = filterIds;
+    fetchProducts(store.id, filterIds, 0, false);
+  }, [store?.id, activeCategoryId, activeSubCategoryId]);
+
+  const handleLoadMore = () => {
+    if (!store?.id || loadingMore || !hasMore) return;
+    fetchProducts(store.id, activeFilterRef.current, offset, true);
+  };
+
+  const handleCategorySelect = (catId: string | null) => {
+    setActiveCategoryId(catId);
+    setActiveSubCategoryId(null);
+  };
 
   // Nível 1: apenas categorias raiz (sem parentId)
   const rootCategories = categories
@@ -50,23 +124,12 @@ function StoreHome() {
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
     : [];
 
-  // Filtro: subcategoria selecionada tem prioridade; senão, pai + todos os descendentes
-  const getDescendantIds = (catId: string): string[] => {
-    const children = categories.filter(c => c.active !== false && c.parentId === catId);
-    return [catId, ...children.flatMap(c => getDescendantIds(c.id))];
-  };
-  const filterById = activeSubCategoryId ?? activeCategoryId;
-  const activeCategoryIds = filterById ? new Set(getDescendantIds(filterById)) : null;
-
-  const activeProducts = products
-    .filter((p) => p.active !== false)
-    .filter((p) => (activeCategoryIds ? activeCategoryIds.has(p.categoryId ?? "") : true));
-
   const handleAdd = useCallback((product: StoreProduct) => {
+    const { effectivePrice } = getEffectivePrice(product.price, product.promoConfig, "store");
     addToCart({
-      id: product.id,
-      name: product.name,
-      price: parseFloat(product.price),
+      id:    product.id,
+      name:  product.name,
+      price: effectivePrice,
       image: product.imageUrl || null,
       emoji: product.emoji || "📦",
     });
@@ -96,9 +159,8 @@ function StoreHome() {
         {/* Mobile: círculos horizontais */}
         <div className="md:hidden overflow-x-auto whitespace-nowrap no-scrollbar">
           <div className="inline-flex gap-3 pb-1">
-            {/* Todos */}
             <button
-              onClick={() => { setActiveCategoryId(null); setActiveSubCategoryId(null); }}
+              onClick={() => handleCategorySelect(null)}
               className="inline-flex flex-col items-center gap-1.5"
             >
               <span
@@ -110,7 +172,7 @@ function StoreHome() {
               <span className="text-[11px] font-medium text-slate-700">Todos</span>
             </button>
 
-            {loading
+            {categories.length === 0 && loading
               ? Array.from({ length: 4 }).map((_, i) => (
                   <div key={i} className="inline-flex flex-col items-center gap-1.5">
                     <Skeleton className="w-14 h-14 rounded-full" />
@@ -122,7 +184,7 @@ function StoreHome() {
                   return (
                     <button
                       key={cat.id}
-                      onClick={() => { setActiveCategoryId(isActive ? null : cat.id); setActiveSubCategoryId(null); }}
+                      onClick={() => handleCategorySelect(isActive ? null : cat.id)}
                       className="inline-flex flex-col items-center gap-1.5"
                     >
                       <span
@@ -145,7 +207,7 @@ function StoreHome() {
         {/* Desktop: pílulas em linha */}
         <div className="hidden md:flex flex-wrap gap-2">
           <button
-            onClick={() => { setActiveCategoryId(null); setActiveSubCategoryId(null); }}
+            onClick={() => handleCategorySelect(null)}
             className="h-10 px-4 rounded-xl text-sm font-medium border transition-colors"
             style={!activeCategoryId
               ? { backgroundColor: configuracaoVitrine.corPrimaria, borderColor: "transparent", color: "white" }
@@ -153,14 +215,14 @@ function StoreHome() {
           >
             Todos
           </button>
-          {loading
+          {categories.length === 0 && loading
             ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-24 rounded-xl" />)
             : rootCategories.map((cat) => {
                 const isActive = activeCategoryId === cat.id;
                 return (
                   <button
                     key={cat.id}
-                    onClick={() => { setActiveCategoryId(isActive ? null : cat.id); setActiveSubCategoryId(null); }}
+                    onClick={() => handleCategorySelect(isActive ? null : cat.id)}
                     className="h-10 px-4 rounded-xl text-sm font-medium border transition-colors hover:bg-slate-50"
                     style={isActive
                       ? { backgroundColor: configuracaoVitrine.corPrimaria, borderColor: "transparent", color: "white" }
@@ -172,7 +234,7 @@ function StoreHome() {
               })}
         </div>
 
-        {/* ── Nível 2: subcategorias (renderiza só se a pai selecionada tiver filhas) ── */}
+        {/* ── Nível 2: subcategorias ────────────────────────────────── */}
         {subCategories.length > 0 && (
           <div className="overflow-x-auto no-scrollbar">
             <div className="flex gap-2 whitespace-nowrap">
@@ -196,16 +258,18 @@ function StoreHome() {
         )}
       </section>
 
-      {/* All Products */}
+      {/* Products Grid */}
       <section id="mais-vendidos" className="mt-5">
         <div className="px-3 md:px-6 flex items-center justify-between">
           <h2 className="text-base md:text-lg font-bold">Todos os produtos</h2>
-          <span className="text-xs md:text-sm text-slate-500">{activeProducts.length} itens</span>
+          {total > 0 && (
+            <span className="text-xs md:text-sm text-slate-500">{total} itens</span>
+          )}
         </div>
 
         {loading ? (
           <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6 md:p-6">
-            {Array.from({ length: 10 }).map((_, i) => (
+            {Array.from({ length: PAGE_LIMIT }).map((_, i) => (
               <div key={i} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
                 <Skeleton className="aspect-square" />
                 <div className="p-3 space-y-2">
@@ -216,21 +280,42 @@ function StoreHome() {
               </div>
             ))}
           </div>
-        ) : activeProducts.length > 0 ? (
-          <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6 md:p-6">
-            {activeProducts.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onAdd={handleAdd}
-                isFavorite={favorites.includes(product.id)}
-                onToggleFavorite={toggleFavorite}
-                showPrice={configuracaoVitrine.exibirPreco}
-                highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
-                primaryColor={configuracaoVitrine.corPrimaria}
-              />
-            ))}
-          </div>
+        ) : products.length > 0 ? (
+          <>
+            <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6 md:p-6">
+              {products.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onAdd={handleAdd}
+                  isFavorite={favorites.includes(product.id)}
+                  onToggleFavorite={toggleFavorite}
+                  showPrice={configuracaoVitrine.exibirPreco}
+                  highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                  primaryColor={configuracaoVitrine.corPrimaria}
+                />
+              ))}
+            </div>
+
+            {hasMore && (
+              <div className="flex justify-center px-4 pb-2">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="h-11 px-8 rounded-xl text-sm font-semibold border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                >
+                  {loadingMore ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Carregando...
+                    </>
+                  ) : (
+                    `Carregar mais (${total - products.length} restantes)`
+                  )}
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="px-4 py-16 text-center" id="sobre-nos">
             <Search className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
@@ -262,9 +347,14 @@ export function ProductCard({
   primaryColor: string;
 }) {
   const [added, setAdded] = useState(false);
-  const price = parseFloat(product.price);
-  const oldPrice = product.compareAtPrice ? parseFloat(product.compareAtPrice) : null;
-  const discount = oldPrice && oldPrice > price ? Math.round(((oldPrice - price) / oldPrice) * 100) : 0;
+  const promoResult = getEffectivePrice(product.price, product.promoConfig, "store");
+  const price = promoResult.effectivePrice;
+  const oldPrice = promoResult.promoActive
+    ? promoResult.originalPrice
+    : product.compareAtPrice ? parseFloat(product.compareAtPrice) : null;
+  const discount = !promoResult.promoActive && oldPrice && oldPrice > price
+    ? Math.round(((oldPrice - price) / oldPrice) * 100)
+    : 0;
   const lowStock =
     highlightLowStock &&
     typeof product.stock === "number" &&
@@ -295,7 +385,12 @@ export function ProductCard({
             </Badge>
           )}
 
-          {discount > 0 && (
+          {promoResult.promoActive && (
+            <Badge className="absolute bottom-2 left-2 rounded-full bg-violet-600 text-white border-0 text-[10px]">
+              PROMO
+            </Badge>
+          )}
+          {!promoResult.promoActive && discount > 0 && (
             <Badge className="absolute bottom-2 left-2 rounded-full bg-rose-600 text-white border-0 text-[10px]">
               -{discount}%
             </Badge>
@@ -324,8 +419,8 @@ export function ProductCard({
           <div className="flex items-end gap-2 mt-1.5">
             {showPrice ? (
               <>
-                <span className="text-base md:text-lg font-bold" style={{ color: primaryColor }}>R$ {formatPrice(price)}</span>
-                {oldPrice && <span className="text-xs text-slate-400 line-through">R$ {formatPrice(oldPrice)}</span>}
+                <span className="text-base md:text-lg font-bold" style={{ color: promoResult.promoActive ? "#7c3aed" : primaryColor }}>R$ {formatPrice(price)}</span>
+                {oldPrice !== null && <span className="text-xs text-slate-400 line-through">R$ {formatPrice(oldPrice)}</span>}
               </>
             ) : (
               <span className="text-sm font-semibold text-slate-500">Sob consulta</span>

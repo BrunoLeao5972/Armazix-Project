@@ -1,6 +1,7 @@
 import { createDb, createTenantDb } from "@/lib/db";
+import type { PromoConfig } from "@/lib/promo-engine";
 import { schema } from "@/lib/db";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, ne, isNotNull, inArray } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 import { notifyOwnerNewOrder, notifyCustomerStatus } from "@/lib/whatsapp-sender";
 
@@ -20,6 +21,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     });
   }
 
+  type ProductImageEntry = { url: string; isPrimary: boolean };
   const body = await request.json() as {
     name: string;
     description?: string;
@@ -32,10 +34,12 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     unit?: string;
     emoji?: string;
     imageUrl?: string;
+    images?: ProductImageEntry[];
     badge?: string;
     trackStock?: boolean;
-    active?: boolean;
+    active?: boolean | null;
     allowObservation?: boolean;
+    promoConfig?: PromoConfig | null;
   };
 
   if (!body.name || !body.price) {
@@ -46,6 +50,10 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = await createTenantDb(dbUrl, storeId);
+
+  // Derive imageUrl from gallery primary, or fall back to explicit imageUrl
+  const imagesArr: ProductImageEntry[] = body.images || [];
+  const primaryUrl = imagesArr.find(i => i.isPrimary)?.url ?? imagesArr[0]?.url ?? body.imageUrl ?? null;
 
   try {
     const [product] = await db.insert(products).values({
@@ -61,11 +69,13 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
       barcode: body.barcode || null,
       unit: body.unit || "un",
       emoji: body.emoji || null,
-      imageUrl: body.imageUrl || null,
+      imageUrl: primaryUrl,
+      images: imagesArr,
       badge: body.badge || null,
       trackStock: body.trackStock ?? false,
-      active: body.active !== false,
+      active: body.active !== undefined ? body.active : true,
       allowObservation: body.allowObservation ?? false,
+      promoConfig: body.promoConfig ?? null,
     }).returning();
 
     return new Response(JSON.stringify({ success: true, product }), {
@@ -103,8 +113,70 @@ export async function listProductsHandler(request: Request): Promise<Response> {
     }
   }
 
+  // scope=public  → loja pública / vitrine (paginado, projeção mínima)
+  // scope=pdv     → active=true OR active=null (suspenso aparece no PDV)
+  // default       → all products (admin retaguarda)
+  const scope = url.searchParams.get("scope");
+
+  // ── Vitrine pública: projeção mínima + paginação ─────────────────
+  if (scope === "public") {
+    const limitNum  = Math.min(Math.max(parseInt(url.searchParams.get("limit")  || "20"), 1), 100);
+    const offsetNum = Math.max(parseInt(url.searchParams.get("offset") || "0"), 0);
+    const categoryIdsParam = url.searchParams.get("categoryIds");
+    const categoryIds = categoryIdsParam ? categoryIdsParam.split(",").filter(Boolean) : null;
+
+    const where = and(
+      eq(products.storeId, storeId),
+      eq(products.active, true),
+      categoryIds?.length ? inArray(products.categoryId, categoryIds) : undefined,
+    );
+
+    try {
+      const [rows, countResult] = await Promise.all([
+        db
+          .select({
+            id:               products.id,
+            name:             products.name,
+            price:            products.price,
+            compareAtPrice:   products.compareAtPrice,
+            categoryId:       products.categoryId,
+            imageUrl:         products.imageUrl,
+            emoji:            products.emoji,
+            promoConfig:      products.promoConfig,
+            stock:            products.stock,
+            lowStockThreshold: products.lowStockThreshold,
+            rating:           products.rating,
+            reviewCount:      products.reviewCount,
+            // Trunca descrição a 120 chars no banco — evita trazer textos longos
+            description: sql<string | null>`LEFT(${products.description}, 120)`,
+          })
+          .from(products)
+          .where(where)
+          .limit(limitNum)
+          .offset(offsetNum)
+          .orderBy(desc(products.featured), desc(products.createdAt)),
+        db.select({ count: sql<number>`COUNT(*)` }).from(products).where(where),
+      ]);
+
+      const total = Number(countResult[0]?.count) || 0;
+      return new Response(
+        JSON.stringify({ products: rows, total, hasMore: offsetNum + rows.length < total }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    } catch (error) {
+      console.error("List products (public) error:", error);
+      return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+    }
+  }
+
+  // ── Admin / PDV: comportamento existente (sem paginação) ─────────
   try {
-    const storeProducts = await db.select().from(products).where(eq(products.storeId, storeId));
+    const baseWhere = eq(products.storeId, storeId);
+    const where =
+      scope === "pdv" ? and(baseWhere, ne(products.active, false)) :
+      baseWhere;
+
+    const storeProducts = await db.select().from(products).where(where);
     return new Response(JSON.stringify({ products: storeProducts }), {
       status: 200, headers: { "content-type": "application/json" },
     });
@@ -128,6 +200,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     });
   }
 
+  type ProductImageEntry2 = { url: string; isPrimary: boolean };
   const body = await request.json() as {
     productId: string;
     name?: string;
@@ -141,10 +214,12 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     unit?: string;
     emoji?: string;
     imageUrl?: string;
+    images?: ProductImageEntry2[];
     badge?: string;
     trackStock?: boolean;
-    active?: boolean;
+    active?: boolean | null;
     allowObservation?: boolean;
+    promoConfig?: PromoConfig | null;
   };
 
   if (!body.productId) {
@@ -177,11 +252,18 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     if (body.barcode     !== undefined) updates.barcode     = body.barcode     || null;
     if (body.unit        !== undefined) updates.unit        = body.unit;
     if (body.emoji       !== undefined) updates.emoji       = body.emoji       || null;
-    if (body.imageUrl    !== undefined) updates.imageUrl    = body.imageUrl    || null;
+    if (body.images !== undefined) {
+      updates.images = body.images;
+      const primary = body.images.find(i => i.isPrimary) ?? body.images[0];
+      updates.imageUrl = primary?.url ?? null;
+    } else if (body.imageUrl !== undefined) {
+      updates.imageUrl = body.imageUrl || null;
+    }
     if (body.badge       !== undefined) updates.badge       = body.badge       || null;
     if (body.trackStock  !== undefined) updates.trackStock  = body.trackStock;
     if (body.active      !== undefined) updates.active      = body.active;
     if (body.allowObservation !== undefined) updates.allowObservation = body.allowObservation;
+    if (body.promoConfig     !== undefined) updates.promoConfig      = body.promoConfig;
 
     const [updated] = await db.update(products)
       .set(updates)
@@ -301,7 +383,33 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
+  const scope = url.searchParams.get("scope");
 
+  // ── Vitrine pública: projeção mínima, sem N+1 de contagem ────────
+  if (scope === "public") {
+    try {
+      const rows = await db
+        .select({
+          id:       categories.id,
+          name:     categories.name,
+          emoji:    categories.emoji,
+          imageUrl: categories.imageUrl,
+          parentId: categories.parentId,
+          position: categories.position,
+        })
+        .from(categories)
+        .where(and(eq(categories.storeId, storeId), eq(categories.active, true)))
+        .orderBy(categories.position, categories.createdAt);
+      return new Response(JSON.stringify({ categories: rows }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    } catch (error) {
+      console.error("List categories (public) error:", error);
+      return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+    }
+  }
+
+  // ── Admin: comportamento existente com contagem por categoria ─────
   try {
     const storeCategories = await db.select().from(categories)
       .where(eq(categories.storeId, storeId))
