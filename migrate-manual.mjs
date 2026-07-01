@@ -122,6 +122,95 @@ const migrations = [
     name: "0013_products_track_stock",
     query: `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "track_stock" boolean NOT NULL DEFAULT false`,
   },
+  {
+    name: "0014_products_images_gallery",
+    query: `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "images" jsonb NOT NULL DEFAULT '[]'::jsonb`,
+  },
+  {
+    name: "0015_products_promo_config",
+    query: `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "promo_config" jsonb`,
+  },
+  {
+    name: "0016_mesas",
+    query: `CREATE TABLE IF NOT EXISTS "mesas" (
+      "id"         uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      "store_id"   uuid REFERENCES "stores"("id") ON DELETE CASCADE NOT NULL,
+      "numero"     integer NOT NULL,
+      "label"      varchar(50) NOT NULL,
+      "capacidade" integer DEFAULT 4,
+      "active"     boolean NOT NULL DEFAULT true,
+      "position"   integer DEFAULT 0
+    )`,
+  },
+  {
+    name: "0016b_mesas_idx",
+    query: `CREATE INDEX IF NOT EXISTS "mesas_store_idx" ON "mesas"("store_id")`,
+  },
+  {
+    name: "0017_caixa_sessoes",
+    query: `CREATE TABLE IF NOT EXISTS "caixa_sessoes" (
+      "id"             uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      "store_id"       uuid REFERENCES "stores"("id") ON DELETE CASCADE NOT NULL,
+      "saldo_inicial"  numeric(10,2) NOT NULL DEFAULT 0,
+      "saldo_final"    numeric(10,2),
+      "total_dinheiro" numeric(10,2) NOT NULL DEFAULT 0,
+      "total_pix"      numeric(10,2) NOT NULL DEFAULT 0,
+      "total_cartao"   numeric(10,2) NOT NULL DEFAULT 0,
+      "total_debito"   numeric(10,2) NOT NULL DEFAULT 0,
+      "total_outros"   numeric(10,2) NOT NULL DEFAULT 0,
+      "total_vendas"   integer NOT NULL DEFAULT 0,
+      "status"         varchar(20) NOT NULL DEFAULT 'aberta',
+      "aberto_por"     varchar(120),
+      "encerrado_por"  varchar(120),
+      "observations"   text,
+      "opened_at"      timestamp NOT NULL DEFAULT now(),
+      "closed_at"      timestamp
+    )`,
+  },
+  { name: "0017b_caixa_sessoes_idx_store",  query: `CREATE INDEX IF NOT EXISTS "caixa_sessoes_store_idx"  ON "caixa_sessoes"("store_id")` },
+  { name: "0017b_caixa_sessoes_idx_status", query: `CREATE INDEX IF NOT EXISTS "caixa_sessoes_status_idx" ON "caixa_sessoes"("status")` },
+  { name: "0017b_caixa_sessoes_idx_opened", query: `CREATE INDEX IF NOT EXISTS "caixa_sessoes_opened_idx" ON "caixa_sessoes"("opened_at")` },
+  {
+    name: "0018_caixa_movimentos",
+    query: `CREATE TABLE IF NOT EXISTS "caixa_movimentos" (
+      "id"        uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      "sessao_id" uuid REFERENCES "caixa_sessoes"("id") ON DELETE CASCADE NOT NULL,
+      "store_id"  uuid REFERENCES "stores"("id") ON DELETE CASCADE NOT NULL,
+      "tipo"      varchar(20) NOT NULL,
+      "valor"     numeric(10,2) NOT NULL,
+      "motivo"    text,
+      "criado_por" varchar(120),
+      "created_at" timestamp NOT NULL DEFAULT now()
+    )`,
+  },
+  { name: "0018b_caixa_movimentos_idx_sessao", query: `CREATE INDEX IF NOT EXISTS "caixa_mov_sessao_idx" ON "caixa_movimentos"("sessao_id")` },
+  { name: "0018b_caixa_movimentos_idx_store",  query: `CREATE INDEX IF NOT EXISTS "caixa_mov_store_idx"  ON "caixa_movimentos"("store_id")` },
+  {
+    name: "0019_financeiro_lancamentos",
+    query: `CREATE TABLE IF NOT EXISTS "financeiro_lancamentos" (
+      "id"               uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      "store_id"         uuid REFERENCES "stores"("id") ON DELETE CASCADE NOT NULL,
+      "tipo"             varchar(10) NOT NULL,
+      "categoria"        varchar(50) DEFAULT 'venda',
+      "descricao"        varchar(250) NOT NULL,
+      "valor"            numeric(10,2) NOT NULL,
+      "metodo_pagamento" varchar(50),
+      "status"           varchar(20) NOT NULL DEFAULT 'liquidado',
+      "data_competencia" varchar(10) NOT NULL,
+      "data_pagamento"   varchar(10),
+      "order_id"         uuid REFERENCES "orders"("id") ON DELETE SET NULL,
+      "sessao_id"        uuid REFERENCES "caixa_sessoes"("id") ON DELETE SET NULL,
+      "created_at"       timestamp NOT NULL DEFAULT now()
+    )`,
+  },
+  { name: "0019b_fin_lancamentos_idx_store",  query: `CREATE INDEX IF NOT EXISTS "fin_lancamentos_store_idx"  ON "financeiro_lancamentos"("store_id")` },
+  { name: "0019b_fin_lancamentos_idx_status", query: `CREATE INDEX IF NOT EXISTS "fin_lancamentos_status_idx" ON "financeiro_lancamentos"("status")` },
+  { name: "0019b_fin_lancamentos_idx_data",   query: `CREATE INDEX IF NOT EXISTS "fin_lancamentos_data_idx"   ON "financeiro_lancamentos"("data_competencia")` },
+  { name: "0019b_fin_lancamentos_idx_sessao", query: `CREATE INDEX IF NOT EXISTS "fin_lancamentos_sessao_idx" ON "financeiro_lancamentos"("sessao_id")` },
+  // Normaliza registros antigos: "aberto" → "em_aberto"
+  { name: "0020_balanco_status_normalize", query: `UPDATE "stock_balances" SET "status" = 'em_aberto' WHERE "status" = 'aberto'` },
+  // Regras de frete por bairro + limiar de frete grátis
+  { name: "0021_delivery_rules_free_shipping", query: `ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "delivery_rules" jsonb, ADD COLUMN IF NOT EXISTS "free_shipping_above" numeric(10,2)` },
 ];
 
 for (const m of migrations) {

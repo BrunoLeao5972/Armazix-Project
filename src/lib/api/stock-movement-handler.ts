@@ -9,8 +9,8 @@
  *  - Auditoria é fire-and-forget (nunca bloqueia a resposta).
  */
 
-import { createDb, createTenantDb, schema } from "@/lib/db";
-import { eq, and, desc } from "drizzle-orm";
+import { createDb, createDbTransactional, schema } from "@/lib/db";
+import { eq, and, desc, gte, lte } from "drizzle-orm";
 import { requireStoreAccess } from "@/lib/auth/require-store-access";
 import type { AuthContext } from "@/lib/auth/require-store-access";
 import { logAudit, AuditModulos } from "@/lib/audit";
@@ -83,7 +83,7 @@ export async function stockEntryHandler(
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db    = await createTenantDb(dbUrl, storeId);
+  const db    = createDbTransactional(dbUrl);
   const nomeUsuario = await getUserName(dbUrl, userId);
   const origemBase  = `Entrada Manual${body.nf ? ` — NF ${body.nf}` : ""}`;
 
@@ -200,7 +200,7 @@ export async function stockExitHandler(
   const movType = VALID_TYPES[body.tipo] ?? "SAIDA";
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db    = await createTenantDb(dbUrl, storeId);
+  const db    = createDbTransactional(dbUrl);
   const nomeUsuario = await getUserName(dbUrl, userId);
   const origemText = `Saída Manual — ${body.tipo}${body.responsavel ? ` (${body.responsavel})` : ""}`;
 
@@ -287,32 +287,37 @@ export async function stockAdjustmentHandler(
   const body = await request.json() as {
     productId:    string;
     productName:  string;
-    qty:          number;   // signed
-    tipo:         string;   // Quebra | Furto | Sobra | Erro de Lançamento | Correção | Perda | Avaria | Recontagem
+    qty:          number;   // sempre >= 0; semântica depende do tipo:
+    //   Correção  → saldo absoluto desejado (>= 0)
+    //   Perda | Avaria → quantidade a subtrair (> 0)
+    tipo:         "Correção" | "Perda" | "Avaria";
     motivo?:      string;
     observations?: string;
   };
 
-  if (!body.productId || body.qty === undefined || body.qty === 0) {
-    return err("productId e qty (≠ 0) são obrigatórios");
+  if (!body.productId || !body.productName || !body.tipo) {
+    return err("productId, productName e tipo são obrigatórios");
+  }
+  if (body.qty === undefined || body.qty === null || isNaN(body.qty) || body.qty < 0) {
+    return err("qty deve ser um número maior ou igual a zero");
+  }
+  if ((body.tipo === "Perda" || body.tipo === "Avaria") && body.qty <= 0) {
+    return err(`Para ajuste do tipo "${body.tipo}", a quantidade deve ser maior que zero`);
+  }
+  if (!["Correção", "Perda", "Avaria"].includes(body.tipo)) {
+    return err("Tipo de ajuste inválido. Valores aceitos: Correção, Perda, Avaria");
   }
 
   const TYPE_MAP: Record<string, string> = {
-    Correção:            "AJUSTE",
-    Perda:               "PERDA",
-    Avaria:              "AVARIA",
-    Recontagem:          "AJUSTE",
-    Quebra:              "PERDA",
-    Furto:               "PERDA",
-    Sobra:               "AJUSTE",
-    "Erro de Lançamento": "AJUSTE",
+    Correção: "AJUSTE",
+    Perda:    "PERDA",
+    Avaria:   "AVARIA",
   };
-  const movType    = TYPE_MAP[body.tipo] ?? "AJUSTE";
-  const absQty     = Math.abs(body.qty);
+  const movType    = TYPE_MAP[body.tipo];
   const origemText = `Ajuste Manual — ${body.tipo}${body.motivo ? `: ${body.motivo}` : ""}`;
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db    = await createTenantDb(dbUrl, storeId);
+  const db    = createDbTransactional(dbUrl);
   const nomeUsuario = await getUserName(dbUrl, userId);
 
   try {
@@ -328,7 +333,23 @@ export async function stockAdjustmentHandler(
       if (!prod) throw new Error("Produto não encontrado nesta loja");
 
       const balanceBefore = prod.stock ?? 0;
-      const balanceAfter  = Math.max(0, balanceBefore + body.qty);
+
+      // Correção → qty é saldo absoluto desejado; calcula delta internamente.
+      // Perda / Avaria → qty é quantidade a subtrair (sempre positivo no payload).
+      let balanceAfter: number;
+      let signedQty: number;   // delta real para gravação no histórico
+
+      if (body.tipo === "Correção") {
+        balanceAfter = Math.max(0, body.qty);
+        signedQty    = balanceAfter - balanceBefore;
+      } else {
+        // Perda | Avaria: subtração obrigatória
+        if (body.qty > balanceBefore) {
+          throw new Error(`Quantidade a subtrair (${body.qty}) é maior que o estoque atual (${balanceBefore}). O estoque será zerado.`);
+        }
+        balanceAfter = Math.max(0, balanceBefore - body.qty);
+        signedQty    = -(body.qty);
+      }
 
       await tx
         .update(products)
@@ -343,7 +364,7 @@ export async function stockAdjustmentHandler(
           productId:    body.productId,
           productName:  body.productName,
           type:         movType,
-          quantity:     absQty,
+          quantity:     Math.abs(signedQty),
           balanceBefore,
           balanceAfter,
           origem:       origemText,
@@ -364,7 +385,7 @@ export async function stockAdjustmentHandler(
           productName:  body.productName,
           balanceBefore,
           balanceAfter,
-          qty:          body.qty,   // preserva sinal original
+          qty:          signedQty,   // delta com sinal para exibição no histórico
           tipo:         body.tipo,
           motivo:       body.motivo      ?? null,
           observations: body.observations ?? null,
@@ -395,7 +416,7 @@ export async function stockAdjustmentHandler(
 }
 
 // ─── Listar Movimentações (Extrato / Histórico) ───────────────────
-// GET /api/stock/movements?limit=150&type=ENTRADA
+// GET /api/stock/movements?limit=150&productId=X&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 export async function listStockMovementsHandler(
   request: Request,
   auth?: AuthContext,
@@ -407,17 +428,26 @@ export async function listStockMovementsHandler(
     return err((e as Error).message, auth?.userId ? 403 : 401);
   }
 
-  const url   = new URL(request.url);
-  const limit = Math.min(Math.max(1, parseInt(url.searchParams.get("limit") ?? "150")), 500);
+  const url       = new URL(request.url);
+  const productId = url.searchParams.get("productId");
+  const startDate = url.searchParams.get("startDate");
+  const endDate   = url.searchParams.get("endDate");
+  const maxLimit  = productId ? 2000 : 500;
+  const limit     = Math.min(Math.max(1, parseInt(url.searchParams.get("limit") ?? "150")), maxLimit);
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db    = await createTenantDb(dbUrl, storeId);
+  const db    = createDb(dbUrl);
+
+  const conds = [eq(stockMovements.storeId, storeId)];
+  if (productId) conds.push(eq(stockMovements.productId, productId));
+  if (startDate) conds.push(gte(stockMovements.createdAt, new Date(startDate + "T00:00:00.000Z")));
+  if (endDate)   conds.push(lte(stockMovements.createdAt, new Date(endDate   + "T23:59:59.999Z")));
 
   try {
     const rows = await db
       .select()
       .from(stockMovements)
-      .where(eq(stockMovements.storeId, storeId))
+      .where(and(...conds))
       .orderBy(desc(stockMovements.createdAt))
       .limit(limit);
 
@@ -445,7 +475,7 @@ export async function listStockAdjustmentsHandler(
   const limit = Math.min(Math.max(1, parseInt(url.searchParams.get("limit") ?? "100")), 500);
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db    = await createTenantDb(dbUrl, storeId);
+  const db    = createDb(dbUrl);
 
   try {
     const rows = await db

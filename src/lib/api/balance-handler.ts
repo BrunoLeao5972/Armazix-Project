@@ -1,4 +1,4 @@
-import { createDb, createTenantDb, schema } from "@/lib/db";
+import { createDb, createDbTransactional, schema } from "@/lib/db";
 import { eq, and, desc } from "drizzle-orm";
 import { requireStoreAccess } from "@/lib/auth/require-store-access";
 import type { AuthContext } from "@/lib/auth/require-store-access";
@@ -43,7 +43,7 @@ export async function listBalancesHandler(
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = createDb(dbUrl);
 
   try {
     const rows = await db
@@ -61,6 +61,7 @@ export async function listBalancesHandler(
 }
 
 // ─── Create Balance ───────────────────────────────────────────────
+// Salva progresso com status "em_aberto". Nunca altera o estoque.
 export async function createBalanceHandler(
   request: Request,
   auth?: AuthContext,
@@ -78,8 +79,6 @@ export async function createBalanceHandler(
     prodScope: "todos" | "alguns";
     preco: string;
     dataContagem: string;
-    dataEncerramento?: string | null;
-    status: "aberto" | "encerrado";
     items: BalancoItemJson[];
   };
 
@@ -88,102 +87,43 @@ export async function createBalanceHandler(
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = createDb(dbUrl);
   const nomeUsuario = await getUserName(dbUrl, userId);
 
   try {
-    let balance: typeof stockBalances.$inferSelect;
-    let correctionCount = 0;
-
-    await db.transaction(async (tx) => {
-      // 1. Inserir o balanço
-      const [newBalance] = await tx
-        .insert(stockBalances)
-        .values({
-          storeId,
-          codigo:           body.codigo,
-          prodScope:        body.prodScope ?? "todos",
-          preco:            body.preco ?? "Preço de custo",
-          dataContagem:     new Date(body.dataContagem),
-          dataEncerramento: body.dataEncerramento ? new Date(body.dataEncerramento) : null,
-          status:           body.status ?? "aberto",
-          items:            body.items ?? [],
-          createdBy:        userId,
-          createdByName:    nomeUsuario,
-        })
-        .returning();
-
-      balance = newBalance;
-
-      // 2. Se encerrado, gerar movimentações corretivas para divergências
-      if (body.status === "encerrado" && Array.isArray(body.items)) {
-        for (const item of body.items) {
-          if (item.diff === null || item.diff === 0) continue;
-          // diff = counted - systemStock
-          // diff > 0 → sobra (acréscimo), diff < 0 → falta (redução)
-
-          // Ler o saldo atual real (pode ter mudado desde que o balanço foi aberto)
-          const [prod] = await tx
-            .select({ stock: products.stock })
-            .from(products)
-            .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)))
-            .limit(1);
-
-          if (!prod) continue;
-
-          const balanceBefore = prod.stock ?? 0;
-          // O counted do balanço é o valor real físico confirmado
-          const balanceAfter = Math.max(0, item.counted ?? 0);
-
-          if (balanceBefore === balanceAfter) continue; // já está correto
-
-          await tx
-            .update(products)
-            .set({ stock: balanceAfter, updatedAt: new Date() })
-            .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)));
-
-          await tx
-            .insert(stockMovements)
-            .values({
-              storeId,
-              productId:    item.productId,
-              productName:  item.productName,
-              type:         "RECONTAGEM",
-              quantity:     Math.abs(balanceAfter - balanceBefore),
-              balanceBefore,
-              balanceAfter,
-              origem:       `Balanço ${body.codigo} — Recontagem`,
-              createdBy:    userId,
-              createdByName: nomeUsuario,
-            });
-
-          correctionCount++;
-        }
-      }
-    });
+    const [balance] = await db
+      .insert(stockBalances)
+      .values({
+        storeId,
+        codigo:        body.codigo,
+        prodScope:     body.prodScope ?? "todos",
+        preco:         body.preco ?? "Preço de custo",
+        dataContagem:  new Date(body.dataContagem),
+        status:        "em_aberto",
+        items:         body.items ?? [],
+        createdBy:     userId,
+        createdByName: nomeUsuario,
+      })
+      .returning();
 
     logAudit(
       {
-        userId,
-        nomeUsuario,
-        storeId,
+        userId, nomeUsuario, storeId,
         action:       "BALANCO_CRIAR",
         modulo:       "ESTOQUE",
         resourceType: "balanco",
-        resourceId:   balance!.id,
-        dadosNovos:   balance! as unknown as Record<string, unknown>,
+        resourceId:   balance.id,
+        dadosNovos:   balance as unknown as Record<string, unknown>,
         details: {
-          message: `Balanço ${body.codigo} criado por ${nomeUsuario} com ${body.items.length} itens.`,
+          message:    `Balanço ${body.codigo} criado por ${nomeUsuario} com ${body.items.length} itens.`,
           totalItems: body.items.length,
-          encerrado: body.status === "encerrado",
-          correcoesGeradas: correctionCount,
         },
         status: "success",
       },
       request,
     );
 
-    return json({ success: true, balance: balance!, correcoesGeradas: correctionCount });
+    return json({ success: true, balance });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("createBalanceHandler:", msg);
@@ -192,6 +132,7 @@ export async function createBalanceHandler(
 }
 
 // ─── Update Balance ───────────────────────────────────────────────
+// Atualiza itens de um balanço em aberto. Nunca altera o estoque.
 export async function updateBalanceHandler(
   request: Request,
   auth?: AuthContext,
@@ -206,15 +147,14 @@ export async function updateBalanceHandler(
 
   const body = await request.json() as {
     balanceId: string;
-    dataEncerramento?: string | null;
-    status?: "aberto" | "encerrado";
+    dataContagem?: string;
     items?: BalancoItemJson[];
   };
 
   if (!body.balanceId) return err("balanceId obrigatório");
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = createDb(dbUrl);
   const nomeUsuario = await getUserName(dbUrl, userId);
 
   try {
@@ -223,6 +163,7 @@ export async function updateBalanceHandler(
     });
 
     if (!existing) return err("Balanço não encontrado", 404);
+    if (existing.status === "encerrado") return err("Balanço encerrado não pode ser editado", 403);
 
     const newItems   = body.items ?? (existing.items as BalancoItemJson[]);
     const oldItems   = existing.items as BalancoItemJson[];
@@ -236,22 +177,16 @@ export async function updateBalanceHandler(
     const [updated] = await db
       .update(stockBalances)
       .set({
-        dataEncerramento:
-          body.dataEncerramento !== undefined
-            ? (body.dataEncerramento ? new Date(body.dataEncerramento) : null)
-            : existing.dataEncerramento,
-        status:    body.status ?? existing.status,
-        items:     newItems,
-        updatedAt: new Date(),
+        dataContagem: body.dataContagem ? new Date(body.dataContagem) : existing.dataContagem,
+        items:        newItems,
+        updatedAt:    new Date(),
       })
       .where(and(eq(stockBalances.id, body.balanceId), eq(stockBalances.storeId, storeId)))
       .returning();
 
     logAudit(
       {
-        userId,
-        nomeUsuario,
-        storeId,
+        userId, nomeUsuario, storeId,
         action:          "BALANCO_EDITAR",
         modulo:          "ESTOQUE",
         resourceType:    "balanco",
@@ -259,7 +194,7 @@ export async function updateBalanceHandler(
         dadosAnteriores: existing as unknown as Record<string, unknown>,
         dadosNovos:      updated  as unknown as Record<string, unknown>,
         details: {
-          message:      `Balanço ${existing.codigo} editado pelo usuário ${nomeUsuario}. Itens alterados: ${changedIds.length} (IDs: ${changedIds.join(", ") || "nenhum"}).`,
+          message:      `Balanço ${existing.codigo} editado. Itens alterados: ${changedIds.length}.`,
           changedCount: changedIds.length,
           changedIds,
         },
@@ -272,6 +207,238 @@ export async function updateBalanceHandler(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("updateBalanceHandler:", msg);
+    return err(msg, 500);
+  }
+}
+
+// ─── Encerrar Balance (ACID) ──────────────────────────────────────
+// Única rota que consolida o estoque real. Requer status "em_aberto".
+export async function encerrarBalanceHandler(
+  request: Request,
+  auth?: AuthContext,
+): Promise<Response> {
+  let storeId: string;
+  let userId: string;
+  try {
+    ({ storeId, userId } = await requireStoreAccess(auth));
+  } catch (e) {
+    return err((e as Error).message, auth?.userId ? 403 : 401);
+  }
+
+  const body = await request.json() as { balanceId: string };
+  if (!body.balanceId) return err("balanceId obrigatório");
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDbTransactional(dbUrl);
+  const nomeUsuario = await getUserName(dbUrl, userId);
+
+  try {
+    // Leitura fora da transação (apenas validação)
+    const existing = await db.query.stockBalances.findFirst({
+      where: and(eq(stockBalances.id, body.balanceId), eq(stockBalances.storeId, storeId)),
+    });
+
+    if (!existing) return err("Balanço não encontrado", 404);
+    if (existing.status === "encerrado") return err("Balanço já está encerrado", 409);
+
+    const items = existing.items as BalancoItemJson[];
+    let correctionCount = 0;
+    let closedBalance: typeof stockBalances.$inferSelect;
+
+    await db.transaction(async (tx) => {
+      // 1. Consolidar estoque para cada item com divergência
+      for (const item of items) {
+        if (item.diff === null || item.diff === 0) continue;
+
+        const [prod] = await tx
+          .select({ stock: products.stock })
+          .from(products)
+          .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)))
+          .limit(1);
+
+        if (!prod) continue;
+
+        const balanceBefore = prod.stock ?? 0;
+        const balanceAfter  = Math.max(0, item.counted ?? 0);
+
+        if (balanceBefore === balanceAfter) continue;
+
+        await tx
+          .update(products)
+          .set({ stock: balanceAfter, updatedAt: new Date() })
+          .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)));
+
+        await tx
+          .insert(stockMovements)
+          .values({
+            storeId,
+            productId:     item.productId,
+            productName:   item.productName,
+            type:          "RECONTAGEM",
+            quantity:      Math.abs(balanceAfter - balanceBefore),
+            balanceBefore,
+            balanceAfter,
+            origem:        `Balanço ${existing.codigo} — Recontagem`,
+            createdBy:     userId,
+            createdByName: nomeUsuario,
+          });
+
+        correctionCount++;
+      }
+
+      // 2. Marcar o balanço como encerrado com timestamp atual
+      const [updated] = await tx
+        .update(stockBalances)
+        .set({
+          status:           "encerrado",
+          dataEncerramento: new Date(),
+          updatedAt:        new Date(),
+        })
+        .where(and(eq(stockBalances.id, body.balanceId), eq(stockBalances.storeId, storeId)))
+        .returning();
+
+      closedBalance = updated;
+    });
+
+    logAudit(
+      {
+        userId, nomeUsuario, storeId,
+        action:          "BALANCO_ENCERRAR",
+        modulo:          "ESTOQUE",
+        resourceType:    "balanco",
+        resourceId:      body.balanceId,
+        dadosAnteriores: existing     as unknown as Record<string, unknown>,
+        dadosNovos:      closedBalance! as unknown as Record<string, unknown>,
+        details: {
+          message:          `Balanço ${existing.codigo} encerrado por ${nomeUsuario}. ${correctionCount} correções geradas.`,
+          totalItems:       items.length,
+          correcoesGeradas: correctionCount,
+        },
+        status: "success",
+      },
+      request,
+    );
+
+    return json({ success: true, balance: closedBalance!, correcoesGeradas: correctionCount });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("encerrarBalanceHandler:", msg);
+    return err(msg, 500);
+  }
+}
+
+// ─── Reabrir Balance (ACID) ──────────────────────────────────────
+// Reverte as correções de estoque do encerramento e volta a "em_aberto".
+export async function reabrirBalanceHandler(
+  request: Request,
+  auth?: AuthContext,
+): Promise<Response> {
+  let storeId: string;
+  let userId: string;
+  try {
+    ({ storeId, userId } = await requireStoreAccess(auth));
+  } catch (e) {
+    return err((e as Error).message, auth?.userId ? 403 : 401);
+  }
+
+  const body = await request.json() as { balanceId: string };
+  if (!body.balanceId) return err("balanceId obrigatório");
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDbTransactional(dbUrl);
+  const nomeUsuario = await getUserName(dbUrl, userId);
+
+  try {
+    const existing = await db.query.stockBalances.findFirst({
+      where: and(eq(stockBalances.id, body.balanceId), eq(stockBalances.storeId, storeId)),
+    });
+
+    if (!existing) return err("Balanço não encontrado", 404);
+    if (existing.status !== "encerrado") return err("Balanço não está encerrado", 409);
+
+    const items = existing.items as BalancoItemJson[];
+    let reversionCount = 0;
+    let reopenedBalance: typeof stockBalances.$inferSelect;
+
+    await db.transaction(async (tx) => {
+      // Reverter cada item que teve divergência (diff !== 0) quando foi encerrado
+      for (const item of items) {
+        if (item.diff === null || item.diff === 0) continue;
+
+        const [prod] = await tx
+          .select({ stock: products.stock })
+          .from(products)
+          .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)))
+          .limit(1);
+
+        if (!prod) continue;
+
+        // Restaura ao systemStock (valor antes do balanço ser aplicado)
+        const balanceBefore = prod.stock ?? 0;
+        const balanceAfter  = Math.max(0, item.systemStock ?? 0);
+
+        if (balanceBefore === balanceAfter) continue;
+
+        await tx
+          .update(products)
+          .set({ stock: balanceAfter, updatedAt: new Date() })
+          .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)));
+
+        await tx
+          .insert(stockMovements)
+          .values({
+            storeId,
+            productId:     item.productId,
+            productName:   item.productName,
+            type:          "RECONTAGEM",
+            quantity:      Math.abs(balanceAfter - balanceBefore),
+            balanceBefore,
+            balanceAfter,
+            origem:        `Balanço ${existing.codigo} — Reabertura (reversão)`,
+            createdBy:     userId,
+            createdByName: nomeUsuario,
+          });
+
+        reversionCount++;
+      }
+
+      // Marcar o balanço como em_aberto novamente
+      const [updated] = await tx
+        .update(stockBalances)
+        .set({
+          status:           "em_aberto",
+          dataEncerramento: null,
+          updatedAt:        new Date(),
+        })
+        .where(and(eq(stockBalances.id, body.balanceId), eq(stockBalances.storeId, storeId)))
+        .returning();
+
+      reopenedBalance = updated;
+    });
+
+    logAudit(
+      {
+        userId, nomeUsuario, storeId,
+        action:          "BALANCO_REABRIR",
+        modulo:          "ESTOQUE",
+        resourceType:    "balanco",
+        resourceId:      body.balanceId,
+        dadosAnteriores: existing       as unknown as Record<string, unknown>,
+        dadosNovos:      reopenedBalance! as unknown as Record<string, unknown>,
+        details: {
+          message:          `Balanço ${existing.codigo} reaberto por ${nomeUsuario}. ${reversionCount} reversões de estoque geradas.`,
+          totalItems:       items.length,
+          reversoesGeradas: reversionCount,
+        },
+        status: "success",
+      },
+      request,
+    );
+
+    return json({ success: true, balance: reopenedBalance!, reversoesGeradas: reversionCount });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("reabrirBalanceHandler:", msg);
     return err(msg, 500);
   }
 }
@@ -293,7 +460,7 @@ export async function deleteBalanceHandler(
   if (!body.balanceId) return err("balanceId obrigatório");
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = createDb(dbUrl);
   const nomeUsuario = await getUserName(dbUrl, userId);
 
   try {
@@ -302,6 +469,9 @@ export async function deleteBalanceHandler(
     });
 
     if (!existing) return err("Balanço não encontrado", 404);
+    if (existing.status === "encerrado") {
+      return err("Balanços encerrados não podem ser excluídos", 403);
+    }
 
     await db
       .delete(stockBalances)
@@ -309,9 +479,7 @@ export async function deleteBalanceHandler(
 
     logAudit(
       {
-        userId,
-        nomeUsuario,
-        storeId,
+        userId, nomeUsuario, storeId,
         action:          "BALANCO_EXCLUIR",
         modulo:          "ESTOQUE",
         resourceType:    "balanco",

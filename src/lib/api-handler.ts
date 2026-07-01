@@ -53,6 +53,8 @@ import {
   createBalanceHandler,
   updateBalanceHandler,
   deleteBalanceHandler,
+  encerrarBalanceHandler,
+  reabrirBalanceHandler,
 } from "./api/balance-handler";
 import {
   stockEntryHandler,
@@ -69,6 +71,17 @@ import {
   saveWppConfigHandler,
 } from "./api/whatsapp-handler";
 import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
+import {
+  getCaixaAtualHandler,
+  abrirCaixaHandler,
+  fecharCaixaHandler,
+  movimentarCaixaHandler,
+  listCaixaSessoesHandler,
+  listMesasHandler,
+  salvarMesasHandler,
+  finalizarVendaPdvHandler,
+  listFinanceiroLancamentosHandler,
+} from "./api/pdv-handler";
 import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler, createPixPaymentHandler, pixWebhookHandler } from "./api/subscription-handler";
 import { requireAuth, AuthContext } from "./middleware/auth";
 import { rateLimit, createRateLimitResponse } from "./middleware/rate-limit";
@@ -124,9 +137,11 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/coupons/create": createCouponHandler,
   "/api/customers/create": createCustomerHandler,
   "/api/customers/update": updateCustomerHandler,
-  "/api/balances/create": createBalanceHandler,
-  "/api/balances/update": updateBalanceHandler,
-  "/api/balances/delete": deleteBalanceHandler,
+  "/api/balances/create":   createBalanceHandler,
+  "/api/balances/update":   updateBalanceHandler,
+  "/api/balances/delete":   deleteBalanceHandler,
+  "/api/balances/encerrar": encerrarBalanceHandler,
+  "/api/balances/reabrir":  reabrirBalanceHandler,
   "/api/stock/entry":      stockEntryHandler,
   "/api/stock/exit":       stockExitHandler,
   "/api/stock/adjustment": stockAdjustmentHandler,
@@ -138,6 +153,11 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/whatsapp/config": saveWppConfigHandler,
   "/api/subscriptions/create": createSubscriptionHandler,
   "/api/subscriptions/create-pix": createPixPaymentHandler,
+  "/api/pdv/caixa/abrir":       abrirCaixaHandler,
+  "/api/pdv/caixa/fechar":      fecharCaixaHandler,
+  "/api/pdv/caixa/movimentar":  movimentarCaixaHandler,
+  "/api/pdv/mesas/salvar":      salvarMesasHandler,
+  "/api/pdv/finalizar-venda":   finalizarVendaPdvHandler,
 };
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
@@ -160,6 +180,10 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/subscriptions/status": getSubscriptionStatusHandler,
   "/api/whatsapp/status": getWhatsAppStatusHandler,
   "/api/whatsapp/config": getWppConfigHandler,
+  "/api/pdv/caixa":              getCaixaAtualHandler,
+  "/api/pdv/caixa/sessoes":      listCaixaSessoesHandler,
+  "/api/pdv/mesas":              listMesasHandler,
+  "/api/pdv/financeiro":         listFinanceiroLancamentosHandler,
 };
 
 // Mapeamento de rotas para configurações de rate limit

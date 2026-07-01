@@ -1,4 +1,10 @@
 // Shared types and helpers for the public storefront
+import type { PromoConfig } from "@/lib/promo-engine";
+
+export interface DeliveryRule {
+  bairro: string;   // nome do bairro (case-insensitive match)
+  taxa:   number;   // valor da taxa em R$
+}
 
 export interface PaymentMethodConfig {
   key: string;            // "cash" | "pix" | "card" | "debit" | "mercadopago" | "custom_*"
@@ -59,6 +65,14 @@ export interface StorePublicData {
   paymentMethodsConfig: PaymentMethodConfig[] | null;
   deliveryPaymentEnabled: boolean | null;
   banners: StoreBanner[];
+  // endereço físico da loja (campo jsonb já existente no DB)
+  address: {
+    street: string; number: string; neighborhood: string;
+    city: string; state: string; zip: string; complement?: string;
+  } | null;
+  // regras de frete por bairro + limiar para frete grátis
+  deliveryRules: DeliveryRule[] | null;
+  freeShippingAbove: string | null;
 }
 
 export interface ConfiguracaoVitrine {
@@ -83,6 +97,7 @@ export interface StoreProduct {
   compareAtPrice: string | null;
   costPrice: string | null;
   imageUrl: string | null;
+  images: string[] | null;
   emoji: string | null;
   badge: string | null;
   stock: number | null;
@@ -93,6 +108,7 @@ export interface StoreProduct {
   rating: string | null;
   reviewCount: number | null;
   allowObservation: boolean | null;
+  promoConfig: PromoConfig | null;
 }
 
 export interface StoreCategory {

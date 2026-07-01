@@ -119,7 +119,7 @@ function PublicStorefrontPage() {
       setDataError(null);
       try {
         const [productsRes, categoriesRes] = await Promise.all([
-          fetch(`/api/products/list?storeId=${encodeURIComponent(currentStoreId)}`),
+          fetch(`/api/products/list?storeId=${encodeURIComponent(currentStoreId)}&scope=public`),
           fetch(`/api/categories/list?storeId=${encodeURIComponent(currentStoreId)}`),
         ]);
         const productsData = (await productsRes.json()) as { products?: StoreProduct[]; error?: string };
@@ -222,7 +222,6 @@ function PublicStorefrontPage() {
         );
         const childIds = children.map((c) => c.id);
         const sectionProds = products
-          .filter((p) => p.active !== false)
           .filter(
             (p) => p.categoryId === analytic.id || childIds.includes(p.categoryId ?? "")
           )
@@ -243,7 +242,6 @@ function PublicStorefrontPage() {
     const minP = priceMin ? parseFloat(priceMin) : null;
     const maxP = priceMax ? parseFloat(priceMax) : null;
     return products
-      .filter((p) => p.active !== false)
       .filter((p) => {
         if (selectedChildId) return p.categoryId === selectedChildId;
         if (selectedAnalyticId) {

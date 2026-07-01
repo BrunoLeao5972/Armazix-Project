@@ -17,13 +17,13 @@ function SearchPage() {
 
   useEffect(() => {
     if (!store?.id) return;
-    fetch(`/api/products/list?storeId=${store.id}`)
+    fetch(`/api/products/list?storeId=${store.id}&scope=public`)
       .then(r => r.json())
       .then(d => { if (d.products) setProducts(d.products); })
       .catch(() => {});
   }, [store?.id]);
 
-  const activeProducts = products.filter(p => p.active !== false);
+  const activeProducts = products;
   const results = query.length >= 2
     ? activeProducts.filter(p =>
         p.name.toLowerCase().includes(query.toLowerCase()) ||
@@ -66,7 +66,8 @@ function SearchPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {results.map(product => (
                 <ProductCard key={product.id} product={product} onAdd={handleAdd}
-                  isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite} />
+                  isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite}
+                  showPrice highlightLowStock primaryColor="" />
               ))}
             </div>
           ) : (
@@ -85,7 +86,8 @@ function SearchPage() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {activeProducts.slice(0, 8).map(product => (
                 <ProductCard key={product.id} product={product} onAdd={handleAdd}
-                  isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite} />
+                  isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite}
+                  showPrice highlightLowStock primaryColor="" />
               ))}
             </div>
           ) : (

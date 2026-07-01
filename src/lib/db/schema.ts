@@ -50,6 +50,8 @@ export const stores = pgTable("stores", {
     key: string; label: string; enabled: boolean; maxInstallments: number; payAtDelivery?: boolean;
   }>>(),
   deliveryPaymentEnabled: boolean("delivery_payment_enabled").default(true),
+  deliveryRules: jsonb("delivery_rules").$type<Array<{ bairro: string; taxa: number }>>(),
+  freeShippingAbove: numeric("free_shipping_above", { precision: 10, scale: 2 }),
   wppConfig: jsonb("wpp_config").$type<import("@/lib/whatsapp-sender").WppConfig>(),
   plan: varchar("plan", { length: 20 }).default("free"),
   planStatus: varchar("plan_status", { length: 20 }).default("active"),
@@ -138,6 +140,8 @@ export const products = pgTable("products", {
   name: varchar("name", { length: 150 }).notNull(),
   description: text("description"),
   imageUrl: text("image_url"),
+  images: jsonb("images").$type<Array<{ url: string; isPrimary: boolean }>>().default([]).notNull(),
+  promoConfig: jsonb("promo_config").$type<import("@/lib/promo-engine").PromoConfig | null>(),
   emoji: varchar("emoji", { length: 10 }),
   price: numeric("price", { precision: 10, scale: 2 }).notNull(),
   compareAtPrice: numeric("compare_at_price", { precision: 10, scale: 2 }),
@@ -550,7 +554,7 @@ export const stockBalances = pgTable("stock_balances", {
   preco: varchar("preco", { length: 50 }).default("Preço de custo").notNull(),
   dataContagem: timestamp("data_contagem").notNull(),
   dataEncerramento: timestamp("data_encerramento"),
-  status: varchar("status", { length: 20 }).default("aberto").notNull(),
+  status: varchar("status", { length: 20 }).default("em_aberto").notNull(),
   items: jsonb("items").$type<BalancoItemJson[]>().notNull().default([]),
   createdBy: uuid("created_by"),
   createdByName: varchar("created_by_name", { length: 120 }),
@@ -590,4 +594,98 @@ export const stockAdjustments = pgTable("stock_adjustments", {
 export const stockAdjustmentsRelations = relations(stockAdjustments, ({ one }) => ({
   store:   one(stores,   { fields: [stockAdjustments.storeId],   references: [stores.id] }),
   product: one(products, { fields: [stockAdjustments.productId], references: [products.id] }),
+}));
+
+// ─── MESAS (Mapa de atendimento PDV) ────────────────────────────
+export const mesas = pgTable("mesas", {
+  id:         uuid("id").defaultRandom().primaryKey(),
+  storeId:    uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  numero:     integer("numero").notNull(),
+  label:      varchar("label", { length: 50 }).notNull(),
+  capacidade: integer("capacidade").default(4),
+  active:     boolean("active").default(true).notNull(),
+  position:   integer("position").default(0),
+}, (t) => [
+  index("mesas_store_idx").on(t.storeId),
+]);
+
+export const mesasRelations = relations(mesas, ({ one }) => ({
+  store: one(stores, { fields: [mesas.storeId], references: [stores.id] }),
+}));
+
+// ─── CAIXA SESSOES (Sessões de caixa PDV) ────────────────────────
+export const caixaSessoes = pgTable("caixa_sessoes", {
+  id:            uuid("id").defaultRandom().primaryKey(),
+  storeId:       uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  saldoInicial:  numeric("saldo_inicial",  { precision: 10, scale: 2 }).notNull().default("0"),
+  saldoFinal:    numeric("saldo_final",    { precision: 10, scale: 2 }),
+  totalDinheiro: numeric("total_dinheiro", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalPix:      numeric("total_pix",      { precision: 10, scale: 2 }).notNull().default("0"),
+  totalCartao:   numeric("total_cartao",   { precision: 10, scale: 2 }).notNull().default("0"),
+  totalDebito:   numeric("total_debito",   { precision: 10, scale: 2 }).notNull().default("0"),
+  totalOutros:   numeric("total_outros",   { precision: 10, scale: 2 }).notNull().default("0"),
+  totalVendas:   integer("total_vendas").notNull().default(0),
+  status:        varchar("status", { length: 20 }).notNull().default("aberta"), // aberta | encerrada
+  abertoPor:     varchar("aberto_por",    { length: 120 }),
+  encerradoPor:  varchar("encerrado_por", { length: 120 }),
+  observations:  text("observations"),
+  openedAt:      timestamp("opened_at").defaultNow().notNull(),
+  closedAt:      timestamp("closed_at"),
+}, (t) => [
+  index("caixa_sessoes_store_idx").on(t.storeId),
+  index("caixa_sessoes_status_idx").on(t.status),
+  index("caixa_sessoes_opened_idx").on(t.openedAt),
+]);
+
+export const caixaSessoesRelations = relations(caixaSessoes, ({ one, many }) => ({
+  store:      one(stores, { fields: [caixaSessoes.storeId], references: [stores.id] }),
+  movimentos: many(caixaMovimentos),
+}));
+
+// ─── CAIXA MOVIMENTOS (Sangria / Suprimento) ────────────────────
+export const caixaMovimentos = pgTable("caixa_movimentos", {
+  id:        uuid("id").defaultRandom().primaryKey(),
+  sessaoId:  uuid("sessao_id").references(() => caixaSessoes.id, { onDelete: "cascade" }).notNull(),
+  storeId:   uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  tipo:      varchar("tipo", { length: 20 }).notNull(), // sangria | suprimento
+  valor:     numeric("valor", { precision: 10, scale: 2 }).notNull(),
+  motivo:    text("motivo"),
+  criadoPor: varchar("criado_por", { length: 120 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("caixa_mov_sessao_idx").on(t.sessaoId),
+  index("caixa_mov_store_idx").on(t.storeId),
+]);
+
+export const caixaMovimentosRelations = relations(caixaMovimentos, ({ one }) => ({
+  sessao: one(caixaSessoes, { fields: [caixaMovimentos.sessaoId], references: [caixaSessoes.id] }),
+  store:  one(stores,       { fields: [caixaMovimentos.storeId],  references: [stores.id] }),
+}));
+
+// ─── FINANCEIRO LANCAMENTOS ──────────────────────────────────────
+export const financeiroLancamentos = pgTable("financeiro_lancamentos", {
+  id:               uuid("id").defaultRandom().primaryKey(),
+  storeId:          uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  tipo:             varchar("tipo", { length: 10 }).notNull(), // entrada | saida
+  categoria:        varchar("categoria", { length: 50 }).default("venda"),
+  descricao:        varchar("descricao", { length: 250 }).notNull(),
+  valor:            numeric("valor", { precision: 10, scale: 2 }).notNull(),
+  metodoPagamento:  varchar("metodo_pagamento", { length: 50 }),
+  status:           varchar("status", { length: 20 }).notNull().default("liquidado"), // liquidado | pendente | cancelado
+  dataCompetencia:  varchar("data_competencia", { length: 10 }).notNull(), // YYYY-MM-DD
+  dataPagamento:    varchar("data_pagamento",   { length: 10 }),
+  orderId:          uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+  sessaoId:         uuid("sessao_id").references(() => caixaSessoes.id, { onDelete: "set null" }),
+  createdAt:        timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("fin_lancamentos_store_idx").on(t.storeId),
+  index("fin_lancamentos_status_idx").on(t.status),
+  index("fin_lancamentos_data_idx").on(t.dataCompetencia),
+  index("fin_lancamentos_sessao_idx").on(t.sessaoId),
+]);
+
+export const financeiroLancamentosRelations = relations(financeiroLancamentos, ({ one }) => ({
+  store:  one(stores,       { fields: [financeiroLancamentos.storeId],  references: [stores.id] }),
+  order:  one(orders,       { fields: [financeiroLancamentos.orderId],  references: [orders.id] }),
+  sessao: one(caixaSessoes, { fields: [financeiroLancamentos.sessaoId], references: [caixaSessoes.id] }),
 }));

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, useCallback } from "react";
+import { lazy, Suspense, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   ArrowUpCircle, ArrowDownCircle, AlertTriangle, Package, TrendingUp, TrendingDown,
@@ -775,7 +775,15 @@ function SecaoSaida() {
     }
   };
 
+  // Movimentações sem contrapartida financeira: imutáveis após criação.
+  // Apenas saídas de venda/uso/troca (type "saida") podem ter edição.
+  const isFinancialExit = (m: Movement) => m.type === "saida";
+
   const handleEditar = (saida: Movement) => {
+    // Guard: ajustes de inventário (perda/avaria/ajuste) não têm registro financeiro
+    // associado e são imutáveis para garantir a trilha de auditoria.
+    if (!isFinancialExit(saida)) return;
+
     // Verifica se a forma de pagamento tem baixa automática (vendas em dinheiro/pix)
     const formaPagtoMock = "Dinheiro"; // Na prática viria do registro real
     const temBaixaAutomatica = BAIXA_AUTOMATICA.includes(formaPagtoMock);
@@ -862,13 +870,17 @@ function SecaoSaida() {
               <Card key={m.id} className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-all h-full">
                 <CardContent className="p-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center shrink-0">
-                      <ArrowDownCircle className="w-4.5 h-4.5 text-blue-600" />
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${m.type === "perda" ? "bg-destructive/15" : "bg-blue-500/15"}`}>
+                      {m.type === "perda"
+                        ? <AlertTriangle className="w-4.5 h-4.5 text-destructive" />
+                        : <ArrowDownCircle className="w-4.5 h-4.5 text-blue-600" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium text-sm truncate">{m.product}</span>
-                        <span className="text-xs bg-blue-500/15 text-blue-600 px-2 py-0.5 rounded-full shrink-0">Saída</span>
+                        {m.type === "perda"
+                          ? <span className="text-xs bg-destructive/15 text-destructive px-2 py-0.5 rounded-full shrink-0">Perda / Avaria</span>
+                          : <span className="text-xs bg-blue-500/15 text-blue-600 px-2 py-0.5 rounded-full shrink-0">Saída</span>}
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
                         <span>{m.date}</span>
@@ -878,9 +890,12 @@ function SecaoSaida() {
                     </div>
                     <div className="text-right shrink-0 flex flex-col items-end gap-1">
                       <span className="font-bold text-sm text-rose-600">-{m.qty} un</span>
-                      <button onClick={() => handleEditar(m)} className="p-1.5 rounded-lg hover:bg-secondary transition-colors" title="Editar">
-                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                      </button>
+                      {/* Apenas saídas com vínculo financeiro (venda/uso/troca) são editáveis */}
+                      {isFinancialExit(m) && (
+                        <button onClick={() => handleEditar(m)} className="p-1.5 rounded-lg hover:bg-secondary transition-colors" title="Editar">
+                          <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -1098,7 +1113,7 @@ interface BalancoRecord {
   preco: string;
   dataContagem: string;
   dataEncerramento: string | null;
-  status: "aberto" | "encerrado";
+  status: "aberto" | "em_aberto" | "encerrado";
   items: BalancoItemJson[];
   createdByName: string | null;
   createdAt: string;
@@ -1164,14 +1179,20 @@ function SecaoInventario() {
   const [prodScope, setProdScope] = useState<"todos" | "alguns">("todos");
   const [preco, setPreco] = useState("Preço de custo");
   const [dataContagem, setDataContagem] = useState(new Date().toISOString().split("T")[0]);
-  const [dataEnc, setDataEnc] = useState("");
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [addSearch, setAddSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [encerrado, setEncerrado] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // ── etapas: edição, conferência, encerramento e reabertura ──
+  const [editingBalance, setEditingBalance] = useState<BalancoRecord | null>(null);
+  const [conferido, setConferido] = useState(false);
+  const [encerrando, setEncerrando] = useState(false);
+  const [encerrarError, setEncerrarError] = useState<string | null>(null);
+  const [reabrindo, setReabrindo] = useState(false);
+  const [reabrirError, setReabrirError] = useState<string | null>(null);
 
   const setCount = (id: string, v: string) => setCounts(prev => ({ ...prev, [id]: v }));
 
@@ -1197,53 +1218,82 @@ function SecaoInventario() {
   const resetForm = () => {
     setProdScope("todos"); setPreco("Preço de custo");
     setDataContagem(new Date().toISOString().split("T")[0]);
-    setDataEnc(""); setCounts({}); setSelectedIds([]);
-    setEncerrado(false); setSaveError(null);
+    setCounts({}); setSelectedIds([]);
+    setSaveError(null); setSavedOk(false);
+    setEditingBalance(null); setConferido(false);
+    setEncerrarError(null); setReabrirError(null);
   };
 
-  const handleEncerrar = () => {
-    setEncerrado(true);
-    setDataEnc(new Date().toISOString().split("T")[0]);
+  // Carrega um balanço salvo no formulário para continuar a contagem
+  const handleEditar = (b: BalancoRecord) => {
+    setEditingBalance(b);
+    setProdScope(b.prodScope as "todos" | "alguns");
+    setDataContagem(
+      b.dataContagem
+        ? new Date(b.dataContagem).toISOString().split("T")[0]
+        : new Date().toISOString().split("T")[0],
+    );
+    const savedCounts: Record<string, string> = {};
+    const savedIds: string[] = [];
+    for (const item of b.items ?? []) {
+      if (item.counted !== null) savedCounts[item.productId] = String(item.counted);
+      savedIds.push(item.productId);
+    }
+    setCounts(savedCounts);
+    setSelectedIds(b.prodScope === "alguns" ? savedIds : []);
+    setConferido(false);
+    setSaveError(null);
+    setEncerrarError(null);
+    setSavedOk(false);
+    setView("novo");
   };
 
+  // Constrói o array de itens a partir do estado atual do formulário
+  const buildItems = () =>
+    visibleProducts.map(p => {
+      const rawCounted = counts[p.id];
+      const efectivo = prodScope === "todos" ? (rawCounted ?? "0") : (rawCounted ?? "");
+      const counted = efectivo !== "" ? parseInt(efectivo) : null;
+      const diff = counted !== null ? counted - p.stock : null;
+      return {
+        productId: p.id, productName: p.name, sku: p.sku,
+        systemStock: p.stock, counted, diff,
+        costPrice: p.costPrice, unit: p.unit,
+      };
+    });
+
+  // Salva progresso sem alterar estoque (status sempre em_aberto)
   const handleSalvar = async () => {
     setSaveError(null);
     setSaving(true);
     try {
-      const items = visibleProducts.map(p => {
-        const rawCounted = counts[p.id];
-        const efectivo = prodScope === "todos" ? (rawCounted ?? "0") : (rawCounted ?? "");
-        const counted = efectivo !== "" ? parseInt(efectivo) : null;
-        const diff = counted !== null ? counted - p.stock : null;
-        return {
-          productId:   p.id,
-          productName: p.name,
-          sku:         p.sku,
-          systemStock: p.stock,
-          counted,
-          diff,
-          costPrice:   p.costPrice,
-          unit:        p.unit,
-        };
-      });
-
-      const payload = {
-        codigo:           gerarCodigo(),
-        prodScope,
-        preco,
-        dataContagem:     dataContagem + "T00:00:00.000Z",
-        dataEncerramento: encerrado && dataEnc ? dataEnc + "T00:00:00.000Z" : null,
-        status:           encerrado ? "encerrado" : "aberto",
-        items,
-      };
-
-      const res  = await api.post("/api/balances/create", payload);
+      const items = buildItems();
+      let res: Response;
+      if (editingBalance) {
+        res = await api.post("/api/balances/update", {
+          balanceId:    editingBalance.id,
+          dataContagem: dataContagem + "T00:00:00.000Z",
+          items,
+        });
+      } else {
+        res = await api.post("/api/balances/create", {
+          codigo:       gerarCodigo(),
+          prodScope, preco,
+          dataContagem: dataContagem + "T00:00:00.000Z",
+          items,
+        });
+      }
       const data = await res.json() as { success?: boolean; balance?: BalancoRecord; error?: string };
-
       if (res.ok && data.balance) {
-        setBalancos(prev => [data.balance!, ...prev]);
-        resetForm();
-        setView("lista");
+        if (editingBalance) {
+          setBalancos(prev => prev.map(b => b.id === data.balance!.id ? data.balance! : b));
+        } else {
+          setBalancos(prev => [data.balance!, ...prev]);
+        }
+        setEditingBalance(data.balance!);
+        setConferido(false); // requer nova conferência após salvar novos dados
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 2500);
       } else {
         setSaveError(data.error ?? "Erro ao salvar balanço. Tente novamente.");
       }
@@ -1251,6 +1301,85 @@ function SecaoInventario() {
       setSaveError("Erro de conexão. Tente novamente.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Encerra o balanço: salva estado atual + consolida estoque (ACID)
+  const handleEncerrarDefinitivo = async () => {
+    if (!conferido || encerrando) return;
+    setEncerrarError(null);
+    setEncerrando(true);
+    try {
+      const items = buildItems();
+
+      // 1. Garantir que o estado mais recente está salvo no DB
+      let balanceId: string;
+      if (editingBalance) {
+        const upRes = await api.post("/api/balances/update", {
+          balanceId: editingBalance.id,
+          dataContagem: dataContagem + "T00:00:00.000Z",
+          items,
+        });
+        const upData = await upRes.json() as { success?: boolean; error?: string };
+        if (!upRes.ok) { setEncerrarError(upData.error ?? "Erro ao salvar antes de encerrar"); return; }
+        balanceId = editingBalance.id;
+      } else {
+        const crRes = await api.post("/api/balances/create", {
+          codigo: gerarCodigo(),
+          prodScope, preco,
+          dataContagem: dataContagem + "T00:00:00.000Z",
+          items,
+        });
+        const crData = await crRes.json() as { success?: boolean; balance?: BalancoRecord; error?: string };
+        if (!crRes.ok || !crData.balance) { setEncerrarError(crData.error ?? "Erro ao criar balanço"); return; }
+        balanceId = crData.balance.id;
+        setBalancos(prev => [crData.balance!, ...prev]);
+      }
+
+      // 2. Encerrar via rota dedicada (consolida estoque em transação ACID)
+      const res  = await api.post("/api/balances/encerrar", { balanceId });
+      const data = await res.json() as {
+        success?: boolean; balance?: BalancoRecord; correcoesGeradas?: number; error?: string;
+      };
+      if (res.ok && data.balance) {
+        setBalancos(prev => prev.map(b => b.id === balanceId ? data.balance! : b));
+        resetForm();
+        setView("lista");
+      } else {
+        setEncerrarError(data.error ?? "Erro ao encerrar balanço");
+      }
+    } catch {
+      setEncerrarError("Erro de conexão.");
+    } finally {
+      setEncerrando(false);
+    }
+  };
+
+  // Reabre um balanço encerrado: reverte estoque e volta a em_aberto
+  const handleReabrir = async () => {
+    if (!editingBalance || reabrindo) return;
+    const qtdDiverg = (editingBalance.items ?? []).filter(i => i.diff !== null && i.diff !== 0).length;
+    const msg = qtdDiverg > 0
+      ? `Reabrir vai reverter ${qtdDiverg} correção(ões) de estoque feita(s) no encerramento.\n\nOs produtos voltarão ao saldo anterior ao balanço.\n\nDeseja continuar?`
+      : "Reabrir o balanço e voltar ao status Em aberto?";
+    if (!confirm(msg)) return;
+    setReabrirError(null);
+    setReabrindo(true);
+    try {
+      const res  = await api.post("/api/balances/reabrir", { balanceId: editingBalance.id });
+      const data = await res.json() as { success?: boolean; balance?: BalancoRecord; reversoesGeradas?: number; error?: string };
+      if (res.ok && data.balance) {
+        setBalancos(prev => prev.map(b => b.id === data.balance!.id ? data.balance! : b));
+        setEditingBalance(data.balance!);
+        setConferido(false);
+        setSavedOk(false);
+      } else {
+        setReabrirError(data.error ?? "Erro ao reabrir balanço");
+      }
+    } catch {
+      setReabrirError("Erro de conexão.");
+    } finally {
+      setReabrindo(false);
     }
   };
 
@@ -1410,12 +1539,23 @@ function SecaoInventario() {
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(b.dataEncerramento)}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{b.createdByName ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${b.status === "encerrado" ? "bg-secondary text-muted-foreground" : "bg-emerald-500/15 text-emerald-600"}`}>
-                        {b.status === "encerrado" ? "Encerrado" : "Em aberto"}
-                      </span>
+                      {b.status === "encerrado" ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-secondary text-muted-foreground">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />Encerrado
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-600">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />Em aberto
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-1.5">
+                      <div className="flex gap-1.5 flex-wrap">
+                        {/* Editar — disponível para todos os balanços */}
+                        <button onClick={() => handleEditar(b)}
+                          className="text-xs px-2 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors flex items-center gap-1 font-medium">
+                          <Pencil className="w-3 h-3" />Editar
+                        </button>
                         <div className="relative">
                           <button onClick={() => setExportRowOpen(v => v === b.id ? null : b.id)}
                             className="text-xs px-2 py-1 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors flex items-center gap-1">
@@ -1434,11 +1574,13 @@ function SecaoInventario() {
                             </div>
                           )}
                         </div>
-                        <button onClick={() => handleDelete(b.id)} disabled={deletingId === b.id}
-                          className="text-xs px-2 py-1 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors flex items-center gap-1 disabled:opacity-50">
-                          {deletingId === b.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                          Excluir
-                        </button>
+                        {b.status !== "encerrado" && (
+                          <button onClick={() => handleDelete(b.id)} disabled={deletingId === b.id}
+                            className="text-xs px-2 py-1 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors flex items-center gap-1 disabled:opacity-50">
+                            {deletingId === b.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                            Excluir
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1457,16 +1599,58 @@ function SecaoInventario() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-semibold text-base">Novo Balanço</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">Lançamento: <span className="font-medium">Novo balanço</span></p>
+          <h3 className="font-semibold text-base">
+            {editingBalance ? `Balanço — ${editingBalance.codigo}` : "Novo Balanço"}
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {!editingBalance && "Preencha a contagem, salve o progresso e encerre quando concluído"}
+            {editingBalance?.status !== "encerrado" && editingBalance && (
+              <span className="inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Em aberto — continue a contagem e encerre quando finalizar
+              </span>
+            )}
+            {editingBalance?.status === "encerrado" && (
+              <span className="inline-flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />Encerrado em {editingBalance.dataEncerramento ? new Date(editingBalance.dataEncerramento).toLocaleDateString("pt-BR") : "—"}
+              </span>
+            )}
+          </p>
         </div>
-        <button onClick={() => setView("lista")} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5">
-          <X className="w-4 h-4" />Cancelar
+        <button onClick={() => { resetForm(); setView("lista"); }} className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5">
+          <X className="w-4 h-4" />Voltar
         </button>
       </div>
 
+      {/* Banner: balanço encerrado */}
+      {editingBalance?.status === "encerrado" && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 space-y-1">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              Este balanço está encerrado
+            </p>
+            <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+              As correções de estoque já foram aplicadas. Ao reabrir, <strong>{(editingBalance.items ?? []).filter(i => i.diff !== null && i.diff !== 0).length} ajuste(s) de estoque</strong> serão revertidos e o balanço voltará para <em>Em aberto</em> para que você possa continuar editando.
+            </p>
+            {reabrirError && (
+              <p className="text-xs text-red-600 font-medium">{reabrirError}</p>
+            )}
+          </div>
+          <button
+            onClick={handleReabrir}
+            disabled={reabrindo}
+            className="shrink-0 h-9 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center gap-2 transition-colors shadow-sm"
+          >
+            {reabrindo
+              ? <><Loader2 className="w-4 h-4 animate-spin" />Reabrindo...</>
+              : <><RefreshCw className="w-4 h-4" />Reabrir Balanço</>
+            }
+          </button>
+        </div>
+      )}
+
       {/* Configurações */}
-      <Card className="rounded-2xl border-border/50 shadow-soft">
+      <Card className={`rounded-2xl border-border/50 shadow-soft ${editingBalance?.status === "encerrado" ? "opacity-60 pointer-events-none select-none" : ""}`}>
         <CardHeader className="pb-3"><CardTitle className="text-sm">Configurações do balanço</CardTitle></CardHeader>
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* Produtos contados */}
@@ -1497,8 +1681,8 @@ function SecaoInventario() {
               <Input type="date" value={dataContagem} onChange={e => setDataContagem(e.target.value)} className="h-9 rounded-xl text-sm" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase">Data de encerramento</Label>
-              <Input type="date" value={dataEnc} onChange={e => setDataEnc(e.target.value)} disabled={encerrado} className="h-9 rounded-xl text-sm disabled:opacity-50" />
+              <Label className="text-xs font-semibold text-muted-foreground uppercase">Encerramento</Label>
+              <Input type="text" value={editingBalance?.dataEncerramento ? new Date(editingBalance.dataEncerramento).toLocaleDateString("pt-BR") : "Será preenchido ao encerrar"} disabled className="h-9 rounded-xl text-sm disabled:opacity-50 text-muted-foreground" />
             </div>
           </div>
         </CardContent>
@@ -1542,7 +1726,7 @@ function SecaoInventario() {
       )}
 
       {/* Tabela de contagem */}
-      <Card className="rounded-2xl border-border/50 shadow-soft overflow-hidden">
+      <Card className={`rounded-2xl border-border/50 shadow-soft overflow-hidden ${editingBalance?.status === "encerrado" ? "opacity-60 pointer-events-none select-none" : ""}`}>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm">Lista de contagem</CardTitle>
@@ -1617,45 +1801,117 @@ function SecaoInventario() {
         </div>
       </Card>
 
-      {/* Ações */}
-      <div className="flex flex-wrap gap-2 pt-1">
-        <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={handleEncerrar} disabled={encerrado}>
-          {encerrado ? <><Check className="w-4 h-4 text-emerald-600" />Encerrado</> : <><XCircle className="w-4 h-4" />Encerrar</>}
-        </Button>
-        <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={() => window.print()}>
-          <FileText className="w-4 h-4" />Imprimir
-        </Button>
-        <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={handleDownload}>
-          <Download className="w-4 h-4" />Download Excel
-        </Button>
-        <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={handleDownloadPDF}>
-          <Download className="w-4 h-4" />Download PDF
-        </Button>
-        <div className="flex-1" />
-        <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={() => { resetForm(); setView("lista"); }}>
-          Cancelar
-        </Button>
-        <Button className="rounded-xl gap-1.5 h-9 text-sm bg-gradient-primary text-primary-foreground"
-          onClick={handleSalvar} disabled={saving}>
-          {saving
-            ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</>
-            : <><Check className="w-4 h-4" />Salvar balanço</>}
-        </Button>
+      {/* Etapas de ação — ocultas quando encerrado (reabertura é pelo banner acima) */}
+      {editingBalance?.status === "encerrado" && (
+        <div className="flex justify-end">
+          <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm"
+            onClick={() => { resetForm(); setView("lista"); }}>
+            Voltar para lista
+          </Button>
+        </div>
+      )}
+      {editingBalance?.status !== "encerrado" && (
+      <div className="rounded-2xl border border-border/50 bg-secondary/30 p-4 space-y-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Etapas do balanço</p>
+        <div className="flex flex-wrap gap-2">
+
+          {/* ETAPA 1 — Salvar Progresso */}
+          <Button
+            variant="outline"
+            className={`rounded-xl gap-1.5 h-9 text-sm ${savedOk ? "border-emerald-500 text-emerald-600" : ""}`}
+            onClick={handleSalvar}
+            disabled={saving}
+            title="Salva o progresso sem alterar o estoque. Pode ser continuado depois."
+          >
+            {saving
+              ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</>
+              : savedOk
+                ? <><CheckCircle2 className="w-4 h-4 text-emerald-500" />Progresso salvo!</>
+                : <><Check className="w-4 h-4" />1. Salvar Progresso</>
+            }
+          </Button>
+
+          {/* ETAPA 2 — Conferir Itens */}
+          <Button
+            variant="outline"
+            className={`rounded-xl gap-1.5 h-9 text-sm ${conferido ? "border-blue-500 text-blue-600" : ""}`}
+            onClick={() => setConferido(true)}
+            disabled={conferido}
+            title="Processa as diferenças na tabela para auditoria visual. Não altera o estoque."
+          >
+            {conferido
+              ? <><CheckCircle2 className="w-4 h-4 text-blue-500" />Itens conferidos</>
+              : <><Eye className="w-4 h-4" />2. Conferir Itens</>
+            }
+          </Button>
+
+          {/* ETAPA 3 — Encerrar Balanço */}
+          <Button
+            variant="outline"
+            className={`rounded-xl gap-1.5 h-9 text-sm transition-colors ${
+              conferido
+                ? "border-amber-500 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                : "opacity-50 cursor-not-allowed"
+            }`}
+            onClick={handleEncerrarDefinitivo}
+            disabled={!conferido || encerrando}
+            title={!conferido ? "Execute a conferência antes de encerrar" : "Consolida o estoque e encerra o balanço (irreversível)"}
+          >
+            {encerrando
+              ? <><Loader2 className="w-4 h-4 animate-spin" />Encerrando...</>
+              : <><XCircle className="w-4 h-4" />3. Encerrar Balanço</>
+            }
+          </Button>
+
+          {/* Ferramentas de exportação */}
+          <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={() => window.print()}>
+            <FileText className="w-4 h-4" />Imprimir
+          </Button>
+          <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={handleDownload}>
+            <Download className="w-4 h-4" />Excel
+          </Button>
+          <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={handleDownloadPDF}>
+            <Download className="w-4 h-4" />PDF
+          </Button>
+
+          <div className="flex-1" />
+          <Button variant="outline" className="rounded-xl gap-1.5 h-9 text-sm" onClick={() => { resetForm(); setView("lista"); }}>
+            Cancelar
+          </Button>
+        </div>
+
+        {/* Indicadores de progresso */}
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
+          <span className={`flex items-center gap-1 ${editingBalance ? "text-emerald-600 font-medium" : ""}`}>
+            <span className={`w-2 h-2 rounded-full ${editingBalance ? "bg-emerald-500" : "bg-border"}`} />
+            {editingBalance ? `Salvo — ${editingBalance.codigo}` : "Não salvo ainda"}
+          </span>
+          <span className={`flex items-center gap-1 ${conferido ? "text-blue-600 font-medium" : ""}`}>
+            <span className={`w-2 h-2 rounded-full ${conferido ? "bg-blue-500" : "bg-border"}`} />
+            {conferido ? `${divergencias.length} divergência(s) revisadas` : "Aguardando conferência"}
+          </span>
+        </div>
+
+        {saveError && (
+          <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2">{saveError}</p>
+        )}
+        {encerrarError && (
+          <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-3 py-2">{encerrarError}</p>
+        )}
       </div>
-      {saveError && (
-        <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-2">{saveError}</p>
       )}
     </div>
   );
 }
 
 // ─── SEÇÃO: AJUSTES ───────────────────────────────────────────────
-const ADJUST_TYPES = ["Correção", "Perda", "Avaria", "Recontagem"];
+const ADJUST_TYPES = ["Correção", "Perda", "Avaria"] as const;
+type AjusteTipo = typeof ADJUST_TYPES[number];
 
 function SecaoAjustes() {
   const [productRecord, setProductRecord] = useState<{ id: string; name: string; sku: string | null; stock: number } | null>(null);
   const [qty, setQty] = useState("");
-  const [tipo, setTipo] = useState("Correção");
+  const [tipo, setTipo] = useState<AjusteTipo>("Correção");
   const [motivo, setMotivo] = useState("");
   const [obs, setObs] = useState("");
   const [saved, setSaved] = useState(false);
@@ -1664,6 +1920,25 @@ function SecaoAjustes() {
   const [ajusteErrors, setAjusteErrors] = useState<{ product?: boolean; qty?: boolean }>({});
   const [adjustments, setAdjustments] = useState<DbAdjustment[]>([]);
   const [loadingAdj, setLoadingAdj] = useState(false);
+
+  // Semântica muda conforme o tipo
+  const isCorrecao = tipo === "Correção";
+  const qtyLabel   = isCorrecao ? "Quantidade Real (Física)" : "Quantidade a Subtrair";
+  const qtyPlaceholder = isCorrecao
+    ? `Saldo real (atual: ${productRecord?.stock ?? "?"})`
+    : "Ex: 3";
+
+  // Limpa qty ao trocar de tipo para evitar confusão semântica
+  const handleTipoChange = (t: AjusteTipo) => { setTipo(t); setQty(""); setAjusteErrors({}); };
+
+  // Bloqueia entrada de sinal negativo e notação científica
+  const handleQtyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/-/g, "");
+    setQty(val);
+  };
+  const handleQtyKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "-" || e.key === "e" || e.key === "E") e.preventDefault();
+  };
 
   const fetchAdjustments = useCallback(() => {
     setLoadingAdj(true);
@@ -1679,8 +1954,14 @@ function SecaoAjustes() {
   const handleAjuste = async () => {
     const errs: { product?: boolean; qty?: boolean } = {};
     if (!productRecord) errs.product = true;
-    const qtyNum = parseFloat(qty);
-    if (!qty || isNaN(qtyNum) || qtyNum === 0) errs.qty = true;
+    const qtyNum = parseInt(qty, 10);
+    if (isCorrecao) {
+      // Correção: quantidade absoluta >= 0
+      if (qty === "" || isNaN(qtyNum) || qtyNum < 0) errs.qty = true;
+    } else {
+      // Perda / Avaria: quantidade a subtrair, obrigatoriamente > 0
+      if (!qty || isNaN(qtyNum) || qtyNum <= 0) errs.qty = true;
+    }
     if (Object.keys(errs).length > 0) { setAjusteErrors(errs); return; }
     setAjusteErrors({});
     setApiError(null);
@@ -1690,7 +1971,7 @@ function SecaoAjustes() {
       const res  = await api.post("/api/stock/adjustment", {
         productId:    productRecord!.id,
         productName:  productRecord!.name,
-        qty:          qtyNum,
+        qty:          qtyNum,   // sempre >= 0; backend interpreta baseado em tipo
         tipo,
         motivo:       motivo || undefined,
         observations: obs    || undefined,
@@ -1700,7 +1981,7 @@ function SecaoAjustes() {
       if (res.ok && data.success) {
         setSaved(true);
         setProductRecord(null); setQty(""); setMotivo(""); setObs(""); setTipo("Correção");
-        setTimeout(() => setSaved(false), 2000);
+        setTimeout(() => setSaved(false), 2500);
         fetchAdjustments();
       } else {
         setApiError(data.error ?? "Erro ao registrar ajuste. Tente novamente.");
@@ -1711,6 +1992,13 @@ function SecaoAjustes() {
       setSaving(false);
     }
   };
+
+  const qtyNum = parseInt(qty, 10);
+  const previewDelta = !isNaN(qtyNum) && qty !== "" && productRecord
+    ? isCorrecao
+      ? qtyNum - productRecord.stock
+      : -qtyNum
+    : null;
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -1723,16 +2011,54 @@ function SecaoAjustes() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Tipo de ajuste</Label>
               <div className="relative">
-                <select value={tipo} onChange={e => setTipo(e.target.value)} className="w-full h-10 px-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring">
+                <select
+                  value={tipo}
+                  onChange={e => handleTipoChange(e.target.value as AjusteTipo)}
+                  className="w-full h-10 px-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
+                >
                   {ADJUST_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               </div>
+              {/* Hint contextual abaixo do tipo */}
+              <p className="text-[11px] text-muted-foreground leading-snug pt-0.5">
+                {isCorrecao
+                  ? "Informa o saldo físico real. O sistema calcula a diferença."
+                  : "O valor digitado será subtraído do estoque atual."}
+              </p>
             </div>
             <div className="space-y-1.5">
-              <Label className={`text-xs font-semibold uppercase ${ajusteErrors.qty ? "text-destructive" : "text-muted-foreground"}`}>Quantidade (+ / -)</Label>
-              <Input type="number" placeholder="Ex: -3 ou +5" value={qty} onChange={e => setQty(e.target.value)}
-                className={`h-10 rounded-xl ${ajusteErrors.qty ? "border-destructive" : ""}`} />
+              <Label className={`text-xs font-semibold uppercase ${ajusteErrors.qty ? "text-destructive" : "text-muted-foreground"}`}>
+                {qtyLabel}
+              </Label>
+              <div className="relative">
+                {!isCorrecao && (
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-destructive pointer-events-none select-none">−</span>
+                )}
+                <Input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder={qtyPlaceholder}
+                  value={qty}
+                  onChange={handleQtyChange}
+                  onKeyDown={handleQtyKeyDown}
+                  className={`h-10 rounded-xl ${!isCorrecao ? "pl-6" : ""} ${ajusteErrors.qty ? "border-destructive" : ""}`}
+                />
+              </div>
+              {/* Preview do resultado */}
+              {previewDelta !== null && (
+                <p className={`text-[11px] font-medium leading-snug pt-0.5 ${previewDelta > 0 ? "text-emerald-600" : previewDelta < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                  {isCorrecao
+                    ? previewDelta > 0
+                      ? `↑ Acréscimo de ${previewDelta} un (${productRecord!.stock} → ${qtyNum})`
+                      : previewDelta < 0
+                        ? `↓ Redução de ${Math.abs(previewDelta)} un (${productRecord!.stock} → ${qtyNum})`
+                        : "Saldo igual ao atual, nenhuma alteração."
+                    : `↓ Subtração de ${qtyNum} un (${productRecord!.stock} → ${Math.max(0, productRecord!.stock - qtyNum)})`
+                  }
+                </p>
+              )}
             </div>
           </div>
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Motivo</Label>
@@ -1885,59 +2211,174 @@ function SecaoHistorico() {
 }
 
 // ─── SEÇÃO: BALANÇO ───────────────────────────────────────────────
+interface BalanceteProduct {
+  id: string; name: string; sku: string; categoryId: string | null;
+  stock: number; minStock: number; costPrice: number; price: number;
+}
+interface BalanceteCategory { id: string; name: string }
+
 function SecaoBalanco() {
-  const [products, setProducts] = useState<StockProduct[]>([]);
-  const [movements, setMovements] = useState<DbMovement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState("7");
+  // ── Core data ─────────────────────────────────────────────────
+  const [allProducts,  setAllProducts]  = useState<BalanceteProduct[]>([]);
+  const [categories,   setCategories]   = useState<BalanceteCategory[]>([]);
+  const [movements,    setMovements]    = useState<DbMovement[]>([]);
+  const [loadingInit,  setLoadingInit]  = useState(true);
+  const [loadingMovs,  setLoadingMovs]  = useState(false);
+
+  // ── Product combobox ──────────────────────────────────────────
+  const [productInput,    setProductInput]    = useState("");
+  const [comboOpen,       setComboOpen]       = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<BalanceteProduct | null>(null);
+  const comboRef = useRef<HTMLDivElement>(null);
+
+  // ── Category filter ───────────────────────────────────────────
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+
+  // ── Period / date range ───────────────────────────────────────
+  const [periodMode,  setPeriodMode]  = useState<"7"|"30"|"90"|"custom">("30");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd,   setCustomEnd]   = useState("");
+
+  // ── Risco tooltip ─────────────────────────────────────────────
+  const [riscoTooltip, setRiscoTooltip] = useState(false);
+  const riscoRef = useRef<HTMLDivElement>(null);
+
+  // ── Outside-click handlers ────────────────────────────────────
+  useEffect(() => {
+    if (!comboOpen) return;
+    const h = (e: MouseEvent) => {
+      if (comboRef.current && !comboRef.current.contains(e.target as Node)) setComboOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [comboOpen]);
 
   useEffect(() => {
+    if (!riscoTooltip) return;
+    const h = (e: MouseEvent) => {
+      if (riscoRef.current && !riscoRef.current.contains(e.target as Node)) setRiscoTooltip(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [riscoTooltip]);
+
+  // ── Initial load: products + categories ──────────────────────
+  useEffect(() => {
     const storeId = localStorage.getItem("storeId");
-    setLoading(true);
+    setLoadingInit(true);
     Promise.all([
-      storeId ? fetch(`/api/products/list?storeId=${storeId}`).then(r => r.json()) : Promise.resolve({ products: [] }),
-      api.get("/api/stock/movements?limit=500").then(r => r.json()),
+      storeId
+        ? fetch(`/api/products/list?storeId=${storeId}`).then(r => r.json())
+        : Promise.resolve({ products: [] }),
+      storeId
+        ? fetch(`/api/categories/list?storeId=${storeId}`).then(r => r.json())
+        : Promise.resolve({ categories: [] }),
     ])
-      .then(([pd, md]: [{ products?: Array<{ id: string; name: string; sku?: string | null; stock?: number | null; lowStockThreshold?: number | null; costPrice?: string | null; price?: string | null; active?: boolean }> }, { movements?: DbMovement[] }]) => {
-        setProducts((pd.products ?? []).filter(p => p.active !== false).map(p => ({
-          id: p.id, name: p.name, sku: p.sku ?? "—", category: "—",
-          stock: p.stock ?? 0, minStock: p.lowStockThreshold ?? 5,
-          location: "—", lastMovement: "—",
-          costPrice: p.costPrice ? parseFloat(p.costPrice) : 0,
-          price: p.price ? parseFloat(p.price) : 0,
-        })));
-        setMovements(md.movements ?? []);
+      .then(([pd, cd]: [
+        { products?: Array<{ id: string; name: string; sku?: string | null; stock?: number | null; lowStockThreshold?: number | null; costPrice?: string | null; price?: string | null; active?: boolean; categoryId?: string | null }> },
+        { categories?: Array<{ id: string; name: string }> },
+      ]) => {
+        setAllProducts(
+          (pd.products ?? [])
+            .filter(p => p.active !== false)
+            .map(p => ({
+              id: p.id, name: p.name, sku: p.sku ?? "—",
+              categoryId: p.categoryId ?? null,
+              stock: p.stock ?? 0, minStock: p.lowStockThreshold ?? 5,
+              costPrice: p.costPrice ? parseFloat(p.costPrice) : 0,
+              price: p.price ? parseFloat(p.price) : 0,
+            }))
+        );
+        setCategories(cd.categories ?? []);
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingInit(false));
   }, []);
 
-  const days = parseInt(period);
-  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const periodMovements = movements.filter(m => new Date(m.createdAt) >= cutoff);
+  // ── Fetch movements (reactive) ────────────────────────────────
+  const fetchMovements = useCallback(async () => {
+    setLoadingMovs(true);
+    try {
+      const params = new URLSearchParams({ limit: "2000" });
+      if (selectedProduct) params.set("productId", selectedProduct.id);
+      if (periodMode !== "custom") {
+        params.set("startDate", new Date(Date.now() - parseInt(periodMode) * 86400000).toISOString().slice(0, 10));
+      } else {
+        if (customStart) params.set("startDate", customStart);
+        if (customEnd)   params.set("endDate",   customEnd);
+      }
+      const res  = await api.get(`/api/stock/movements?${params}`);
+      const data = await res.json();
+      setMovements(data.movements ?? []);
+    } catch {}
+    finally { setLoadingMovs(false); }
+  }, [selectedProduct, periodMode, customStart, customEnd]);
 
-  const totalValue  = products.reduce((s, p) => s + p.stock * p.costPrice, 0);
-  const totalItems  = products.reduce((s, p) => s + p.stock, 0);
-  const semEstoque  = products.filter(p => p.stock === 0).length;
-  const baixo       = products.filter(p => p.stock > 0 && p.stock <= p.minStock).length;
-  const entradas    = periodMovements.filter(m => m.type === "ENTRADA").reduce((s, m) => s + m.quantity, 0);
-  const saidas      = periodMovements.filter(m => ["SAIDA", "VENDA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0);
-  const perdas      = periodMovements.filter(m => ["PERDA", "AVARIA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0);
-  const movProdIds  = new Set(periodMovements.map(m => m.productId).filter(Boolean));
-  const movimentados = movProdIds.size;
+  useEffect(() => { fetchMovements(); }, [fetchMovements]);
 
-  // Build chart data: group by day for the last N days
-  const chartData = Array.from({ length: Math.min(days, 7) }, (_, i) => {
-    const d = new Date(Date.now() - (Math.min(days, 7) - 1 - i) * 24 * 60 * 60 * 1000);
-    const label = d.toLocaleDateString("pt-BR", { weekday: "short" });
-    const dayStr = d.toISOString().slice(0, 10);
-    const dayMovs = periodMovements.filter(m => m.createdAt.slice(0, 10) === dayStr);
-    return {
-      name: label,
-      entrada: dayMovs.filter(m => m.type === "ENTRADA").reduce((s, m) => s + m.quantity, 0),
-      saida:   dayMovs.filter(m => ["SAIDA", "VENDA", "PERDA", "AVARIA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0),
-    };
-  });
+  // ── Derived: active scope ─────────────────────────────────────
+  const kpiProducts = useMemo(() => {
+    if (selectedProduct)    return [selectedProduct];
+    if (selectedCategoryId) return allProducts.filter(p => p.categoryId === selectedCategoryId);
+    return allProducts;
+  }, [allProducts, selectedProduct, selectedCategoryId]);
+
+  const tableProducts = useMemo(() => {
+    if (selectedProduct || selectedCategoryId) return kpiProducts;
+    const q = productInput.toLowerCase().trim();
+    if (!q) return kpiProducts;
+    return kpiProducts.filter(p =>
+      p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+    );
+  }, [kpiProducts, selectedProduct, selectedCategoryId, productInput]);
+
+  const kpiProductIds = useMemo(() => new Set(kpiProducts.map(p => p.id)), [kpiProducts]);
+
+  const activeMovements = useMemo(() => {
+    if (selectedProduct)    return movements;
+    if (!selectedCategoryId) return movements;
+    return movements.filter(m => m.productId && kpiProductIds.has(m.productId));
+  }, [movements, selectedProduct, selectedCategoryId, kpiProductIds]);
+
+  // ── Date range ────────────────────────────────────────────────
+  const dateRangeInfo = useMemo(() => {
+    if (periodMode === "custom") {
+      const s = customStart ? new Date(customStart + "T00:00:00") : new Date(Date.now() - 30 * 86400000);
+      const e = customEnd   ? new Date(customEnd   + "T23:59:59") : new Date();
+      return { start: s, diffDays: Math.max(1, Math.ceil((e.getTime() - s.getTime()) / 86400000)) };
+    }
+    return { start: new Date(Date.now() - parseInt(periodMode) * 86400000), diffDays: parseInt(periodMode) };
+  }, [periodMode, customStart, customEnd]);
+
+  // ── KPIs ──────────────────────────────────────────────────────
+  const totalValue   = kpiProducts.reduce((s, p) => s + p.stock * p.costPrice, 0);
+  const totalItems   = kpiProducts.reduce((s, p) => s + p.stock, 0);
+  const semEstoque   = kpiProducts.filter(p => p.stock === 0).length;
+  const baixo        = kpiProducts.filter(p => p.stock > 0 && p.stock <= p.minStock).length;
+  const entradas     = activeMovements.filter(m => m.type === "ENTRADA").reduce((s, m) => s + m.quantity, 0);
+  const saidas       = activeMovements.filter(m => ["SAIDA", "VENDA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0);
+  const perdas       = activeMovements.filter(m => ["PERDA", "AVARIA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0);
+  const movimentados = new Set(activeMovements.map(m => m.productId).filter(Boolean)).size;
+
+  // ── Chart ─────────────────────────────────────────────────────
+  const chartData = useMemo(() => {
+    const { start, diffDays } = dateRangeInfo;
+    const step = Math.max(1, Math.ceil(diffDays / 30));
+    const bars = Math.ceil(diffDays / step);
+    return Array.from({ length: bars }, (_, i) => {
+      const barStart = new Date(start.getTime() + i * step * 86400000);
+      const barEnd   = new Date(start.getTime() + (i + 1) * step * 86400000);
+      const label = step === 1 && diffDays <= 7
+        ? barStart.toLocaleDateString("pt-BR", { weekday: "short" })
+        : `${String(barStart.getDate()).padStart(2, "0")}/${String(barStart.getMonth() + 1).padStart(2, "0")}`;
+      const dayMovs = activeMovements.filter(m => { const d = new Date(m.createdAt); return d >= barStart && d < barEnd; });
+      return {
+        name:    label,
+        entrada: dayMovs.filter(m => m.type === "ENTRADA").reduce((s, m) => s + m.quantity, 0),
+        saida:   dayMovs.filter(m => ["SAIDA", "VENDA", "PERDA", "AVARIA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0),
+      };
+    });
+  }, [activeMovements, dateRangeInfo]);
 
   const kpis = [
     { icon: TrendingUp,      label: "Valor total em estoque", value: `R$ ${totalValue.toFixed(2).replace(".", ",")}`, color: "text-emerald-600", bg: "bg-emerald-500/15" },
@@ -1950,68 +2391,217 @@ function SecaoBalanco() {
     { icon: Activity,        label: "Produtos movimentados",  value: movimentados,                                     color: "text-violet-600",  bg: "bg-violet-500/15" },
   ];
 
+  // ── Product combobox suggestions ──────────────────────────────
+  const productSuggestions = useMemo(() => {
+    if (!productInput.trim()) return allProducts.slice(0, 8);
+    const q = productInput.toLowerCase();
+    return allProducts.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)).slice(0, 8);
+  }, [allProducts, productInput]);
+
+  const activeCategory = categories.find(c => c.id === selectedCategoryId);
+  const isFiltered     = !!selectedProduct || !!selectedCategoryId;
+
   return (
     <div className="space-y-6">
-      {/* Filtros */}
-      <div className="flex flex-wrap gap-3 items-center">
+      {/* ── Filter bar ── */}
+      <div className="flex flex-wrap gap-3 items-start">
+        {/* Product Autocomplete */}
+        <div ref={comboRef} className="relative w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none z-10" />
+          <Input
+            placeholder="Buscar produto..."
+            value={selectedProduct ? selectedProduct.name : productInput}
+            readOnly={!!selectedProduct}
+            onChange={e => { setProductInput(e.target.value); setComboOpen(true); }}
+            onFocus={() => setComboOpen(true)}
+            className={`pl-9 h-9 rounded-xl text-sm pr-8 ${selectedProduct ? "bg-primary/5 text-primary font-medium cursor-default" : ""}`}
+          />
+          {(selectedProduct || productInput) && (
+            <button
+              onClick={() => { setSelectedProduct(null); setProductInput(""); setComboOpen(false); }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground z-10"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {comboOpen && !selectedProduct && productSuggestions.length > 0 && (
+            <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-popover border border-border rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+              {productSuggestions.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => { setSelectedProduct(p); setSelectedCategoryId(""); setProductInput(""); setComboOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-secondary/60 flex items-center gap-2"
+                >
+                  <span className="font-medium truncate flex-1">{p.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{p.sku}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Category filter */}
         <div className="relative">
-          <select value={period} onChange={e => setPeriod(e.target.value)} className="h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring">
-            <option value="7">Últimos 7 dias</option>
-            <option value="30">Últimos 30 dias</option>
-            <option value="90">Últimos 90 dias</option>
+          <select
+            value={selectedCategoryId}
+            onChange={e => { setSelectedCategoryId(e.target.value); if (e.target.value) { setSelectedProduct(null); setProductInput(""); } }}
+            className="h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">Todas as categorias</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
         </div>
-        <Button variant="outline" size="sm" className="rounded-xl h-9 gap-1.5" disabled={loading}>
-          <Download className="w-3.5 h-3.5" />Exportar
-        </Button>
+
+        {/* Period select */}
+        <div className="relative">
+          <select
+            value={periodMode}
+            onChange={e => setPeriodMode(e.target.value as "7"|"30"|"90"|"custom")}
+            className="h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="7">Últimos 7 dias</option>
+            <option value="30">Últimos 30 dias</option>
+            <option value="90">Últimos 90 dias</option>
+            <option value="custom">Período personalizado</option>
+          </select>
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+        </div>
+
+        {/* Custom date range */}
+        {periodMode === "custom" && (
+          <>
+            <Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="h-9 w-40 rounded-xl text-sm" />
+            <Input type="date" value={customEnd}   onChange={e => setCustomEnd(e.target.value)}   className="h-9 w-40 rounded-xl text-sm" />
+          </>
+        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" size="sm" className="rounded-xl h-9 gap-1.5" disabled={loadingInit || loadingMovs}>
+            <Download className="w-3.5 h-3.5" />Exportar
+          </Button>
+        </div>
       </div>
 
-      {/* KPIs */}
-      {loading ? <SkeletonRows n={2} /> : (
+      {/* ── Active filter chips ── */}
+      {isFiltered && (
+        <div className="flex flex-wrap gap-2 items-center">
+          {selectedProduct && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+              <Package className="w-3 h-3" />{selectedProduct.name}
+              <button onClick={() => setSelectedProduct(null)} className="ml-0.5 hover:text-destructive"><X className="w-3 h-3" /></button>
+            </span>
+          )}
+          {activeCategory && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-violet-500/10 text-violet-600 border border-violet-500/20">
+              {activeCategory.name}
+              <button onClick={() => setSelectedCategoryId("")} className="ml-0.5 hover:text-destructive"><X className="w-3 h-3" /></button>
+            </span>
+          )}
+          <button
+            onClick={() => { setSelectedProduct(null); setProductInput(""); setSelectedCategoryId(""); }}
+            className="text-xs text-muted-foreground hover:text-foreground underline"
+          >
+            Limpar filtros
+          </button>
+        </div>
+      )}
+
+      {/* ── KPIs ── */}
+      {loadingInit ? <SkeletonRows n={2} /> : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {kpis.map(k => <SummaryCard key={k.label} {...k} />)}
         </div>
       )}
 
-      {/* Gráfico */}
+      {/* ── Chart ── */}
       <Card className="rounded-2xl border-border/50 shadow-soft">
-        <CardHeader className="pb-2"><CardTitle className="text-base font-semibold">Entradas × Saídas</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base font-semibold">Entradas × Saídas</CardTitle>
+            {loadingMovs && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+          </div>
+        </CardHeader>
         <CardContent>
           <div className="h-[200px]">
             <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando gráfico...</div>}>
-              <StockMovementChart data={loading ? [] : chartData} />
+              <StockMovementChart data={loadingInit ? [] : chartData} />
             </Suspense>
           </div>
         </CardContent>
       </Card>
 
-      {/* Tabela analítica */}
+      {/* ── Table ── */}
       <Card className="rounded-2xl border-border/50 shadow-soft overflow-hidden">
-        <CardHeader className="pb-3"><CardTitle className="text-base font-semibold">Análise por produto</CardTitle></CardHeader>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base font-semibold">Análise por produto</CardTitle>
+            {!loadingInit && <span className="text-xs text-muted-foreground">{tableProducts.length} produto(s)</span>}
+          </div>
+        </CardHeader>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-secondary/40 border-b border-border/40">
               <tr>
-                {["Produto", "Estoque atual", "Valor unitário", "Valor total", "Giro", "Risco"].map(h => (
+                {["Produto", "SKU", "Estoque atual", "Valor unitário", "Valor total", "Giro"].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                 ))}
+                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground whitespace-nowrap">
+                  <div ref={riscoRef} className="relative inline-flex items-center gap-1">
+                    Risco
+                    <button
+                      onClick={() => setRiscoTooltip(v => !v)}
+                      className="w-4 h-4 rounded-full bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground transition-colors flex items-center justify-center text-[10px] font-bold leading-none"
+                      aria-label="Explicação sobre Risco"
+                    >
+                      ?
+                    </button>
+                    {riscoTooltip && (
+                      <div className="absolute z-30 top-full left-0 mt-2 w-72 bg-popover border border-border rounded-xl shadow-xl p-4 text-left font-normal">
+                        <p className="text-xs font-bold text-foreground mb-2">O que é o Risco de estoque?</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed mb-3">
+                          Indica a probabilidade de o produto ficar indisponível para venda com base no estoque atual comparado ao mínimo configurado.
+                        </p>
+                        <div className="space-y-2">
+                          <div className="flex items-start gap-2">
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-destructive/15 text-destructive shrink-0">Ruptura</span>
+                            <span className="text-[11px] text-muted-foreground leading-snug">Estoque zerado. Produto indisponível para venda agora.</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-600 shrink-0">Atenção</span>
+                            <span className="text-[11px] text-muted-foreground leading-snug">Estoque abaixo do mínimo cadastrado. Considere reabastecer em breve.</span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-600 shrink-0">Normal</span>
+                            <span className="text-[11px] text-muted-foreground leading-snug">Estoque acima do mínimo. Sem necessidade de ação imediata.</span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-3 pt-3 border-t border-border/40">
+                          O estoque mínimo é configurado em cada produto no módulo de Produtos.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/30">
-              {loading ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">
+              {loadingInit ? (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground text-sm">
                   <Loader2 className="w-4 h-4 animate-spin inline mr-2" />Carregando...
                 </td></tr>
-              ) : products.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground text-sm">Nenhum produto cadastrado.</td></tr>
-              ) : products.map(p => {
-                const vt   = p.stock * p.costPrice;
-                const giro = p.stock > 50 ? "Alto" : p.stock > 15 ? "Médio" : "Baixo";
+              ) : tableProducts.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                  {allProducts.length === 0 ? "Nenhum produto cadastrado." : "Nenhum produto encontrado para esse filtro."}
+                </td></tr>
+              ) : tableProducts.map(p => {
+                const vt    = p.stock * p.costPrice;
+                const giro  = p.stock > 50 ? "Alto" : p.stock > 15 ? "Médio" : "Baixo";
                 const risco = p.stock === 0 ? "Ruptura" : p.stock <= p.minStock ? "Atenção" : "Normal";
                 return (
                   <tr key={p.id} className="hover:bg-secondary/30 transition-colors">
                     <td className="px-4 py-3 font-medium">{p.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-xs">{p.sku}</td>
                     <td className="px-4 py-3 font-bold">{p.stock}</td>
                     <td className="px-4 py-3 text-muted-foreground">R$ {p.costPrice.toFixed(2).replace(".", ",")}</td>
                     <td className="px-4 py-3 font-semibold">R$ {vt.toFixed(2).replace(".", ",")}</td>

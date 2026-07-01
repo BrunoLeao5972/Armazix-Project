@@ -1,51 +1,43 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Star, Minus, Plus, Heart, Share2, Truck, Clock, Shield, ChevronLeft, Loader2, CheckCircle2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import {
+  Star, Minus, Plus, Heart, Share2, Truck, Clock, Shield,
+  ChevronLeft, Loader2, CheckCircle2, Package,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../store";
 import { type StoreProduct, formatPrice } from "@/lib/store-context";
+import { getEffectivePrice } from "@/lib/promo-engine";
 
 export const Route = createFileRoute("/store/product/$productId")({
   component: ProductPage,
 });
 
 interface ProductAddition {
-  id: string;
-  name: string;
-  price: string;
-  active: boolean | null;
-}
-
-interface ReviewData {
-  id: string;
-  rating: number;
-  comment: string | null;
-  createdAt: string;
+  id: string; name: string; price: string; active: boolean | null;
 }
 
 function ProductPage() {
   const { productId } = Route.useParams();
-  const [product, setProduct] = useState<StoreProduct | null>(null);
-  const [additions, setAdditions] = useState<ProductAddition[]>([]);
-  const [reviews, setReviews] = useState<ReviewData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [added, setAdded] = useState(false);
-  const { store, addToCart, favorites, toggleFavorite } = useStore();
-  const [qty, setQty] = useState(1);
-  const [obs, setObs] = useState("");
+  const [product,    setProduct]    = useState<StoreProduct | null>(null);
+  const [additions,  setAdditions]  = useState<ProductAddition[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [added,      setAdded]      = useState(false);
+  const [activeImg,  setActiveImg]  = useState(0);
+  const [qty,        setQty]        = useState(1);
+  const [obs,        setObs]        = useState("");
   const [selectedAdditions, setSelectedAdditions] = useState<string[]>([]);
+
+  const { store, addToCart, favorites, toggleFavorite } = useStore();
 
   useEffect(() => {
     if (!store?.id) return;
-    fetch(`/api/products/list?storeId=${store.id}`)
+    fetch(`/api/products/list?storeId=${store.id}&scope=public`)
       .then(r => r.json())
       .then(d => {
         if (d.products) {
-          const found = d.products.find((p: StoreProduct) => p.id === productId);
-          setProduct(found || null);
-          // Load additions if product has them
+          const found = d.products.find((p: StoreProduct) => p.id === productId) ?? null;
+          setProduct(found);
           if (found) {
             fetch(`/api/products/list?storeId=${store.id}&productId=${productId}&additions=true`)
               .then(r => r.json())
@@ -59,16 +51,13 @@ function ProductPage() {
   }, [productId, store?.id]);
 
   const toggleAddition = (id: string) =>
-    setSelectedAdditions(prev => prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]);
-
-  const activeAdditions = additions.filter(a => a.active !== false);
-  const additionsTotal = activeAdditions
-    .filter(a => selectedAdditions.includes(a.id))
-    .reduce((s, a) => s + parseFloat(a.price), 0);
+    setSelectedAdditions(prev =>
+      prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
+    );
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div className="flex items-center justify-center py-24">
         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -76,22 +65,46 @@ function ProductPage() {
 
   if (!product) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-        <h2 className="text-lg font-bold">Produto não encontrado</h2>
-        <Link to="/store" className="mt-4">
-          <Button className="h-10 rounded-xl bg-primary text-primary-foreground font-semibold">Voltar à loja</Button>
+      <div className="flex flex-col items-center justify-center py-20 px-4 text-center gap-2">
+        <span className="text-5xl">🚫</span>
+        <h2 className="text-lg font-bold mt-2">Produto indisponível</h2>
+        <p className="text-sm text-muted-foreground">Este produto não está disponível no momento.</p>
+        <Link to="/store" className="mt-4 inline-flex h-10 px-5 rounded-xl items-center justify-center bg-primary text-primary-foreground text-sm font-semibold">
+          Voltar à loja
         </Link>
       </div>
     );
   }
 
-  const price = parseFloat(product.price);
-  const oldPrice = product.compareAtPrice ? parseFloat(product.compareAtPrice) : null;
-  const discount = oldPrice && oldPrice > price ? Math.round(((oldPrice - price) / oldPrice) * 100) : 0;
-  const totalItem = (price + additionsTotal) * qty;
+  // ── Galeria de imagens ──────────────────────────────────────────
+  const extraImgs = product.images ?? [];
+  const allImages: string[] = [
+    ...(product.imageUrl ? [product.imageUrl] : []),
+    ...extraImgs.filter(img => img !== product.imageUrl),
+  ];
+  const currentImg = allImages[activeImg] ?? null;
+
+  // ── Preço (com suporte a promoConfig) ──────────────────────────
+  const { effectivePrice, originalPrice, hasPromo } = getEffectivePrice(
+    product.price, product.promoConfig, "store"
+  );
+  const compareAt     = product.compareAtPrice ? parseFloat(product.compareAtPrice) : null;
+  const displayPrice  = hasPromo ? effectivePrice : parseFloat(product.price);
+  const displayOld    = hasPromo ? originalPrice : compareAt;
+  const discountPct   = displayOld && displayOld > displayPrice
+    ? Math.round(((displayOld - displayPrice) / displayOld) * 100) : 0;
+
+  // ── Adicionais ─────────────────────────────────────────────────
+  const activeAdditions  = additions.filter(a => a.active !== false);
+  const additionsTotal   = activeAdditions
+    .filter(a => selectedAdditions.includes(a.id))
+    .reduce((s, a) => s + parseFloat(a.price), 0);
+  const totalItem        = (displayPrice + additionsTotal) * qty;
+
+  // ── Estado do estoque ──────────────────────────────────────────
   const isFavorite = favorites.includes(productId);
   const outOfStock = product.stock !== null && product.stock !== undefined && product.stock <= 0;
-  const lowStock = product.stock !== null && product.stock !== undefined && product.stock > 0 && product.stock <= (5);
+  const lowStock   = !outOfStock && product.stock !== null && product.stock !== undefined && product.stock <= 5;
 
   const handleAdd = () => {
     if (outOfStock) return;
@@ -99,195 +112,312 @@ function ProductPage() {
       .filter(a => selectedAdditions.includes(a.id))
       .map(a => ({ name: a.name, price: parseFloat(a.price) }));
     addToCart({
-      id: product.id,
-      name: product.name,
-      price: price + additionsTotal,
+      id: product.id, name: product.name,
+      price: displayPrice + additionsTotal,
       image: product.imageUrl || null,
       emoji: product.emoji || "📦",
-      obs: obs || undefined,
+      obs:   obs || undefined,
       additions: chosenAdditions.length > 0 ? chosenAdditions : undefined,
     });
     setAdded(true);
-    setTimeout(() => setAdded(false), 1200);
+    setTimeout(() => setAdded(false), 1500);
   };
 
-  // Share via Web Share API
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({ title: product.name, text: product.description || product.name, url: window.location.href });
     }
   };
 
+  // ── Barra de ações (reutilizada em mobile e desktop) ───────────
+  const ActionBar = ({ compact = false }: { compact?: boolean }) => (
+    <div className={`flex items-center gap-3 ${compact ? "" : "pt-1"}`}>
+      {/* Seletor de quantidade */}
+      <div className="flex items-center rounded-xl border border-border/60 overflow-hidden shrink-0">
+        <button
+          onClick={() => setQty(Math.max(1, qty - 1))}
+          className="w-10 h-11 flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+        >
+          <Minus className="w-4 h-4" />
+        </button>
+        <span className="w-10 h-11 flex items-center justify-center text-sm font-bold border-x border-border/60 select-none">
+          {qty}
+        </span>
+        <button
+          onClick={() => setQty(qty + 1)}
+          className="w-10 h-11 flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Botão adicionar */}
+      <motion.button
+        onClick={handleAdd}
+        disabled={outOfStock}
+        animate={added ? { scale: [1, 0.96, 1] } : {}}
+        transition={{ duration: 0.15 }}
+        className={`flex-1 h-11 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all ${
+          outOfStock
+            ? "bg-secondary text-muted-foreground cursor-not-allowed"
+            : added
+              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-200"
+              : "bg-primary text-primary-foreground hover:opacity-90 active:opacity-80 shadow-md"
+        }`}
+      >
+        <AnimatePresence mode="wait">
+          {added ? (
+            <motion.span key="added"
+              initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="flex items-center gap-1.5"
+            >
+              <CheckCircle2 className="w-4 h-4" /> Adicionado!
+            </motion.span>
+          ) : (
+            <motion.span key="add"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              className="flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              Adicionar · R$ {formatPrice(totalItem)}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.button>
+    </div>
+  );
+
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 pb-32">
-      {/* Back */}
-      <div className="px-4 pt-3">
+    <div className="animate-in fade-in duration-300 pb-32 lg:pb-12">
+
+      {/* ── Back — mobile ── */}
+      <div className="px-4 pt-4 lg:hidden">
         <Link to="/store" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ChevronLeft className="w-4 h-4" /> Voltar
         </Link>
       </div>
 
-      {/* Product Image */}
-      <div className="mx-4 mt-3 h-60 sm:h-72 bg-secondary/20 rounded-3xl flex items-center justify-center relative overflow-hidden">
-        {product.imageUrl
-          ? <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-          : <span className="text-7xl sm:text-8xl">{product.emoji || "📦"}</span>
-        }
-        {product.badge && <Badge className="absolute top-3 left-3 rounded-xl text-xs font-bold bg-primary text-primary-foreground border-0">{product.badge}</Badge>}
-        {discount > 0 && <Badge className="absolute top-3 right-3 rounded-xl text-xs font-bold bg-red-500 text-white border-0">-{discount}%</Badge>}
-      </div>
+      {/* ══════════════════════════════════════════════════════
+          GRID PRINCIPAL — 1 col mobile / 2 col desktop
+      ══════════════════════════════════════════════════════ */}
+      <div className="lg:grid lg:grid-cols-2 lg:gap-10 lg:max-w-5xl lg:mx-auto lg:px-8 lg:pt-8 lg:items-start">
 
-      <div className="px-4 mt-4 space-y-4">
-        {/* Title + Actions */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold">{product.name}</h1>
-            {product.description && <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{product.description}</p>}
-            {product.rating && Number(product.rating) > 0 && (
-              <div className="flex items-center gap-1 mt-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className={`w-3.5 h-3.5 ${i < Math.round(Number(product.rating)) ? "fill-amber-400 text-amber-400" : "text-border"}`} />
-                ))}
-                <span className="text-xs text-muted-foreground ml-1">{product.rating} ({product.reviewCount || 0} avaliações)</span>
+        {/* ╔══════════════════════════════╗
+            ║  COLUNA ESQUERDA — Galeria  ║
+            ╚══════════════════════════════╝ */}
+        <div className="space-y-3 px-4 mt-4 lg:px-0 lg:mt-0 lg:sticky lg:top-6">
+
+          {/* Imagem principal */}
+          <div className="relative aspect-square bg-slate-50 rounded-2xl overflow-hidden border border-slate-100/80">
+            {currentImg ? (
+              <img
+                key={currentImg}
+                src={currentImg}
+                alt={product.name}
+                className="w-full h-full object-contain p-6 animate-in fade-in duration-200"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <span className="text-8xl select-none">{product.emoji || "📦"}</span>
               </div>
             )}
+            {/* Badge desconto */}
+            {discountPct > 0 && (
+              <span className="absolute top-3 left-3 text-[11px] font-bold px-2 py-1 rounded-lg bg-red-500 text-white shadow-sm">
+                -{discountPct}%
+              </span>
+            )}
+            {/* Badge produto */}
+            {product.badge && (
+              <span className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded-lg bg-primary text-primary-foreground shadow-sm">
+                {product.badge}
+              </span>
+            )}
           </div>
-          <div className="flex gap-1.5 shrink-0">
-            <button onClick={() => toggleFavorite(productId)} className="w-9 h-9 rounded-xl border border-border/50 flex items-center justify-center hover:bg-secondary transition-colors">
-              <Heart className={`w-4 h-4 ${isFavorite ? "fill-red-500 text-red-500" : "text-muted-foreground"}`} />
-            </button>
-            <button onClick={handleShare} className="w-9 h-9 rounded-xl border border-border/50 flex items-center justify-center hover:bg-secondary transition-colors">
-              <Share2 className="w-4 h-4 text-muted-foreground" />
-            </button>
-          </div>
-        </div>
 
-        {/* Price */}
-        <div className="flex items-end gap-2">
-          <span className="text-2xl font-bold">R$ {formatPrice(price)}</span>
-          {oldPrice && <span className="text-sm text-muted-foreground line-through">R$ {formatPrice(oldPrice)}</span>}
-        </div>
-
-        {/* Info Pills */}
-        <div className="flex gap-2 flex-wrap">
-          {store?.deliveryEnabled && (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
-              <Truck className="w-3 h-3" />
-              {parseFloat(store.deliveryFee || "0") === 0 ? "Frete grátis" : `R$ ${formatPrice(store.deliveryFee || "0")}`}
-            </div>
-          )}
-          {store?.deliveryEstimate && (
-            <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-700 text-xs font-medium">
-              <Clock className="w-3 h-3" /> {store.deliveryEstimate}
-            </div>
-          )}
-          <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-700 text-xs font-medium">
-            <Shield className="w-3 h-3" /> Compra segura
-          </div>
-        </div>
-
-        {/* Stock */}
-        {outOfStock ? (
-          <div className="px-3 py-2 rounded-xl bg-red-500/10 text-red-600 text-sm font-medium">Produto indisponível</div>
-        ) : lowStock ? (
-          <div className="px-3 py-2 rounded-xl bg-amber-500/10 text-amber-700 text-sm font-medium">⚠️ Últimas {product.stock} unidades</div>
-        ) : null}
-
-        {/* Additions */}
-        {activeAdditions.length > 0 && (
-          <div>
-            <h3 className="text-sm font-bold mb-2">Adicionais</h3>
-            <div className="space-y-2">
-              {activeAdditions.map(addition => {
-                const selected = selectedAdditions.includes(addition.id);
-                return (
-                  <button
-                    key={addition.id}
-                    onClick={() => toggleAddition(addition.id)}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-colors ${
-                      selected ? "border-primary bg-primary/5" : "border-border/50 hover:border-border"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${selected ? "border-primary bg-primary" : "border-border"}`}>
-                        {selected && <CheckCircle2 className="w-3 h-3 text-primary-foreground" />}
-                      </div>
-                      <span className="text-sm font-medium">{addition.name}</span>
-                    </div>
-                    <span className="text-sm font-bold text-primary">+R$ {formatPrice(addition.price)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Observation */}
-        <div>
-          <h3 className="text-sm font-bold mb-2">Observação <span className="font-normal text-muted-foreground">(opcional)</span></h3>
-          <textarea
-            value={obs}
-            onChange={e => setObs(e.target.value)}
-            placeholder="Ex: Sem cebola, bem passado..."
-            className="w-full h-20 rounded-xl border border-border/50 bg-surface px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-          />
-        </div>
-
-        {/* Reviews */}
-        {reviews.length > 0 && (
-          <div>
-            <h3 className="text-sm font-bold mb-3">Avaliações</h3>
-            <div className="space-y-3">
-              {reviews.slice(0, 3).map(review => (
-                <div key={review.id} className="p-3 rounded-xl bg-secondary/30">
-                  <div className="flex items-center gap-1 mb-1">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Star key={i} className={`w-3 h-3 ${i < review.rating ? "fill-amber-400 text-amber-400" : "text-border"}`} />
-                    ))}
-                    <span className="text-[11px] text-muted-foreground ml-1">{new Date(review.createdAt).toLocaleDateString("pt-BR")}</span>
-                  </div>
-                  {review.comment && <p className="text-xs text-muted-foreground leading-relaxed">{review.comment}</p>}
-                </div>
+          {/* Thumbnails */}
+          {allImages.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto no-scrollbar">
+              {allImages.map((img, i) => (
+                <button
+                  key={`${img}-${i}`}
+                  onClick={() => setActiveImg(i)}
+                  aria-label={`Imagem ${i + 1}`}
+                  className={`shrink-0 w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all duration-150 bg-slate-50 ${
+                    activeImg === i
+                      ? "border-primary shadow-sm shadow-primary/15 scale-[1.04]"
+                      : "border-slate-100 hover:border-slate-300"
+                  }`}
+                >
+                  <img
+                    src={img}
+                    alt={`${product.name} ${i + 1}`}
+                    className="w-full h-full object-contain p-1.5"
+                  />
+                </button>
               ))}
             </div>
+          )}
+        </div>
+
+        {/* ╔═══════════════════════════════════════╗
+            ║  COLUNA DIREITA — Info e compra       ║
+            ╚═══════════════════════════════════════╝ */}
+        <div className="px-4 lg:px-0 mt-5 lg:mt-0 space-y-5">
+
+          {/* Back — desktop */}
+          <div className="hidden lg:block -mb-1">
+            <Link to="/store" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <ChevronLeft className="w-4 h-4" /> Voltar à loja
+            </Link>
           </div>
-        )}
+
+          {/* Título + botões utilitários */}
+          <div className="flex items-start justify-between gap-3">
+            <h1 className="text-[1.6rem] font-bold leading-snug text-foreground">{product.name}</h1>
+            <div className="flex gap-1.5 shrink-0 mt-1">
+              <button
+                onClick={() => toggleFavorite(productId)}
+                aria-label="Favoritar"
+                className="w-9 h-9 rounded-xl border border-border/60 flex items-center justify-center hover:bg-red-50 hover:border-red-200 transition-colors"
+              >
+                <Heart className={`w-4 h-4 transition-colors ${isFavorite ? "fill-red-500 text-red-500" : "text-muted-foreground"}`} />
+              </button>
+              <button
+                onClick={handleShare}
+                aria-label="Compartilhar"
+                className="w-9 h-9 rounded-xl border border-border/60 flex items-center justify-center hover:bg-secondary transition-colors"
+              >
+                <Share2 className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+
+          {/* Rating */}
+          {product.rating && Number(product.rating) > 0 && (
+            <div className="flex items-center gap-1.5 -mt-2">
+              <div className="flex gap-0.5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star key={i} className={`w-3.5 h-3.5 ${i < Math.round(Number(product.rating)) ? "fill-amber-400 text-amber-400" : "text-slate-200"}`} />
+                ))}
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {product.rating} ({product.reviewCount || 0} avaliações)
+              </span>
+            </div>
+          )}
+
+          {/* Descrição */}
+          {product.description && (
+            <p className="text-sm text-muted-foreground leading-relaxed">{product.description}</p>
+          )}
+
+          {/* ── Bloco de preço ── */}
+          <div className="flex items-end gap-2.5">
+            <span className="text-[2rem] font-black text-emerald-600 tabular-nums leading-none">
+              R$ {formatPrice(displayPrice)}
+            </span>
+            {displayOld && displayOld > displayPrice && (
+              <span className="text-base text-slate-400 line-through tabular-nums mb-0.5">
+                R$ {formatPrice(displayOld)}
+              </span>
+            )}
+          </div>
+
+          {/* ── Badges de apoio ── */}
+          <div className="flex flex-wrap gap-2">
+            {store?.deliveryEnabled && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-medium">
+                <Truck className="w-3 h-3" />
+                {parseFloat(store.deliveryFee || "0") === 0
+                  ? "Frete grátis"
+                  : `Frete R$ ${formatPrice(store.deliveryFee || "0")}`}
+              </span>
+            )}
+            {store?.deliveryEstimate && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-xs font-medium">
+                <Clock className="w-3 h-3" /> {store.deliveryEstimate}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-xs font-medium">
+              <Shield className="w-3 h-3" /> Compra segura
+            </span>
+          </div>
+
+          {/* ── Alerta de estoque ── */}
+          {outOfStock ? (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm font-medium">
+              <Package className="w-4 h-4 shrink-0" />
+              Produto indisponível no momento
+            </div>
+          ) : lowStock ? (
+            <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-100 text-amber-700 text-sm font-medium">
+              ⚠️ Últimas {product.stock} unidades disponíveis
+            </div>
+          ) : null}
+
+          {/* ── Adicionais ── */}
+          {activeAdditions.length > 0 && (
+            <div>
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Adicionais</p>
+              <div className="space-y-2">
+                {activeAdditions.map(addition => {
+                  const sel = selectedAdditions.includes(addition.id);
+                  return (
+                    <button
+                      key={addition.id}
+                      onClick={() => toggleAddition(addition.id)}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-colors ${
+                        sel
+                          ? "border-primary bg-primary/5"
+                          : "border-border/50 hover:border-border bg-background"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors shrink-0 ${sel ? "border-primary bg-primary" : "border-border"}`}>
+                          {sel && <CheckCircle2 className="w-3 h-3 text-primary-foreground" />}
+                        </div>
+                        <span className="text-sm font-medium">{addition.name}</span>
+                      </div>
+                      <span className="text-sm font-bold text-emerald-600 shrink-0">
+                        +R$ {formatPrice(addition.price)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Observação ── */}
+          {product.allowObservation !== false && (
+            <div>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">
+                Observação{" "}
+                <span className="font-normal normal-case tracking-normal">(opcional)</span>
+              </label>
+              <textarea
+                value={obs}
+                onChange={e => setObs(e.target.value)}
+                placeholder="Ex: Sem cebola, bem passado..."
+                rows={2}
+                className="w-full rounded-xl border border-border/50 bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary/40 transition-colors placeholder:text-muted-foreground/50"
+              />
+            </div>
+          )}
+
+          {/* ── Barra de ações DESKTOP (inline, dentro da coluna) ── */}
+          <div className="hidden lg:block">
+            <ActionBar />
+          </div>
+        </div>
       </div>
 
-      {/* Sticky Add Bar */}
-      <div className="fixed bottom-16 lg:bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-md border-t border-border/40 px-4 py-3 z-30">
-        <div className="max-w-5xl mx-auto flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-secondary rounded-xl px-1 shrink-0">
-            <button onClick={() => setQty(Math.max(1, qty - 1))} className="w-8 h-8 flex items-center justify-center hover:text-primary transition-colors">
-              <Minus className="w-4 h-4" />
-            </button>
-            <span className="text-sm font-bold w-6 text-center">{qty}</span>
-            <button onClick={() => setQty(qty + 1)} className="w-8 h-8 flex items-center justify-center hover:text-primary transition-colors">
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-          <motion.button
-            onClick={handleAdd}
-            disabled={outOfStock}
-            animate={added ? { scale: [1, 0.95, 1] } : {}}
-            className={`flex-1 h-11 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-lg ${
-              outOfStock ? "bg-secondary text-muted-foreground cursor-not-allowed" :
-              added ? "bg-emerald-500 text-white" : "bg-primary text-primary-foreground hover:opacity-90"
-            }`}
-          >
-            <AnimatePresence mode="wait">
-              {added ? (
-                <motion.span key="added" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4" /> Adicionado!
-                </motion.span>
-              ) : (
-                <motion.span key="add" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-1">
-                  <Plus className="w-4 h-4" /> Adicionar · R$ {formatPrice(totalItem)}
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </motion.button>
-        </div>
+      {/* ══════════════════════════════════════════════════════
+          BARRA DE AÇÕES MOBILE — sticky no rodapé
+      ══════════════════════════════════════════════════════ */}
+      <div className="lg:hidden fixed bottom-16 left-0 right-0 bg-background/95 backdrop-blur-md border-t border-border/40 px-4 py-3 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+        <ActionBar compact />
       </div>
     </div>
   );
