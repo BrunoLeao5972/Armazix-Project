@@ -6,12 +6,39 @@ export interface DeliveryRule {
   taxa:   number;   // valor da taxa em R$
 }
 
+export type EspeciePagamento =
+  | "dinheiro"
+  | "cartao"
+  | "boleto"
+  | "pix"
+  | "mercadopago"
+  | "outros";
+
+export type OperacaoCartao = "credito" | "debito" | "carteira_digital";
+export type TipoChavePix  = "cpf" | "cnpj" | "email" | "celular" | "aleatoria";
+
+export interface TaxaParcela {
+  parcela: number;  // 2, 3 … 18
+  taxa:    number;  // percentual (ex: 2.99 = 2.99%)
+}
+
 export interface PaymentMethodConfig {
-  key: string;            // "cash" | "pix" | "card" | "debit" | "mercadopago" | "custom_*"
-  label: string;
-  enabled: boolean;
-  maxInstallments: number; // 1 = à vista only
-  payAtDelivery?: boolean; // if false → customer must pay online; mercadopago ignores this
+  key:             string;   // "cash" | "pix" | "card" | "debit" | "mercadopago" | "custom_*"
+  label:           string;   // descrição completa
+  sigla?:          string;   // abreviação exibida no PDV/checkout
+  enabled:         boolean;
+  especie?:        EspeciePagamento;
+  operacao?:       OperacaoCartao | null;
+  maxInstallments: number;   // 1 = à vista only
+  payAtDelivery?:  boolean;  // if false → customer must pay online
+  // ── Parcelamento (cartão crédito) ──────────────────────────────
+  parcelamentoAtivo?:    boolean;
+  taxasPorParcela?:      TaxaParcela[];
+  repassarTaxaCliente?:  boolean;
+  // ── PIX ────────────────────────────────────────────────────────
+  pixKeyType?:    TipoChavePix;
+  pixKey?:        string;
+  pixQrCodeUrl?:  string;
 }
 
 export const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [

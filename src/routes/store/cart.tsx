@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ShoppingCart, Minus, Plus, Trash2, Tag, Truck } from "lucide-react";
+import { ShoppingCart, Minus, Plus, Trash2, Tag, Truck, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useStore } from "../store";
 
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/store/cart")({
 });
 
 function CartPage() {
-  const { cart, updateQty, removeFromCart, cartTotal } = useStore();
+  const { cart, updateQty, removeFromCart, cartTotal, configuracaoVitrine } = useStore();
 
   if (cart.length === 0) {
     return (
@@ -38,8 +38,11 @@ function CartPage() {
       <div className="space-y-3">
         {cart.map((item) => (
           <div key={item.id} className="flex gap-3 p-3 rounded-2xl bg-surface border border-border/40">
-            <div className="w-16 h-16 rounded-xl bg-secondary/30 flex items-center justify-center text-2xl shrink-0">
-              {item.image}
+            <div className="w-16 h-16 rounded-xl bg-secondary/30 flex items-center justify-center shrink-0 overflow-hidden">
+              {item.image && /^https?:\/\//i.test(item.image)
+                ? <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
+                : <span className="text-2xl">{item.image || "📦"}</span>
+              }
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate">{item.name}</p>
@@ -97,8 +100,15 @@ function CartPage() {
 
       {/* Checkout Button */}
       <Link to="/store/checkout" className="block mt-4">
-        <Button className="w-full h-12 rounded-2xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow hover:scale-[1.01] active:scale-[0.99] transition-transform text-base">
-          Finalizar pedido
+        <Button
+          className="w-full h-12 rounded-2xl font-semibold hover:scale-[1.01] active:scale-[0.99] transition-transform text-base gap-2"
+          style={{ backgroundColor: configuracaoVitrine?.pedidoWhatsapp ? "#25D366" : undefined }}
+          variant={configuracaoVitrine?.pedidoWhatsapp ? undefined : "default"}
+        >
+          {configuracaoVitrine?.pedidoWhatsapp
+            ? <><MessageCircle className="w-4 h-4" /> Preencher Dados de Entrega</>
+            : "Finalizar pedido"
+          }
         </Button>
       </Link>
     </div>

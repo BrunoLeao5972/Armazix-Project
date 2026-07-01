@@ -4,6 +4,7 @@ import { schema } from "@/lib/db";
 import { eq, desc, sql, and, ne, isNotNull, inArray } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 import { notifyOwnerNewOrder, notifyCustomerStatus } from "@/lib/whatsapp-sender";
+import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey } from "@/lib/cache/redis";
 
 const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements } = schema;
 
@@ -78,6 +79,9 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
       promoConfig: body.promoConfig ?? null,
     }).returning();
 
+    // Invalida cache da vitrine — novo produto deve aparecer imediatamente
+    await invalidateStoreCache(storeId);
+
     return new Response(JSON.stringify({ success: true, product }), {
       status: 201, headers: { "content-type": "application/json" },
     });
@@ -125,44 +129,55 @@ export async function listProductsHandler(request: Request): Promise<Response> {
     const categoryIdsParam = url.searchParams.get("categoryIds");
     const categoryIds = categoryIdsParam ? categoryIdsParam.split(",").filter(Boolean) : null;
 
-    const where = and(
-      eq(products.storeId, storeId),
-      eq(products.active, true),
-      categoryIds?.length ? inArray(products.categoryId, categoryIds) : undefined,
+    const cacheKey = productsCacheKey(
+      storeId,
+      limitNum,
+      offsetNum,
+      categoryIds?.join(",") ?? "all",
     );
 
     try {
-      const [rows, countResult] = await Promise.all([
-        db
-          .select({
-            id:               products.id,
-            name:             products.name,
-            price:            products.price,
-            compareAtPrice:   products.compareAtPrice,
-            categoryId:       products.categoryId,
-            imageUrl:         products.imageUrl,
-            emoji:            products.emoji,
-            promoConfig:      products.promoConfig,
-            stock:            products.stock,
-            lowStockThreshold: products.lowStockThreshold,
-            rating:           products.rating,
-            reviewCount:      products.reviewCount,
-            // Trunca descrição a 120 chars no banco — evita trazer textos longos
-            description: sql<string | null>`LEFT(${products.description}, 120)`,
-          })
-          .from(products)
-          .where(where)
-          .limit(limitNum)
-          .offset(offsetNum)
-          .orderBy(desc(products.featured), desc(products.createdAt)),
-        db.select({ count: sql<number>`COUNT(*)` }).from(products).where(where),
-      ]);
-
-      const total = Number(countResult[0]?.count) || 0;
-      return new Response(
-        JSON.stringify({ products: rows, total, hasMore: offsetNum + rows.length < total }),
-        { status: 200, headers: { "content-type": "application/json" } },
+      const result = await getCached(
+        cacheKey,
+        async () => {
+          const where = and(
+            eq(products.storeId, storeId),
+            eq(products.active, true),
+            categoryIds?.length ? inArray(products.categoryId, categoryIds) : undefined,
+          );
+          const [rows, countResult] = await Promise.all([
+            db
+              .select({
+                id:                products.id,
+                name:              products.name,
+                price:             products.price,
+                compareAtPrice:    products.compareAtPrice,
+                categoryId:        products.categoryId,
+                imageUrl:          products.imageUrl,
+                emoji:             products.emoji,
+                promoConfig:       products.promoConfig,
+                stock:             products.stock,
+                lowStockThreshold: products.lowStockThreshold,
+                rating:            products.rating,
+                reviewCount:       products.reviewCount,
+                description: sql<string | null>`LEFT(${products.description}, 120)`,
+              })
+              .from(products)
+              .where(where)
+              .limit(limitNum)
+              .offset(offsetNum)
+              .orderBy(desc(products.featured), desc(products.createdAt)),
+            db.select({ count: sql<number>`COUNT(*)` }).from(products).where(where),
+          ]);
+          const total = Number(countResult[0]?.count) || 0;
+          return { products: rows, total, hasMore: offsetNum + rows.length < total };
+        },
+        { ttl: 3_600, storeId },
       );
+
+      return new Response(JSON.stringify(result), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
     } catch (error) {
       console.error("List products (public) error:", error);
       return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
@@ -270,6 +285,9 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
       .where(and(eq(products.id, body.productId), eq(products.storeId, storeId)))
       .returning();
 
+    // Invalida cache — alterações de preço/promo/estoque devem refletir imediatamente
+    await invalidateStoreCache(storeId);
+
     return new Response(JSON.stringify({ success: true, product: updated }), {
       status: 200, headers: { "content-type": "application/json" },
     });
@@ -314,6 +332,10 @@ export async function deleteProductHandler(request: Request, auth?: AuthContext)
 
     // Soft delete: preserves product history in orders and stock movements
     await db.update(products).set({ active: false, updatedAt: new Date() }).where(and(eq(products.id, body.productId), eq(products.storeId, storeId)));
+
+    // Invalida cache — produto removido não deve aparecer na vitrine
+    await invalidateStoreCache(storeId);
+
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -368,6 +390,8 @@ export async function createCategoryHandler(request: Request, auth?: AuthContext
       metaDescription: body.metaDescription || null,
     }).returning();
 
+    await invalidateStoreCache(storeId);
+
     return new Response(JSON.stringify({ success: true, category: cat }), { status: 201, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("Create category error:", error);
@@ -388,19 +412,27 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
   // ── Vitrine pública: projeção mínima, sem N+1 de contagem ────────
   if (scope === "public") {
     try {
-      const rows = await db
-        .select({
-          id:       categories.id,
-          name:     categories.name,
-          emoji:    categories.emoji,
-          imageUrl: categories.imageUrl,
-          parentId: categories.parentId,
-          position: categories.position,
-        })
-        .from(categories)
-        .where(and(eq(categories.storeId, storeId), eq(categories.active, true)))
-        .orderBy(categories.position, categories.createdAt);
-      return new Response(JSON.stringify({ categories: rows }), {
+      const result = await getCached(
+        categoriesCacheKey(storeId),
+        async () => {
+          const rows = await db
+            .select({
+              id:       categories.id,
+              name:     categories.name,
+              emoji:    categories.emoji,
+              imageUrl: categories.imageUrl,
+              parentId: categories.parentId,
+              position: categories.position,
+            })
+            .from(categories)
+            .where(and(eq(categories.storeId, storeId), eq(categories.active, true)))
+            .orderBy(categories.position, categories.createdAt);
+          return { categories: rows };
+        },
+        { ttl: 3_600, storeId },
+      );
+
+      return new Response(JSON.stringify(result), {
         status: 200, headers: { "content-type": "application/json" },
       });
     } catch (error) {
@@ -475,6 +507,9 @@ export async function updateCategoryHandler(request: Request, auth?: AuthContext
     if (body.metaDescription !== undefined) patch.metaDescription = body.metaDescription || null;
 
     const [updated] = await db.update(categories).set(patch).where(and(eq(categories.id, body.categoryId), eq(categories.storeId, storeId))).returning();
+
+    await invalidateStoreCache(storeId);
+
     return new Response(JSON.stringify({ success: true, category: updated }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("Update category error:", error);
@@ -519,6 +554,9 @@ export async function deleteCategoryHandler(request: Request, auth?: AuthContext
 
     // IDOR Fix: Include storeId in WHERE clause
     await db.delete(categories).where(and(eq(categories.id, body.categoryId), eq(categories.storeId, storeId)));
+
+    await invalidateStoreCache(storeId);
+
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("Delete category error:", error);
@@ -534,6 +572,7 @@ export async function createOrderHandler(request: Request): Promise<Response> {
     type: string; // delivery | pickup
     paymentMethod: string; // pix | card | cash | mercadopago
     installments?: number; // 1 = à vista; >1 = parcelado
+    cardFeeAmount?: string; // taxa da maquineta calculada (para conciliação)
     items: { productId: string; productName: string; productEmoji?: string; productImage?: string; quantity: number; unitPrice: string; additionsTotal?: string; total: string; additionsSnapshot?: { name: string; price: string }[]; notes?: string }[];
     subtotal: string;
     deliveryFee?: string;
@@ -564,7 +603,8 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       status: "received",
       type: body.type || "delivery",
       paymentMethod: body.paymentMethod || null,
-      installments: body.installments && body.installments > 1 ? body.installments : 1,
+      installments:  body.installments && body.installments > 1 ? body.installments : 1,
+      cardFeeAmount: body.cardFeeAmount || null,
       paymentStatus: "pending",
       subtotal: body.subtotal,
       deliveryFee: body.deliveryFee || "0",

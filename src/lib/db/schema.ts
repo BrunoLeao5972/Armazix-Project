@@ -46,9 +46,9 @@ export const stores = pgTable("stores", {
   highlightLowStock: boolean("highlight_low_stock").default(false),
   mpAccessToken: text("mp_access_token"),
   mpPublicKey: text("mp_public_key"),
-  paymentMethodsConfig: jsonb("payment_methods_config").$type<Array<{
-    key: string; label: string; enabled: boolean; maxInstallments: number; payAtDelivery?: boolean;
-  }>>(),
+  paymentMethodsConfig: jsonb("payment_methods_config").$type<
+    import("@/lib/store-context").PaymentMethodConfig[]
+  >(),
   deliveryPaymentEnabled: boolean("delivery_payment_enabled").default(true),
   deliveryRules: jsonb("delivery_rules").$type<Array<{ bairro: string; taxa: number }>>(),
   freeShippingAbove: numeric("free_shipping_above", { precision: 10, scale: 2 }),
@@ -286,7 +286,8 @@ export const orders = pgTable("orders", {
   deliveredAt: timestamp("delivered_at"),
   cancelledAt: timestamp("cancelled_at"),
   cancelReason: text("cancel_reason"),
-  installments: integer("installments").default(1),
+  installments:   integer("installments").default(1),
+  cardFeeAmount:  numeric("card_fee_amount", { precision: 10, scale: 2 }),  // taxa da maquineta calculada
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

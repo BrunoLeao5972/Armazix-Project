@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   MapPin, Truck, Package, CreditCard, Banknote,
   CheckCircle2, ChevronRight, ChevronLeft, Loader2, ShoppingBag,
-  Tag, X, QrCode, User, Phone, Building2,
+  Tag, X, QrCode, User, Phone, Building2, MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
@@ -96,7 +96,7 @@ const inputCls =
 
 // ─── Main component ───────────────────────────────────────────────────────────
 function CheckoutPage() {
-  const { store, cart, cartTotal, clearCart } = useStore();
+  const { store, cart, cartTotal, clearCart, configuracaoVitrine } = useStore();
   const [step, setStep] = useState(0);
 
   // identification
@@ -140,7 +140,7 @@ function CheckoutPage() {
     return calcDeliveryFee(address.neighborhood, cartTotal, taxaGlobal, freeAbove, regras);
   }, [deliveryType, address.neighborhood, cartTotal, store]);
 
-  const orderTotal = cartTotal + feeResult.taxa - couponDiscount;
+  const baseTotal  = cartTotal + feeResult.taxa - couponDiscount;
 
   // ── Step 0 validation ─────────────────────────────────────────────────────
   const step0Valid = useMemo(() => {
@@ -208,6 +208,18 @@ function CheckoutPage() {
   );
   const selectedPayConfig = paymentConfig.find(m => m.key === paymentMethod);
 
+  // Taxa da maquineta por parcelamento ─────────────────────────────────────
+  const cardFeePercent = useMemo(() => {
+    if (!selectedPayConfig?.parcelamentoAtivo) return 0;
+    return selectedPayConfig.taxasPorParcela?.find(t => t.parcela === installments)?.taxa ?? 0;
+  }, [selectedPayConfig, installments]);
+
+  const cardFeeAmount = cardFeePercent > 0 ? baseTotal * cardFeePercent / 100 : 0;
+  // Se repasse ativo, o cliente paga total + taxa; senão a loja absorve (mas registra para conciliação)
+  const orderTotal = selectedPayConfig?.repassarTaxaCliente
+    ? baseTotal + cardFeeAmount
+    : baseTotal;
+
   const METHOD_ICONS: Record<string, React.ElementType> = {
     cash: Banknote, pix: QrCode, card: CreditCard, debit: CreditCard, mercadopago: ShoppingBag,
   };
@@ -269,6 +281,7 @@ function CheckoutPage() {
         deliveryFee: feeResult.taxa.toFixed(2),
         discount: couponDiscount.toFixed(2),
         total: orderTotal.toFixed(2),
+        cardFeeAmount: cardFeeAmount > 0 ? cardFeeAmount.toFixed(2) : undefined,
         addressSnapshot,
         couponCode: couponApplied || undefined,
         estimatedDelivery,
@@ -297,6 +310,74 @@ function CheckoutPage() {
       }
     } catch { setOrderError("Erro de conexão"); }
     finally { setSubmitting(false); }
+  };
+
+  // ── WhatsApp send ─────────────────────────────────────────────────────────
+  const sendOrderViaWhatsApp = () => {
+    const phone = configuracaoVitrine?.telefoneWhatsapp;
+    if (!phone) return;
+
+    const storeName = store?.name || "Loja";
+    const showPrice = configuracaoVitrine?.exibirPreco !== false;
+
+    const itens = cart
+      .map(item => {
+        const sub = item.price * item.qty;
+        const addText = item.additions?.length
+          ? `\n   ↳ ${item.additions.map((a: { name: string }) => a.name).join(", ")}`
+          : "";
+        const obsText = item.obs ? `\n   📝 ${item.obs}` : "";
+        return showPrice
+          ? `• ${item.qty}× ${item.name} — R$ ${formatPrice(sub)}${addText}${obsText}`
+          : `• ${item.qty}× ${item.name}${addText}${obsText}`;
+      })
+      .join("\n");
+
+    const entregaSection =
+      deliveryType === "delivery"
+        ? [
+            `🚚 *Entrega:*`,
+            `${address.street}, ${address.number}${address.complement ? ` — ${address.complement}` : ""}`,
+            `${address.neighborhood}, ${address.city}${address.state ? ` — ${address.state}` : ""}`,
+            address.zip ? `CEP: ${address.zip}` : "",
+          ].filter(Boolean).join("\n")
+        : `📍 *Retirada no local*`;
+
+    const pagamento = selectedPayConfig?.label || paymentMethod || "A combinar";
+    const parcelasText = installments > 1 ? ` (${installments}×)` : "";
+
+    const financeiro = showPrice
+      ? [
+          ``,
+          `*Resumo:*`,
+          `Subtotal: R$ ${formatPrice(cartTotal)}`,
+          couponDiscount > 0 ? `Cupom (${couponApplied}): −R$ ${formatPrice(couponDiscount)}` : "",
+          `Entrega: ${feeResult.isGratis ? feeResult.label : `R$ ${formatPrice(feeResult.taxa)}`}`,
+          `*Total: R$ ${formatPrice(orderTotal)}*`,
+        ].filter(Boolean).join("\n")
+      : "";
+
+    const msg = [
+      `🛍️ *Pedido — ${storeName}*`,
+      ``,
+      `👤 *${nome.trim()}*  📱 ${telefone}`,
+      ``,
+      `*Itens:*`,
+      itens,
+      ``,
+      entregaSection,
+      ``,
+      `💳 *Pagamento:* ${pagamento}${parcelasText}`,
+      financeiro,
+    ].join("\n");
+
+    clearCart();
+    window.open(
+      `https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+    setConfirmed(true);
   };
 
   // ── Empty cart ────────────────────────────────────────────────────────────
@@ -641,10 +722,17 @@ function CheckoutPage() {
                         : "border-border/50 text-muted-foreground"
                     }`}
                   >
-                    {n === 1
-                      ? `À vista — R$ ${formatPrice(orderTotal)}`
-                      : `${n}× de R$ ${formatPrice(orderTotal / n)}`
-                    }
+                    {(() => {
+                      const rate = selectedPayConfig?.taxasPorParcela?.find(t => t.parcela === n)?.taxa ?? 0;
+                      const totalWithFee = selectedPayConfig?.repassarTaxaCliente && rate > 0
+                        ? baseTotal * (1 + rate / 100)
+                        : baseTotal;
+                      if (n === 1) return `À vista — R$ ${formatPrice(baseTotal)}`;
+                      const parcelVal = totalWithFee / n;
+                      return rate > 0 && selectedPayConfig?.repassarTaxaCliente
+                        ? `${n}× R$ ${formatPrice(parcelVal)} (+${rate}% taxa)`
+                        : `${n}× de R$ ${formatPrice(baseTotal / n)}`;
+                    })()}
                   </button>
                 ))}
               </div>
@@ -743,6 +831,19 @@ function CheckoutPage() {
                 : <span>R$ {formatPrice(feeResult.taxa)}</span>
               }
             </div>
+            {cardFeeAmount > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground flex items-center gap-1">
+                  Taxa maquineta ({cardFeePercent}%)
+                  {!selectedPayConfig?.repassarTaxaCliente && (
+                    <span className="text-[10px] bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 font-medium">loja absorve</span>
+                  )}
+                </span>
+                <span className={selectedPayConfig?.repassarTaxaCliente ? "text-destructive/80" : "text-muted-foreground"}>
+                  {selectedPayConfig?.repassarTaxaCliente ? "+" : ""}R$ {formatPrice(cardFeeAmount)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between font-bold text-base pt-2 border-t border-border/40">
               <span>Total</span>
               <span className="text-primary">R$ {formatPrice(orderTotal)}</span>
@@ -757,12 +858,12 @@ function CheckoutPage() {
                 <strong className="text-foreground">{nome}</strong> · {telefone}
               </span>
             </div>
-            <div className="flex items-start gap-2">
+            <div className="flex items-start gap-2 min-w-0">
               {deliveryType === "delivery"
                 ? <Truck className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 : <Package className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               }
-              <span>
+              <span className="break-words min-w-0">
                 {deliveryType === "delivery"
                   ? `${address.street}, ${address.number}${address.complement ? ` — ${address.complement}` : ""} · ${address.neighborhood}, ${address.city}`
                   : `Retirada · ${store?.name || "nossa loja"}`
@@ -803,6 +904,15 @@ function CheckoutPage() {
             className="flex-1 h-11 rounded-2xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow disabled:opacity-50"
           >
             Continuar <ChevronRight className="w-4 h-4 ml-1" />
+          </Button>
+        ) : configuracaoVitrine?.pedidoWhatsapp && configuracaoVitrine?.telefoneWhatsapp ? (
+          <Button
+            onClick={sendOrderViaWhatsApp}
+            className="flex-1 h-11 rounded-2xl text-white font-semibold hover:opacity-90 active:scale-[0.99] transition-all shadow-lg gap-2"
+            style={{ backgroundColor: "#25D366" }}
+          >
+            <MessageCircle className="w-4 h-4" />
+            Enviar Pedido via WhatsApp
           </Button>
         ) : (
           <Button

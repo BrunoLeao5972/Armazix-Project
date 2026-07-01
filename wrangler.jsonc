@@ -13,11 +13,19 @@
     "NODE_ENV": "production"
   },
   // Secrets (set via `wrangler secret put`):
-  //   DATABASE_URL — Neon PostgreSQL connection string
-  //   JWT_SECRET   — Auth signing key
-  //   ENCRYPTION_KEY — AES-256 encryption key for sensitive data (mpAccessToken)
-  //   WEBHOOK_API_KEY — Secret for validating webhook requests (optional)
-  //   PLATFORM_MP_ACCESS_TOKEN — Mercado Pago token for Armazix platform subscriptions
+  //   DATABASE_URL              — Neon PostgreSQL connection string
+  //   JWT_SECRET                — Auth signing key
+  //   ENCRYPTION_KEY            — AES-256 encryption key for sensitive data (mpAccessToken)
+  //   WEBHOOK_API_KEY           — Secret for validating webhook requests (optional)
+  //   PLATFORM_MP_ACCESS_TOKEN  — Mercado Pago token for Armazix platform subscriptions
+  //   UPSTASH_REDIS_REST_URL    — https://<id>.upstash.io  (Dashboard › REST API)
+  //   UPSTASH_REDIS_REST_TOKEN  — token do Upstash (Dashboard › REST API)
+  //
+  // Provisionamento Upstash:
+  //   1. upstash.com → Create Database → Region: us-east-1 (mais próximo do Neon)
+  //   2. wrangler secret put UPSTASH_REDIS_REST_URL
+  //   3. wrangler secret put UPSTASH_REDIS_REST_TOKEN
+  //   Sem secrets configurados → cache desabilitado, fallback direto ao banco (fail-safe)
   "observability": {
     // Enables Cloudflare Workers Observability: logs, metrics, traces in the dashboard.
     // Security events from logSecurityEvent() are emitted as structured JSON to stdout

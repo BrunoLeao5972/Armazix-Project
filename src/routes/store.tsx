@@ -371,24 +371,17 @@ function StoreLayout() {
                             </div>
                           </>
                         )}
-                        {configuracaoVitrine.pedidoWhatsapp ? (
-                          <button
-                            onClick={sendCartToWhatsApp}
-                            disabled={!configuracaoVitrine.telefoneWhatsapp || cart.length === 0}
-                            className="w-full h-12 rounded-2xl bg-[#25D366] text-white font-semibold flex items-center justify-center gap-2 mt-2 hover:bg-[#1EBE5D] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                          >
-                            <MessageCircle className="w-4 h-4" />
-                            Finalizar no WhatsApp
-                          </button>
-                        ) : (
-                          <Link
-                            to="/store/checkout"
-                            className="w-full h-12 rounded-2xl text-white font-semibold flex items-center justify-center mt-2 hover:opacity-90 active:scale-[0.99] transition-all shadow-lg"
-                            style={{ backgroundColor: "var(--cor-primaria)" }}
-                          >
-                            Finalizar pedido
-                          </Link>
-                        )}
+                        {/* Sempre leva ao checkout — nunca dispara WhatsApp direto do carrinho */}
+                        <Link
+                          to="/store/checkout"
+                          className="w-full h-12 rounded-2xl text-white font-semibold flex items-center justify-center gap-2 mt-2 hover:opacity-90 active:scale-[0.99] transition-all shadow-lg"
+                          style={{ backgroundColor: configuracaoVitrine.pedidoWhatsapp ? "#25D366" : "var(--cor-primaria)" }}
+                        >
+                          {configuracaoVitrine.pedidoWhatsapp
+                            ? <><MessageCircle className="w-4 h-4" /> Preencher Dados de Entrega</>
+                            : "Finalizar pedido"
+                          }
+                        </Link>
                       </div>
                     </div>
                   )}
@@ -432,7 +425,7 @@ function StoreLayout() {
                     to={item.href}
                     className="flex flex-col items-center gap-0.5 min-w-[48px] py-1"
                   >
-                    <div className={`flex items-center justify-center w-10 h-7 rounded-xl transition-colors ${active ? "bg-primary/15" : ""}`}>
+                    <div className={`relative flex items-center justify-center w-10 h-7 rounded-xl transition-colors ${active ? "bg-primary/15" : ""}`}>
                       <item.icon className={`w-5 h-5 ${active ? "text-primary" : "text-muted-foreground"}`} />
                       {item.href === "/store/cart" && cartCount > 0 && (
                         <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold grid place-items-center">{cartCount}</span>

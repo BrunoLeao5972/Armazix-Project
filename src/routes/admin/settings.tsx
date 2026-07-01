@@ -50,6 +50,8 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImageUploadCrop } from "@/components/armazix/ImageUploadCrop";
+import { PaymentMethodEditor } from "@/components/admin/PaymentMethodEditor";
+import type { PaymentMethodConfig } from "@/lib/store-context";
 
 export const Route = createFileRoute("/admin/settings")({
   component: SettingsPage,
@@ -151,14 +153,12 @@ function SettingsPage() {
   const [mpTokenError, setMpTokenError] = useState("");
 
   // Payment methods config
-  const [paymentMethodsConfig, setPaymentMethodsConfig] = useState<Array<{
-    key: string; label: string; enabled: boolean; maxInstallments: number; payAtDelivery?: boolean;
-  }>>([
-    { key: "cash",        label: "Dinheiro",          enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
-    { key: "pix",         label: "PIX",               enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
-    { key: "card",        label: "Cartão de Crédito", enabled: true,  maxInstallments: 12, payAtDelivery: true  },
-    { key: "debit",       label: "Cartão de Débito",  enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
-    { key: "mercadopago", label: "Mercado Pago",       enabled: false, maxInstallments: 1                       },
+  const [paymentMethodsConfig, setPaymentMethodsConfig] = useState<PaymentMethodConfig[]>([
+    { key: "cash",        label: "Dinheiro",          enabled: true,  maxInstallments: 1,  payAtDelivery: true,  especie: "dinheiro"                                  },
+    { key: "pix",         label: "PIX",               enabled: true,  maxInstallments: 1,  payAtDelivery: true,  especie: "pix"                                       },
+    { key: "card",        label: "Cartão de Crédito", enabled: true,  maxInstallments: 12, payAtDelivery: true,  especie: "cartao",      operacao: "credito"           },
+    { key: "debit",       label: "Cartão de Débito",  enabled: true,  maxInstallments: 1,  payAtDelivery: true,  especie: "cartao",      operacao: "debito"            },
+    { key: "mercadopago", label: "Mercado Pago",       enabled: false, maxInstallments: 1,                       especie: "mercadopago"                               },
   ]);
   const [deliveryPaymentEnabled, setDeliveryPaymentEnabled] = useState(true);
   const [newMethodLabel, setNewMethodLabel] = useState("");
@@ -1015,123 +1015,26 @@ function SettingsPage() {
         {/* ── Formas de Pagamento ────────────────────────────────────── */}
         <TabsContent value="pagamentos" className="mt-6 space-y-6">
 
-          {/* Card principal: métodos */}
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <CreditCard className="w-4 h-4" />
                 Formas de Pagamento
               </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Configure espécie, operação, taxas de parcelamento, repasse ao cliente e dados do PIX.
+              </p>
             </CardHeader>
-            <CardContent className="space-y-0 pb-5">
-
-              {/* Métodos padrão + custom */}
-              {paymentMethodsConfig.map((m, idx) => (
-                <div key={m.key} className="flex items-center justify-between gap-4 py-4 border-b border-border/40 last:border-0">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{m.label}</p>
-                    {m.key === "mercadopago" && (
-                      <p className="text-xs text-muted-foreground mt-0.5">Pago online — requer credenciais abaixo</p>
-                    )}
-                    {m.key.startsWith("custom_") && (
-                      <p className="text-xs text-muted-foreground mt-0.5">Forma personalizada</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    {m.key.startsWith("custom_") && (
-                      <button
-                        type="button"
-                        onClick={() => setPaymentMethodsConfig(prev => prev.filter((_, i) => i !== idx))}
-                        className="text-muted-foreground hover:text-destructive transition-colors p-1"
-                        aria-label="Remover"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    <Switch
-                      checked={m.enabled}
-                      onCheckedChange={(v) => setPaymentMethodsConfig(prev =>
-                        prev.map((x, i) => i === idx ? { ...x, enabled: v } : x)
-                      )}
-                    />
-                  </div>
-                </div>
-              ))}
-
-              {/* Toggle global — Pagamento na entrega */}
-              <div className="mt-2 mb-1 rounded-xl bg-secondary/50 border border-border/60 p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-semibold">Habilitar pagamento na entrega</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Quando ativo, clientes podem pagar ao receber o pedido (Dinheiro, PIX, Cartão).
-                      Quando inativo, o pagamento deve ser feito online antes da confirmação.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={deliveryPaymentEnabled}
-                    onCheckedChange={setDeliveryPaymentEnabled}
-                  />
-                </div>
-              </div>
-
-              {/* Outras formas personalizadas */}
-              <div className="pt-5 space-y-2 border-t border-border/30 mt-4">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Outras formas de pagamento</p>
-                <div className="flex gap-2">
-                  <Input
-                    value={newMethodLabel}
-                    onChange={(e) => setNewMethodLabel(e.target.value)}
-                    placeholder="Ex: Vale refeição, Cheque..."
-                    className="h-9 rounded-xl text-sm"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && newMethodLabel.trim()) {
-                        setPaymentMethodsConfig(prev => [...prev, {
-                          key: `custom_${Date.now()}`,
-                          label: newMethodLabel.trim(),
-                          enabled: true,
-                          maxInstallments: 1,
-                          payAtDelivery: true,
-                        }]);
-                        setNewMethodLabel("");
-                      }
-                    }}
-                  />
-                  <Button
-                    variant="outline"
-                    className="h-9 px-4 rounded-xl text-sm shrink-0"
-                    disabled={!newMethodLabel.trim()}
-                    onClick={() => {
-                      setPaymentMethodsConfig(prev => [...prev, {
-                        key: `custom_${Date.now()}`,
-                        label: newMethodLabel.trim(),
-                        enabled: true,
-                        maxInstallments: 1,
-                        payAtDelivery: true,
-                      }]);
-                      setNewMethodLabel("");
-                    }}
-                  >
-                    Adicionar
-                  </Button>
-                </div>
-                <p className="text-[11px] text-muted-foreground">Pressione Enter ou clique em Adicionar</p>
-              </div>
-
-              <div className="pt-5 flex items-center gap-3 border-t border-border/30 mt-4">
-                {pmcSuccess && (
-                  <div className="flex items-center gap-1.5 text-sm text-green-600">
-                    <CheckCircle2 className="w-4 h-4" /> Salvo!
-                  </div>
-                )}
-                <Button
-                  onClick={savePaymentConfig}
-                  disabled={pmcSaving}
-                  className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
-                >
-                  {pmcSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar formas de pagamento"}
-                </Button>
-              </div>
+            <CardContent className="pb-5">
+              <PaymentMethodEditor
+                methods={paymentMethodsConfig}
+                deliveryPaymentEnabled={deliveryPaymentEnabled}
+                saving={pmcSaving}
+                success={pmcSuccess}
+                onMethodsChange={setPaymentMethodsConfig}
+                onDeliveryPaymentChange={setDeliveryPaymentEnabled}
+                onSave={savePaymentConfig}
+              />
             </CardContent>
           </Card>
 
