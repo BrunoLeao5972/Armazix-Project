@@ -59,21 +59,23 @@ interface Order {
 }
 
 const statusConfig: Record<string, { label: string; icon: React.ElementType; color: string; bgColor: string }> = {
-  received: { label: "Novo", icon: Clock, color: "text-blue-600", bgColor: "bg-blue-500/15" },
-  preparing: { label: "Preparando", icon: ChefHat, color: "text-amber-600", bgColor: "bg-amber-500/15" },
-  ready: { label: "Pronto", icon: CheckCircle2, color: "text-primary", bgColor: "bg-primary/15" },
-  delivering: { label: "Saiu p/ entrega", icon: Truck, color: "text-purple-600", bgColor: "bg-purple-500/15" },
-  delivered: { label: "Concluído", icon: CheckCircle2, color: "text-primary", bgColor: "bg-primary/15" },
-  cancelled: { label: "Cancelado", icon: XCircle, color: "text-destructive", bgColor: "bg-destructive/15" },
+  pending:   { label: "Em Análise",     icon: Loader2,      color: "text-amber-600",     bgColor: "bg-amber-500/15" },
+  received:  { label: "Novo",           icon: Clock,        color: "text-blue-600",      bgColor: "bg-blue-500/15" },
+  preparing: { label: "Preparando",     icon: ChefHat,      color: "text-orange-600",    bgColor: "bg-orange-500/15" },
+  ready:     { label: "Pronto",         icon: CheckCircle2, color: "text-primary",       bgColor: "bg-primary/15" },
+  delivering:{ label: "Saiu p/ entrega",icon: Truck,        color: "text-purple-600",    bgColor: "bg-purple-500/15" },
+  delivered: { label: "Concluído",      icon: CheckCircle2, color: "text-primary",       bgColor: "bg-primary/15" },
+  cancelled: { label: "Cancelado",      icon: XCircle,      color: "text-destructive",   bgColor: "bg-destructive/15" },
 };
 
 const TABS = [
-  { key: "todos", label: "Todos" },
-  { key: "received", label: "Novos" },
-  { key: "preparing", label: "Preparando" },
+  { key: "todos",      label: "Todos" },
+  { key: "pending",    label: "Em Análise" },
+  { key: "received",   label: "Novos" },
+  { key: "preparing",  label: "Preparando" },
   { key: "delivering", label: "Em entrega" },
-  { key: "delivered", label: "Concluídos" },
-  { key: "cancelled", label: "Cancelados" },
+  { key: "delivered",  label: "Concluídos" },
+  { key: "cancelled",  label: "Cancelados" },
 ];
 
 function OrdersPage() {
@@ -203,6 +205,7 @@ function OrdersPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="rounded-xl">
                         <DropdownMenuItem className="rounded-lg gap-2"><Eye className="w-3.5 h-3.5" /> Ver detalhes</DropdownMenuItem>
+                        {order.status === "pending" && <DropdownMenuItem className="rounded-lg gap-2" onClick={() => handleStatusChange(order.orderId, "received")}><CheckCircle2 className="w-3.5 h-3.5" /> Aceitar pedido</DropdownMenuItem>}
                         {order.status === "received" && <DropdownMenuItem className="rounded-lg gap-2" onClick={() => handleStatusChange(order.orderId, "preparing")}><ChefHat className="w-3.5 h-3.5" /> Preparar</DropdownMenuItem>}
                         {order.status === "preparing" && <DropdownMenuItem className="rounded-lg gap-2" onClick={() => handleStatusChange(order.orderId, "ready")}><CheckCircle2 className="w-3.5 h-3.5" /> Pronto</DropdownMenuItem>}
                         {order.status === "ready" && <DropdownMenuItem className="rounded-lg gap-2" onClick={() => handleStatusChange(order.orderId, "delivering")}><Truck className="w-3.5 h-3.5" /> Enviar</DropdownMenuItem>}

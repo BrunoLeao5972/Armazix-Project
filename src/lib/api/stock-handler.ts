@@ -4,7 +4,7 @@ import { eq, and, gte, desc, sql } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 import { generateCleanSlug } from "@/lib/slug";
 
-const { products, orders, orderItems, verificationCodes, users, storeUsers } = schema;
+const { products, orders, orderItems, verificationCodes, users, storeUsers, customers } = schema;
 
 // ─── Get Stock Stats ────────────────────────────────────────────
 export async function getStockStatsHandler(request: Request, auth?: AuthContext): Promise<Response> {
@@ -695,27 +695,40 @@ export async function getDeliveryOrdersHandler(request: Request, auth?: AuthCont
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    const deliveryOrders = await db.query.orders.findMany({
-      where: and(eq(orders.storeId, storeId), eq(orders.type, "delivery")),
-      orderBy: desc(orders.createdAt),
-      with: { customer: true },
-    });
+    // Explicit column selection — avoids pulling card_fee_amount (unmigrated column)
+    // and fixes updatedAt.toISOString() crash if column returns string instead of Date.
+    const deliveryOrders = await db.select({
+      id:               orders.id,
+      number:           orders.number,
+      status:           orders.status,
+      total:            orders.total,
+      type:             orders.type,
+      addressSnapshot:  orders.addressSnapshot,
+      estimatedDelivery: orders.estimatedDelivery,
+      updatedAt:        orders.updatedAt,
+      createdAt:        orders.createdAt,
+      customerName:     customers.name,
+      customerPhone:    customers.phone,
+    }).from(orders)
+      .leftJoin(customers, eq(orders.customerId, customers.id))
+      .where(and(eq(orders.storeId, storeId), eq(orders.type, "delivery")))
+      .orderBy(desc(orders.createdAt));
 
     const deliveries = deliveryOrders.map(o => ({
       id: `#D${String(o.number).padStart(3, "0")}`,
       orderId: o.id,
       number: o.number,
-      customer: o.customer?.name || "Cliente",
+      customer: o.customerName || "Cliente",
       address: o.addressSnapshot
         ? `${o.addressSnapshot.street}, ${o.addressSnapshot.number} — ${o.addressSnapshot.neighborhood}`
         : "",
-      phone: o.customer?.phone || "",
-      status: o.status, // exact DB status: received | preparing | ready | delivering | delivered | cancelled
+      phone: o.customerPhone || "",
+      status: o.status,
       total: parseFloat(o.total).toFixed(2),
       time: o.estimatedDelivery
         ? `~${Math.max(0, Math.round((new Date(o.estimatedDelivery).getTime() - Date.now()) / 60000))} min`
         : "",
-      updatedAt: o.updatedAt.toISOString(),
+      updatedAt: o.updatedAt ? new Date(o.updatedAt).toISOString() : new Date().toISOString(),
     }));
 
     const preparing = deliveries.filter(d => d.status === "received" || d.status === "preparing").length;

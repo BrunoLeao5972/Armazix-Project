@@ -211,6 +211,8 @@ const migrations = [
   { name: "0020_balanco_status_normalize", query: `UPDATE "stock_balances" SET "status" = 'em_aberto' WHERE "status" = 'aberto'` },
   // Regras de frete por bairro + limiar de frete grátis
   { name: "0021_delivery_rules_free_shipping", query: `ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "delivery_rules" jsonb, ADD COLUMN IF NOT EXISTS "free_shipping_above" numeric(10,2)` },
+  // Modelo v2 de configuração de pagamento (dois grupos: online + entrega)
+  { name: "0022_payment_config_v2", query: `ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "payment_config" jsonb` },
 ];
 
 for (const m of migrations) {

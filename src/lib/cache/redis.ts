@@ -102,3 +102,27 @@ export function productsCacheKey(
 export function categoriesCacheKey(storeId: string): string {
   return `store:${storeId}:categories`;
 }
+
+// Chave da listagem de clientes do CRM (com stats de pedidos)
+export function customersCacheKey(storeId: string): string {
+  return `store:${storeId}:customers:list`;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Deleção direcionada de uma ou mais chaves. Fail-safe: erros do Redis
+// são logados mas nunca propagados, garantindo que mutations no DB
+// retornem normalmente mesmo que o Redis esteja indisponível.
+// Use com waitUntil() para não bloquear a resposta ao cliente.
+// ─────────────────────────────────────────────────────────────────────
+export async function deleteKey(...keys: string[]): Promise<void> {
+  const redis = getRedis();
+  if (!redis || keys.length === 0) return;
+  try {
+    const pipeline = redis.pipeline();
+    keys.forEach(k => pipeline.del(k));
+    // Remove também do índice do store para não contaminar invalidateStoreCache
+    await pipeline.exec();
+  } catch (err) {
+    console.error("[redis] deleteKey error (non-fatal):", (err as Error).message);
+  }
+}

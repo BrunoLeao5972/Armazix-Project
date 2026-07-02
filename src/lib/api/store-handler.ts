@@ -1,10 +1,10 @@
 import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
-import { requireStoreAccess, AuthContext } from "@/lib/auth/require-store-access";
+import { eq, and, desc, sql, ne } from "drizzle-orm";
+import { requireStoreAccess, requireStoreOwner, AuthContext } from "@/lib/auth/require-store-access";
 import { generateCleanSlug } from "@/lib/slug";
 
-const { stores, storeUsers, orders, products, customers } = schema;
+const { stores, storeUsers, orders, orderItems, products, customers } = schema;
 
 // ─── Get Store by ID or Slug ─────────────────────────────────────
 export async function getStoreHandler(request: Request): Promise<Response> {
@@ -189,83 +189,78 @@ export async function getDashboardStatsHandler(
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    // Get orders stats
-    const storeOrders = await db.query.orders.findMany({
-      where: eq(orders.storeId, storeId),
-    });
+    // Explicit column selection avoids pulling unmigrated columns (e.g. card_fee_amount)
+    // and lets the query succeed even if the DB is one migration behind.
+    const [storeOrders, productsData, customersCount] = await Promise.all([
+      db.select({
+        id:            orders.id,
+        number:        orders.number,
+        status:        orders.status,
+        total:         orders.total,
+        customerId:    orders.customerId,
+        paymentMethod: orders.paymentMethod,
+        createdAt:     orders.createdAt,
+      }).from(orders).where(eq(orders.storeId, storeId)),
 
-    const totalOrders = storeOrders.length;
-    const pendingOrders = storeOrders.filter(o => 
-      ["received", "preparing", "ready", "delivering"].includes(o.status)
-    ).length;
+      db.select({
+        stock:             products.stock,
+        lowStockThreshold: products.lowStockThreshold,
+      }).from(products).where(eq(products.storeId, storeId)),
+
+      db.select({ count: sql<number>`cast(count(*) as int)` })
+        .from(customers).where(eq(customers.storeId, storeId))
+        .then(r => r[0]?.count ?? 0),
+    ]);
+
+    const totalOrders     = storeOrders.length;
+    const pendingOrders   = storeOrders.filter(o => ["received","preparing","ready","delivering"].includes(o.status)).length;
     const completedOrders = storeOrders.filter(o => o.status === "delivered").length;
     const cancelledOrders = storeOrders.filter(o => o.status === "cancelled").length;
+    const revenue         = storeOrders.filter(o => o.status !== "cancelled").reduce((s, o) => s + parseFloat(o.total || "0"), 0);
+    const productsCount   = productsData.length;
+    const lowStockProducts = productsData.filter(p => (p.stock ?? 0) <= (p.lowStockThreshold || 5)).length;
 
-    // Calculate revenue
-    const revenue = storeOrders
-      .filter(o => o.status !== "cancelled")
-      .reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+    // Recent orders with customer name via LEFT JOIN (no findMany → no card_fee_amount)
+    const recentOrders = await db.select({
+      id:           orders.id,
+      number:       orders.number,
+      status:       orders.status,
+      total:        orders.total,
+      createdAt:    orders.createdAt,
+      customerName: customers.name,
+    }).from(orders)
+      .leftJoin(customers, eq(orders.customerId, customers.id))
+      .where(eq(orders.storeId, storeId))
+      .orderBy(desc(orders.createdAt))
+      .limit(5);
 
-    // Get products count
-    const productsCount = await db.$count(products, eq(products.storeId, storeId));
-    const lowStockProducts = await db.query.products.findMany({
-      where: eq(products.storeId, storeId),
-    }).then(p => p.filter(prod => (prod.stock ?? 0) <= (prod.lowStockThreshold || 5)).length);
-
-    // Get customers count
-    const customersCount = await db.$count(customers, eq(customers.storeId, storeId));
-
-    // Get recent orders with customer info
-    const recentOrders = await db.query.orders.findMany({
-      where: eq(orders.storeId, storeId),
-      orderBy: (orders, { desc }) => [desc(orders.createdAt)],
-      limit: 5,
-      with: {
-        customer: true,
-      },
-    });
-
-    // Get top products
-    const topProducts = await db.query.orderItems.findMany({
-      limit: 5,
-      with: {
-        product: true,
-      },
-    }).then(items => {
-      const productMap = new Map();
-      items.forEach(item => {
-        if (item.product) {
-          const existing = productMap.get(item.productId) || { ...item.product, sold: 0 };
-          existing.sold += item.quantity;
-          productMap.set(item.productId, existing);
-        }
-      });
-      return Array.from(productMap.values()).sort((a, b) => b.sold - a.sold).slice(0, 5);
-    });
+    // Top products — filtered to this store via JOIN on orders (no cross-tenant leak)
+    const topProducts = await db.select({
+      productId:   orderItems.productId,
+      productName: orderItems.productName,
+      sold:        sql<number>`cast(sum(${orderItems.quantity}) as int)`,
+      revenue:     sql<number>`sum(cast(${orderItems.total} as numeric))`,
+    }).from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(and(eq(orders.storeId, storeId), ne(orders.status, "cancelled")))
+      .groupBy(orderItems.productId, orderItems.productName)
+      .orderBy(desc(sql`sum(${orderItems.quantity})`))
+      .limit(5);
 
     return new Response(JSON.stringify({
       stats: {
-        totalOrders,
-        pendingOrders,
-        completedOrders,
-        cancelledOrders,
-        revenue,
-        productsCount,
-        lowStockProducts,
+        totalOrders, pendingOrders, completedOrders, cancelledOrders,
+        revenue, productsCount, lowStockProducts,
         customersCount,
         averageTicket: totalOrders > 0 ? revenue / totalOrders : 0,
       },
       recentOrders,
       topProducts,
-    }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
+    }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("Error fetching dashboard stats:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
+      status: 500, headers: { "content-type": "application/json" },
     });
   }
 }
@@ -325,5 +320,85 @@ export async function getUserStoreHandler(request: Request, auth?: AuthContext):
       status: 500,
       headers: { "content-type": "application/json" },
     });
+  }
+}
+
+// ─── PUT /api/store/payment-config ──────────────────────────────────────────
+// Salva a configuração estruturada de pagamento v2 (dois grupos: online + entrega).
+// Requer owner/admin — mesmo nível de segurança do saveMpTokenHandler.
+export async function savePaymentConfigHandler(
+  request: Request,
+  auth?: AuthContext
+): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreOwner(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: (error as Error).message || "Unauthorized" }),
+      { status: auth?.userId ? 403 : 401, headers: { "content-type": "application/json" } }
+    );
+  }
+
+  const body = await request.json() as {
+    paymentConfig: import("@/lib/store-context").PaymentConfig;
+  };
+
+  if (!body.paymentConfig) {
+    return new Response(
+      JSON.stringify({ error: "paymentConfig é obrigatório" }),
+      { status: 400, headers: { "content-type": "application/json" } }
+    );
+  }
+
+  const cfg = body.paymentConfig;
+
+  // ── Validação estrutural básica ──────────────────────────────────────────
+  if (typeof cfg.online?.enabled !== "boolean") {
+    return new Response(
+      JSON.stringify({ error: "paymentConfig.online.enabled deve ser boolean" }),
+      { status: 400, headers: { "content-type": "application/json" } }
+    );
+  }
+  if (typeof cfg.delivery?.enabled !== "boolean") {
+    return new Response(
+      JSON.stringify({ error: "paymentConfig.delivery.enabled deve ser boolean" }),
+      { status: 400, headers: { "content-type": "application/json" } }
+    );
+  }
+
+  const maxInstallments = cfg.delivery?.creditCard?.maxInstallments ?? 1;
+  if (cfg.delivery?.creditCard?.installmentsEnabled && (maxInstallments < 2 || maxInstallments > 12)) {
+    return new Response(
+      JSON.stringify({ error: "maxInstallments deve ser entre 2 e 12 quando parcelamento está ativo" }),
+      { status: 400, headers: { "content-type": "application/json" } }
+    );
+  }
+
+  try {
+    const dbUrl = process.env.DATABASE_URL!;
+    const db = createDb(dbUrl);
+
+    await db
+      .update(stores)
+      .set({
+        paymentConfig: cfg,
+        // Mantém campos legados em sincronia para retrocompatibilidade
+        deliveryPaymentEnabled: cfg.delivery.enabled,
+        updatedAt: new Date(),
+      })
+      .where(eq(stores.id, storeId));
+
+    return new Response(
+      JSON.stringify({ success: true, paymentConfig: cfg }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Error saving paymentConfig:", error);
+    return new Response(
+      JSON.stringify({ error: "Erro interno ao salvar configuração de pagamento" }),
+      { status: 500, headers: { "content-type": "application/json" } }
+    );
   }
 }

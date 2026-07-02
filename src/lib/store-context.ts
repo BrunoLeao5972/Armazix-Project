@@ -39,6 +39,13 @@ export interface PaymentMethodConfig {
   pixKeyType?:    TipoChavePix;
   pixKey?:        string;
   pixQrCodeUrl?:  string;
+  // ── Mercado Pago ───────────────────────────────────────────────
+  config?: {
+    mercadoPago?: {
+      publicKey:   string;
+      accessToken: string;
+    };
+  };
 }
 
 export const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [
@@ -48,6 +55,65 @@ export const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [
   { key: "debit",       label: "Cartão de Débito",  enabled: true,  maxInstallments: 1,  payAtDelivery: true  },
   { key: "mercadopago", label: "Mercado Pago",       enabled: false, maxInstallments: 1                       },
 ];
+
+// ─── Novo modelo estruturado de pagamento (v2) ────────────────────────────────
+
+/** Configuração do grupo Pagamento Online (Mercado Pago Checkout Pro). */
+export interface OnlinePaymentConfig {
+  enabled: boolean;
+  /** Quais métodos o MP deve apresentar na tela de checkout deles. */
+  methods: {
+    pix:        boolean;
+    creditCard: boolean;
+    debitCard:  boolean;
+  };
+}
+
+/** Configuração do grupo Pagamento na Entrega. */
+export interface DeliveryPaymentConfig {
+  enabled: boolean;
+  cash: {
+    enabled:       boolean;
+    /** Quando true, o checkout exibe o campo "Precisa de troco? Troco para R$ __" */
+    changeEnabled: boolean;
+  };
+  creditCard: {
+    enabled:             boolean;
+    /** Maquininha do entregador aceita parcelamento? */
+    installmentsEnabled: boolean;
+    /** Máximo de parcelas aceitas (2–12). Ignorado quando installmentsEnabled=false. */
+    maxInstallments:     number;
+  };
+  debitCard: {
+    enabled: boolean;
+  };
+  pix: {
+    enabled:      boolean;
+    pixKeyType:   TipoChavePix;
+    pixKey:       string;
+    pixQrCodeUrl?: string;
+  };
+}
+
+/** Raiz salva em stores.payment_config (jsonb). Credenciais MP ficam em colunas separadas. */
+export interface PaymentConfig {
+  online:   OnlinePaymentConfig;
+  delivery: DeliveryPaymentConfig;
+}
+
+export const DEFAULT_PAYMENT_CONFIG: PaymentConfig = {
+  online: {
+    enabled: false,
+    methods: { pix: true, creditCard: true, debitCard: true },
+  },
+  delivery: {
+    enabled: true,
+    cash:       { enabled: true, changeEnabled: true },
+    creditCard: { enabled: true, installmentsEnabled: false, maxInstallments: 1 },
+    debitCard:  { enabled: true },
+    pix:        { enabled: true, pixKeyType: "cpf", pixKey: "" },
+  },
+};
 
 export interface StoreBanner {
   id: string;
@@ -89,8 +155,12 @@ export interface StorePublicData {
   rating: string | null;
   active: boolean | null;
   mpPublicKey: string | null;
+  /** @deprecated Use paymentConfig instead */
   paymentMethodsConfig: PaymentMethodConfig[] | null;
+  /** @deprecated Use paymentConfig.delivery.enabled instead */
   deliveryPaymentEnabled: boolean | null;
+  /** Modelo v2 estruturado — substitui paymentMethodsConfig + deliveryPaymentEnabled */
+  paymentConfig: PaymentConfig | null;
   banners: StoreBanner[];
   // endereço físico da loja (campo jsonb já existente no DB)
   address: {

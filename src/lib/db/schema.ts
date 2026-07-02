@@ -52,6 +52,8 @@ export const stores = pgTable("stores", {
   deliveryPaymentEnabled: boolean("delivery_payment_enabled").default(true),
   deliveryRules: jsonb("delivery_rules").$type<Array<{ bairro: string; taxa: number }>>(),
   freeShippingAbove: numeric("free_shipping_above", { precision: 10, scale: 2 }),
+  /** Modelo v2 de configuração de pagamento — substitui paymentMethodsConfig + deliveryPaymentEnabled */
+  paymentConfig: jsonb("payment_config").$type<import("@/lib/store-context").PaymentConfig>(),
   wppConfig: jsonb("wpp_config").$type<import("@/lib/whatsapp-sender").WppConfig>(),
   plan: varchar("plan", { length: 20 }).default("free"),
   planStatus: varchar("plan_status", { length: 20 }).default("active"),

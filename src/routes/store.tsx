@@ -1,4 +1,4 @@
-import { useState, createContext, useContext, useEffect, useMemo, type CSSProperties } from "react";
+import { useState, createContext, useContext, useEffect, useMemo, useCallback, useRef, type CSSProperties } from "react";
 import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router";
 import {
   Home,
@@ -9,11 +9,20 @@ import {
   Loader2,
   Store,
   MessageCircle,
+  ClipboardList,
+  Phone,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { type CartItem, type ConfiguracaoVitrine, type StorePublicData, resolveStoreSlug, formatPrice } from "@/lib/store-context";
+
+export interface ActiveCustomer {
+  id?: string;   // undefined = novo cliente ainda não persistido no CRM
+  name: string;
+  phone: string; // apenas dígitos
+}
 
 type StoreContextType = {
   store: StorePublicData | null;
@@ -28,6 +37,9 @@ type StoreContextType = {
   cartTotal: number;
   favorites: string[];
   toggleFavorite: (id: string) => void;
+  /** Cliente identificado na sessão de checkout atual */
+  activeCustomer: ActiveCustomer | null;
+  setActiveCustomer: (c: ActiveCustomer | null) => void;
 };
 
 export const StoreContext = createContext<StoreContextType>({
@@ -55,6 +67,8 @@ export const StoreContext = createContext<StoreContextType>({
   cartTotal: 0,
   favorites: [],
   toggleFavorite: () => {},
+  activeCustomer: null,
+  setActiveCustomer: () => {},
 });
 
 export const useStore = () => useContext(StoreContext);
@@ -62,6 +76,229 @@ export const useStore = () => useContext(StoreContext);
 export const Route = createFileRoute("/store")({
   component: StoreLayout,
 });
+
+// ─── Central do Cliente — types & constants ───────────────────────────────────
+interface CustomerOrder {
+  id: string;
+  number: number;
+  status: string;
+  total: string;
+  createdAt: string;
+  type: string;
+  items: { productName: string; quantity: number }[];
+}
+
+const ORDER_STATUS_MAP: Record<string, { label: string; cls: string }> = {
+  pending:    { label: "Em Análise",  cls: "bg-amber-100 text-amber-700" },
+  received:   { label: "Confirmado",  cls: "bg-blue-100 text-blue-700" },
+  preparing:  { label: "Preparando",  cls: "bg-orange-100 text-orange-700" },
+  ready:      { label: "Pronto",      cls: "bg-indigo-100 text-indigo-700" },
+  delivering: { label: "Em Rota",     cls: "bg-purple-100 text-purple-700" },
+  delivered:  { label: "Entregue",    cls: "bg-green-100 text-green-700" },
+  cancelled:  { label: "Cancelado",   cls: "bg-red-100 text-red-700" },
+};
+const ACTIVE_STATUSES = new Set(["pending", "received", "preparing", "delivering"]);
+
+const maskPhoneStore = (v: string) => {
+  const d = v.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 2) return d;
+  if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+};
+
+function CustomerOrdersSheet({
+  open,
+  onOpenChange,
+  storeId,
+  token,
+  customerName,
+  onLogin,
+  onLogout,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  storeId: string;
+  token: string | null;
+  customerName: string;
+  onLogin: (token: string, name: string) => void;
+  onLogout: () => void;
+}) {
+  const [phone, setPhone] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [orders, setOrders] = useState<CustomerOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const hasActiveRef = useRef(false);
+  const onLogoutRef = useRef(onLogout);
+  useEffect(() => { onLogoutRef.current = onLogout; }, [onLogout]);
+
+  const fetchOrders = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch("/api/customer/orders", {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (res.status === 401) { onLogoutRef.current(); return; }
+      if (res.ok) {
+        const data = await res.json() as { orders: CustomerOrder[] };
+        const list = data.orders || [];
+        setOrders(list);
+        hasActiveRef.current = list.some(o => ACTIVE_STATUSES.has(o.status));
+      }
+    } catch {}
+  }, [token]);
+
+  // Initial fetch when drawer opens with a valid token
+  useEffect(() => {
+    if (!open || !token) return;
+    setOrdersLoading(true);
+    fetchOrders().finally(() => setOrdersLoading(false));
+  }, [open, token, fetchOrders]);
+
+  // Polling — 15 s when there are active orders
+  useEffect(() => {
+    if (!open || !token) return;
+    const id = setInterval(() => { if (hasActiveRef.current) fetchOrders(); }, 15_000);
+    return () => clearInterval(id);
+  }, [open, token, fetchOrders]);
+
+  const handleLogin = async () => {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 10) { setLoginError("Digite um telefone válido"); return; }
+    setLoginLoading(true);
+    setLoginError("");
+    try {
+      const res = await fetch("/api/customer/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: digits, storeId }),
+      });
+      const data = await res.json() as { token?: string; customer?: { name: string }; error?: string };
+      if (res.ok && data.token) {
+        onLogin(data.token, data.customer?.name || "");
+      } else {
+        setLoginError(data.error || "Erro ao entrar");
+      }
+    } catch {
+      setLoginError("Erro de conexão. Tente novamente.");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const fmtDate = (iso: string) => {
+    try {
+      return new Intl.DateTimeFormat("pt-BR", {
+        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+      }).format(new Date(iso));
+    } catch { return ""; }
+  };
+
+  const summarize = (items: CustomerOrder["items"]) =>
+    items.slice(0, 3).map(i => `${i.quantity}x ${i.productName}`).join(", ") +
+    (items.length > 3 ? ` +${items.length - 3}` : "");
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-md flex flex-col gap-0">
+        <SheetHeader className="pb-4 border-b border-border/40">
+          <SheetTitle className="flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-primary" />
+            Meus Pedidos
+          </SheetTitle>
+        </SheetHeader>
+
+        {!token ? (
+          /* ── Login ── */
+          <div className="flex flex-col items-center justify-center flex-1 px-2 gap-5 py-12">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center shadow-sm">
+              <Phone className="w-8 h-8 text-primary" />
+            </div>
+            <div className="text-center">
+              <p className="font-semibold text-base">Identifique-se</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Digite seu WhatsApp para ver o histórico de pedidos
+              </p>
+            </div>
+            <div className="w-full max-w-xs space-y-3">
+              <input
+                value={phone}
+                onChange={e => setPhone(maskPhoneStore(e.target.value))}
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+                placeholder="(11) 99999-9999"
+                inputMode="numeric"
+                autoFocus
+                className="w-full h-12 rounded-2xl border border-border/50 bg-background px-4 text-center text-lg font-semibold tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
+              />
+              {loginError && (
+                <p className="text-sm text-destructive text-center">{loginError}</p>
+              )}
+              <Button
+                className="w-full h-12 rounded-2xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
+                onClick={handleLogin}
+                disabled={loginLoading}
+              >
+                {loginLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Ver meus pedidos"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          /* ── Orders list ── */
+          <div className="flex flex-col flex-1 overflow-hidden pt-3">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-muted-foreground">
+                Olá, <span className="font-medium text-foreground">{customerName.split(" ")[0]}</span>!
+              </p>
+              <button
+                onClick={onLogout}
+                className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+              >
+                Sair
+              </button>
+            </div>
+
+            {ordersLoading ? (
+              <div className="flex-1 flex items-center justify-center">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-16">
+                <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center">
+                  <ClipboardList className="w-7 h-7 text-muted-foreground" />
+                </div>
+                <p className="text-sm font-medium">Nenhum pedido ainda</p>
+                <p className="text-xs text-muted-foreground">Seus pedidos aparecem aqui</p>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto space-y-3 pb-4">
+                {orders.map(order => {
+                  const sc = ORDER_STATUS_MAP[order.status] ?? { label: order.status, cls: "bg-secondary text-foreground" };
+                  return (
+                    <div key={order.id} className="p-4 rounded-2xl border border-border/40 bg-secondary/20 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-bold">#{order.number}</span>
+                        <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full shrink-0 ${sc.cls}`}>
+                          {sc.label}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">{summarize(order.items)}</p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">{fmtDate(order.createdAt)}</span>
+                        <span className="text-sm font-bold" style={{ color: "var(--cor-primaria)" }}>
+                          R$ {parseFloat(order.total).toFixed(2).replace(".", ",")}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
 
 const BOTTOM_ITEMS = [
   { href: "/store", label: "Início", icon: Home },
@@ -79,6 +316,11 @@ function StoreLayout() {
   const [store, setStore] = useState<StorePublicData | null>(null);
   const [storeLoading, setStoreLoading] = useState(true);
   const [desktopSearch, setDesktopSearch] = useState("");
+  const [activeCustomer, setActiveCustomer] = useState<ActiveCustomer | null>(null);
+  // ── Central do Cliente ────────────────────────────────────────────────────
+  const [customerToken, setCustomerToken] = useState<string | null>(null);
+  const [customerName, setCustomerName] = useState<string>("");
+  const [ordersOpen, setOrdersOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -128,6 +370,36 @@ function StoreLayout() {
     }
     loadStore();
   }, []);
+
+  // Load customer session from localStorage (scoped per store to avoid cross-store leaks)
+  useEffect(() => {
+    if (!store?.id) return;
+    try {
+      const token = localStorage.getItem(`customerToken_${store.id}`);
+      const name  = localStorage.getItem(`customerName_${store.id}`);
+      if (token) { setCustomerToken(token); setCustomerName(name || ""); }
+    } catch {}
+  }, [store?.id]);
+
+  const handleCustomerLogin = (token: string, name: string) => {
+    if (!store?.id) return;
+    setCustomerToken(token);
+    setCustomerName(name);
+    try {
+      localStorage.setItem(`customerToken_${store.id}`, token);
+      localStorage.setItem(`customerName_${store.id}`, name);
+    } catch {}
+  };
+
+  const handleCustomerLogout = () => {
+    if (!store?.id) return;
+    setCustomerToken(null);
+    setCustomerName("");
+    try {
+      localStorage.removeItem(`customerToken_${store.id}`);
+      localStorage.removeItem(`customerName_${store.id}`);
+    } catch {}
+  };
 
   const addToCart = (item: Omit<CartItem, "qty">) => {
     setCart((prev) => {
@@ -225,7 +497,7 @@ function StoreLayout() {
     : "...";
 
   return (
-    <StoreContext.Provider value={{ store, configuracaoVitrine, storeLoading, cart, addToCart, removeFromCart, updateQty, clearCart, cartCount, cartTotal, favorites, toggleFavorite }}>
+    <StoreContext.Provider value={{ store, configuracaoVitrine, storeLoading, cart, addToCart, removeFromCart, updateQty, clearCart, cartCount, cartTotal, favorites, toggleFavorite, activeCustomer, setActiveCustomer }}>
       <div style={themeStyle} className="min-h-screen bg-[var(--cor-fundo)] text-[var(--cor-texto)] flex flex-col">
         {/* Header */}
         <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80">
@@ -286,6 +558,18 @@ function StoreLayout() {
               >
                 <Search className="w-4.5 h-4.5 text-slate-600" />
               </Link>
+
+              {/* Meus Pedidos */}
+              <button
+                onClick={() => setOrdersOpen(true)}
+                aria-label="Meus pedidos"
+                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-slate-100 transition-colors relative"
+              >
+                <ClipboardList className="w-4.5 h-4.5 text-slate-700" />
+                {customerToken && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-primary border-2 border-white" />
+                )}
+              </button>
 
               {/* Cart */}
               <Sheet>
@@ -437,6 +721,18 @@ function StoreLayout() {
               })}
             </div>
           </nav>
+        )}
+        {/* Central do Cliente — ordens drawer (controlled, no SheetTrigger) */}
+        {store?.id && (
+          <CustomerOrdersSheet
+            open={ordersOpen}
+            onOpenChange={setOrdersOpen}
+            storeId={store.id}
+            token={customerToken}
+            customerName={customerName}
+            onLogin={handleCustomerLogin}
+            onLogout={handleCustomerLogout}
+          />
         )}
       </div>
     </StoreContext.Provider>

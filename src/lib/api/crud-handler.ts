@@ -4,9 +4,10 @@ import { schema } from "@/lib/db";
 import { eq, desc, sql, and, ne, isNotNull, inArray } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 import { notifyOwnerNewOrder, notifyCustomerStatus } from "@/lib/whatsapp-sender";
-import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey } from "@/lib/cache/redis";
+import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey, customersCacheKey, deleteKey } from "@/lib/cache/redis";
+import { waitUntil } from "@/lib/execution-context";
 
-const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements } = schema;
+const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements, addresses } = schema;
 
 // ─── Create Product ──────────────────────────────────────────────
 export async function createProductHandler(request: Request, auth?: AuthContext): Promise<Response> {
@@ -441,16 +442,27 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
     }
   }
 
-  // ── Admin: comportamento existente com contagem por categoria ─────
+  // ── Admin: categoria list + contagem em 2 queries paralelas (era N+1) ──────
   try {
-    const storeCategories = await db.select().from(categories)
-      .where(eq(categories.storeId, storeId))
-      .orderBy(categories.position, categories.createdAt);
-    // Count products per category
-    const catsWithCount = await Promise.all(storeCategories.map(async (cat) => {
-      const count = await db.select({ count: sql<number>`count(*)` }).from(products).where(and(eq(products.storeId, storeId), eq(products.categoryId, cat.id)));
-      return { ...cat, productsCount: Number(count[0]?.count) || 0 };
+    const [storeCategories, countRows] = await Promise.all([
+      db.select().from(categories)
+        .where(eq(categories.storeId, storeId))
+        .orderBy(categories.position, categories.createdAt),
+      db.select({
+        categoryId: products.categoryId,
+        count: sql<number>`cast(count(*) as int)`,
+      })
+        .from(products)
+        .where(and(eq(products.storeId, storeId), isNotNull(products.categoryId)))
+        .groupBy(products.categoryId),
+    ]);
+
+    const countMap = new Map(countRows.map(r => [r.categoryId, r.count]));
+    const catsWithCount = storeCategories.map(cat => ({
+      ...cat,
+      productsCount: countMap.get(cat.id) ?? 0,
     }));
+
     return new Response(JSON.stringify({ categories: catsWithCount }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("List categories error:", error);
@@ -569,16 +581,18 @@ export async function createOrderHandler(request: Request): Promise<Response> {
   const body = await request.json() as {
     storeId: string;
     customerId?: string;
-    type: string; // delivery | pickup
-    paymentMethod: string; // pix | card | cash | mercadopago
-    installments?: number; // 1 = à vista; >1 = parcelado
-    cardFeeAmount?: string; // taxa da maquineta calculada (para conciliação)
+    cliente?: { nome: string; telefone: string };
+    type: string;
+    paymentMethod: string;
+    installments?: number;
+    cardFeeAmount?: string;
+    couponCode?: string; // código legível enviado pelo checkout público
+    couponId?: string;   // UUID (compatibilidade PDV/admin)
     items: { productId: string; productName: string; productEmoji?: string; productImage?: string; quantity: number; unitPrice: string; additionsTotal?: string; total: string; additionsSnapshot?: { name: string; price: string }[]; notes?: string }[];
     subtotal: string;
     deliveryFee?: string;
     discount?: string;
     total: string;
-    couponId?: string;
     notes?: string;
     addressSnapshot?: { street: string; number: string; neighborhood: string; city: string; state: string; zip: string; complement?: string };
     estimatedDelivery?: string;
@@ -592,81 +606,146 @@ export async function createOrderHandler(request: Request): Promise<Response> {
   const db = createDb(dbUrl);
 
   try {
-    // Get next order number for this store
-    const [maxOrder] = await db.select({ max: sql<number>`COALESCE(MAX(${orders.number}), 0)` }).from(orders).where(eq(orders.storeId, body.storeId));
+    // ── 1. Número sequencial por loja ─────────────────────────────────────────
+    const [maxOrder] = await db
+      .select({ max: sql<number>`COALESCE(MAX(${orders.number}), 0)` })
+      .from(orders)
+      .where(eq(orders.storeId, body.storeId));
     const nextNumber = (Number(maxOrder?.max) || 0) + 1;
 
+    // ── 2. Resolver couponId a partir do código legível enviado pelo checkout ─
+    // O checkout público envia `couponCode` (ex: "SAVE10"), não o UUID.
+    let resolvedCouponId: string | null = body.couponId || null;
+    if (!resolvedCouponId && body.couponCode) {
+      const [coupon] = await db
+        .select({ id: coupons.id })
+        .from(coupons)
+        .where(and(
+          eq(coupons.storeId, body.storeId),
+          eq(coupons.code, body.couponCode.toUpperCase()),
+          eq(coupons.active, true),
+        ))
+        .limit(1);
+      resolvedCouponId = coupon?.id ?? null;
+    }
+
+    // ── 3. Inserir pedido ─────────────────────────────────────────────────────
     const [order] = await db.insert(orders).values({
-      storeId: body.storeId,
-      customerId: body.customerId || null,
-      number: nextNumber,
-      status: "received",
-      type: body.type || "delivery",
-      paymentMethod: body.paymentMethod || null,
-      installments:  body.installments && body.installments > 1 ? body.installments : 1,
-      cardFeeAmount: body.cardFeeAmount || null,
-      paymentStatus: "pending",
-      subtotal: body.subtotal,
-      deliveryFee: body.deliveryFee || "0",
-      discount: body.discount || "0",
-      total: body.total,
-      couponId: body.couponId || null,
-      notes: body.notes || null,
-      addressSnapshot: body.addressSnapshot || null,
+      storeId:           body.storeId,
+      customerId:        body.customerId || null,
+      number:            nextNumber,
+      status:            "pending",
+      type:              body.type || "delivery",
+      paymentMethod:     body.paymentMethod || null,
+      installments:      body.installments && body.installments > 1 ? body.installments : 1,
+      cardFeeAmount:     body.cardFeeAmount || null,
+      paymentStatus:     "pending",
+      subtotal:          body.subtotal,
+      deliveryFee:       body.deliveryFee || "0",
+      discount:          body.discount || "0",
+      total:             body.total,
+      couponId:          resolvedCouponId,
+      notes:             body.notes || null,
+      addressSnapshot:   body.addressSnapshot || null,
       estimatedDelivery: body.estimatedDelivery ? new Date(body.estimatedDelivery) : null,
     }).returning();
 
-    // Insert order items
-    const itemsValues = body.items.map(item => ({
-      orderId: order.id,
-      productId: item.productId || null,
-      productName: item.productName,
-      productEmoji: item.productEmoji || null,
-      productImage: item.productImage || null,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      additionsTotal: item.additionsTotal || "0",
-      total: item.total,
-      additionsSnapshot: item.additionsSnapshot || null,
-      notes: item.notes || null,
-    }));
-    await db.insert(orderItems).values(itemsValues);
+    // ── 4. Itens + entrada na timeline — independentes, rodam em paralelo ─────
+    await Promise.all([
+      db.insert(orderItems).values(body.items.map(item => ({
+        orderId:           order.id,
+        productId:         item.productId || null,
+        productName:       item.productName,
+        productEmoji:      item.productEmoji || null,
+        productImage:      item.productImage || null,
+        quantity:          item.quantity,
+        unitPrice:         item.unitPrice,
+        additionsTotal:    item.additionsTotal || "0",
+        total:             item.total,
+        additionsSnapshot: item.additionsSnapshot || null,
+        notes:             item.notes || null,
+      }))),
+      db.insert(schema.orderTimeline).values({
+        orderId: order.id,
+        status:  "pending",
+        note:    "Pedido recebido — aguardando confirmação",
+      }),
+    ]);
 
-    // Insert timeline entry
-    await db.insert(schema.orderTimeline).values({
-      orderId: order.id,
-      status: "received",
-      note: "Pedido recebido",
-    });
+    // ══════════════════════════════════════════════════════════════════════════
+    // ACIMA: caminho crítico — falha retorna 500 antes de qualquer dado persistido.
+    // ABAIXO: enriquecimento — falhas são não-fatais; o pedido já existe no banco.
+    // ══════════════════════════════════════════════════════════════════════════
 
-    // ── Atualizar estoque + registrar movimentação (transação ACID) ──
-    // Se qualquer parte falhar → rollback automático; saldo nunca fica inconsistente.
-    await db.transaction(async (tx) => {
-      for (const item of body.items) {
-        if (!item.productId) continue;
+    // ── 5. Upsert do cliente + vínculo ao pedido ──────────────────────────────
+    // Roda de forma síncrona (precisa do customerId para a resposta), mas
+    // envolto em try/catch para não derrubar a confirmação ao cliente.
+    let resolvedCustomerId: string | null = body.customerId || null;
+    const rawPhone = body.cliente?.telefone?.replace(/\D/g, "") || null;
 
-        // Lê saldo atual antes de decrementar
-        const [currentProd] = await tx
-          .select({ stock: products.stock })
-          .from(products)
-          .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)))
+    if (rawPhone && !resolvedCustomerId) {
+      try {
+        const [existing] = await db
+          .select({ id: customers.id })
+          .from(customers)
+          .where(and(
+            eq(customers.storeId, body.storeId),
+            sql`regexp_replace(${customers.phone}, '\D', '', 'g') = ${rawPhone}`,
+          ))
           .limit(1);
 
-        if (!currentProd) continue;
+        if (existing) {
+          resolvedCustomerId = existing.id;
+        } else {
+          const [created] = await db
+            .insert(customers)
+            .values({
+              storeId: body.storeId,
+              name:    body.cliente?.nome?.trim() || "Cliente",
+              phone:   rawPhone,
+              status:  "ativo",
+              active:  true,
+            })
+            .returning({ id: customers.id });
+          resolvedCustomerId = created?.id ?? null;
+          waitUntil(request, deleteKey(customersCacheKey(body.storeId)));
+        }
 
-        const balanceBefore = currentProd.stock ?? 0;
-        const balanceAfter  = Math.max(0, balanceBefore - item.quantity);
+        if (resolvedCustomerId) {
+          await db.update(orders)
+            .set({ customerId: resolvedCustomerId })
+            .where(eq(orders.id, order.id));
+        }
+      } catch (custErr) {
+        console.error("[createOrder] customer upsert failed (non-fatal):", custErr);
+      }
+    }
 
-        // Decrementa saldo
-        await tx
-          .update(products)
-          .set({ stock: balanceAfter, updatedAt: new Date() })
-          .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)));
+    // ── 6. Estoque + cupom — background, nunca bloqueia a resposta ───────────
+    // Separado do caminho principal para que falhas de stock_movements ou de
+    // tabelas inexistentes não causem 500 ao cliente.
+    waitUntil(request, (async () => {
+      try {
+        for (const item of body.items) {
+          if (!item.productId) continue;
 
-        // Registra movimentação de saída por venda
-        await tx
-          .insert(stockMovements)
-          .values({
+          const [prod] = await db
+            .select({ stock: products.stock, trackStock: products.trackStock })
+            .from(products)
+            .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)))
+            .limit(1);
+
+          // Pula produtos sem rastreio de estoque
+          if (!prod?.trackStock) continue;
+
+          const balanceBefore = prod.stock ?? 0;
+          const balanceAfter  = Math.max(0, balanceBefore - item.quantity);
+
+          await db.update(products)
+            .set({ stock: balanceAfter, updatedAt: new Date() })
+            .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)));
+
+          await db.insert(stockMovements).values({
             storeId:      body.storeId,
             productId:    item.productId,
             productName:  item.productName,
@@ -677,63 +756,74 @@ export async function createOrderHandler(request: Request): Promise<Response> {
             origem:       `Venda — Pedido #${nextNumber}`,
             orderId:      order.id,
           });
-      }
-
-      // Atualiza uso do cupom dentro da mesma tx
-      if (body.couponId) {
-        await tx
-          .update(coupons)
-          .set({ usedCount: sql`${coupons.usedCount} + 1` })
-          .where(and(eq(coupons.id, body.couponId), eq(coupons.storeId, body.storeId)));
-      }
-    });
-
-    // ── WhatsApp notifications (fire-and-forget) ──────────────────
-    (async () => {
-      try {
-        const [storeRow] = await db.select({ name: stores.name, wppConfig: stores.wppConfig })
-          .from(stores).where(eq(stores.id, body.storeId)).limit(1);
-        if (!storeRow?.wppConfig) return;
-
-        let customerName = "Cliente";
-        let customerPhone: string | null = null;
-        if (body.customerId) {
-          const [cust] = await db.select({ name: customers.name, phone: customers.phone })
-            .from(customers).where(eq(customers.id, body.customerId)).limit(1);
-          if (cust) { customerName = cust.name; customerPhone = cust.phone ?? null; }
         }
 
-        const itemsSummary = body.items
-          .slice(0, 3)
-          .map((i) => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`)
-          .join("\n");
-
-        const params = {
-          storeId: body.storeId,
-          storeName: storeRow.name,
-          orderNumber: nextNumber,
-          customerName,
-          customerPhone,
-          total: body.total,
-          items: itemsSummary,
-          status: "received",
-          wppConfig: storeRow.wppConfig,
-        };
-
-        await notifyOwnerNewOrder(params);
-        await notifyCustomerStatus(params);
-      } catch (e) {
-        console.error("[wpp] new order notify error:", e);
+        // Incrementa uso do cupom (usa o UUID resolvido acima)
+        if (resolvedCouponId) {
+          await db.update(coupons)
+            .set({ usedCount: sql`${coupons.usedCount} + 1` })
+            .where(and(eq(coupons.id, resolvedCouponId), eq(coupons.storeId, body.storeId)));
+        }
+      } catch (err) {
+        console.error("[createOrder] stock/coupon background task failed:", err);
       }
-    })();
-    // ──────────────────────────────────────────────────────────────
+    })());
 
-    return new Response(JSON.stringify({ success: true, order: { id: order.id, number: nextNumber } }), {
-      status: 201, headers: { "content-type": "application/json" },
-    });
+    // ── 7. WhatsApp — background ──────────────────────────────────────────────
+    waitUntil(request, (async () => {
+      try {
+        const [storeRow, custRow] = await Promise.all([
+          db.select({ name: stores.name, wppConfig: stores.wppConfig })
+            .from(stores).where(eq(stores.id, body.storeId)).limit(1)
+            .then(r => r[0] ?? null),
+          resolvedCustomerId
+            ? db.select({ name: customers.name, phone: customers.phone })
+                .from(customers).where(eq(customers.id, resolvedCustomerId)).limit(1)
+                .then(r => r[0] ?? null)
+            : Promise.resolve(null),
+        ]);
+
+        if (!storeRow?.wppConfig) return;
+
+        await Promise.all([
+          notifyOwnerNewOrder({
+            storeId:      body.storeId,
+            storeName:    storeRow.name,
+            orderNumber:  nextNumber,
+            customerName: custRow?.name ?? "Cliente",
+            customerPhone: custRow?.phone ?? null,
+            total:        body.total,
+            items:        body.items.slice(0, 3).map(i => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`).join("\n"),
+            status:       "pending",
+            wppConfig:    storeRow.wppConfig,
+          }),
+          notifyCustomerStatus({
+            storeId:      body.storeId,
+            storeName:    storeRow.name,
+            orderNumber:  nextNumber,
+            customerName: custRow?.name ?? "Cliente",
+            customerPhone: custRow?.phone ?? null,
+            total:        body.total,
+            items:        body.items.slice(0, 3).map(i => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`).join("\n"),
+            status:       "pending",
+            wppConfig:    storeRow.wppConfig,
+          }),
+        ]);
+      } catch (err) {
+        console.error("[createOrder] WhatsApp notification failed:", err);
+      }
+    })());
+
+    // ── 8. Resposta — sempre atingida se order + items foram inseridos ─────────
+    return new Response(
+      JSON.stringify({ success: true, order: { id: order.id, number: nextNumber, customerId: resolvedCustomerId } }),
+      { status: 201, headers: { "content-type": "application/json" } },
+    );
   } catch (error) {
-    console.error("Create order error:", error);
-    return new Response(JSON.stringify({ error: "Failed to create order" }), { status: 500, headers: { "content-type": "application/json" } });
+    console.error("[createOrder] critical path error:", error);
+    return new Response(JSON.stringify({ error: "Failed to create order" }), {
+      status: 500, headers: { "content-type": "application/json" },
+    });
   }
 }
 
@@ -775,7 +865,7 @@ export async function listOrdersHandler(request: Request, auth?: AuthContext): P
 }
 
 // ─── Update Order Status ─────────────────────────────────────────
-const VALID_ORDER_STATUSES = ["received", "preparing", "ready", "delivering", "delivered", "cancelled"] as const;
+const VALID_ORDER_STATUSES = ["pending", "received", "preparing", "ready", "delivering", "delivered", "cancelled"] as const;
 type OrderStatus = typeof VALID_ORDER_STATUSES[number];
 
 export async function updateOrderStatusHandler(request: Request, auth?: AuthContext): Promise<Response> {
@@ -814,66 +904,70 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
       return new Response(JSON.stringify({ error: "Order not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
     }
 
-    // IDOR Fix: Include storeId in WHERE clause
-    await db.update(orders).set({ status: body.status, updatedAt: new Date() }).where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
-
-    // Insert timeline entry
     const statusLabels: Record<string, string> = {
-      received: "Pedido recebido",
-      preparing: "Preparando pedido",
-      ready: "Pedido pronto",
+      pending:    "Pedido recebido — aguardando confirmação",
+      received:   "Pedido confirmado pelo estabelecimento",
+      preparing:  "Preparando pedido",
+      ready:      "Pedido pronto",
       delivering: "Pedido saiu para entrega",
-      delivered: "Pedido entregue",
-      cancelled: "Pedido cancelado",
+      delivered:  "Pedido entregue",
+      cancelled:  "Pedido cancelado",
     };
 
-    await db.insert(schema.orderTimeline).values({
-      orderId: body.orderId,
-      status: body.status,
-      note: statusLabels[body.status] || body.status,
-    });
+    const now = new Date();
+    const statusPatch: Record<string, unknown> = {
+      status:    body.status,
+      updatedAt: now,
+      // Merge dos timestamps condicionais — 1 UPDATE ao invés de 3 sequenciais
+      ...(body.status === "delivered" && { deliveredAt: now }),
+      ...(body.status === "cancelled" && { cancelledAt: now }),
+    };
 
-    if (body.status === "delivered") {
-      await db.update(orders).set({ deliveredAt: new Date() }).where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
-    }
-    if (body.status === "cancelled") {
-      await db.update(orders).set({ cancelledAt: new Date() }).where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
-    }
+    // UPDATE de status + INSERT de timeline em paralelo (independentes)
+    await Promise.all([
+      db.update(orders)
+        .set(statusPatch)
+        .where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId))),
+      db.insert(schema.orderTimeline).values({
+        orderId: body.orderId,
+        status:  body.status,
+        note:    statusLabels[body.status] || body.status,
+      }),
+    ]);
 
-    // ── WhatsApp notification (fire-and-forget) ───────────────────
-    (async () => {
-      try {
-        const [storeRow] = await db.select({ name: stores.name, wppConfig: stores.wppConfig })
-          .from(stores).where(eq(stores.id, storeId)).limit(1);
-        if (!storeRow?.wppConfig?.notifyCustomer) return;
-
-        const orderWithCustomer = await db.query.orders.findFirst({
+    // ── WhatsApp notification — background via ctx.waitUntil ──────────────────
+    waitUntil(request, (async () => {
+      const [storeRow, orderWithCustomer] = await Promise.all([
+        db.select({ name: stores.name, wppConfig: stores.wppConfig })
+          .from(stores).where(eq(stores.id, storeId)).limit(1)
+          .then(r => r[0] ?? null),
+        db.query.orders.findFirst({
           where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)),
           with: { customer: true, items: true },
-        });
-        if (!orderWithCustomer?.customer?.phone) return;
+        }),
+      ]);
 
-        const itemsSummary = (orderWithCustomer.items ?? [])
-          .slice(0, 3)
-          .map((i) => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`)
-          .join("\n");
+      if (!storeRow?.wppConfig?.notifyCustomer) return;
+      if (!orderWithCustomer?.customer?.phone) return;
 
-        await notifyCustomerStatus({
-          storeId,
-          storeName: storeRow.name,
-          orderNumber: orderWithCustomer.number,
-          customerName: orderWithCustomer.customer.name,
-          customerPhone: orderWithCustomer.customer.phone,
-          total: orderWithCustomer.total,
-          items: itemsSummary,
-          status: body.status,
-          wppConfig: storeRow.wppConfig,
-        });
-      } catch (e) {
-        console.error("[wpp] status notify error:", e);
-      }
-    })();
-    // ──────────────────────────────────────────────────────────────
+      const itemsSummary = (orderWithCustomer.items ?? [])
+        .slice(0, 3)
+        .map(i => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`)
+        .join("\n");
+
+      await notifyCustomerStatus({
+        storeId,
+        storeName:     storeRow.name,
+        orderNumber:   orderWithCustomer.number,
+        customerName:  orderWithCustomer.customer.name,
+        customerPhone: orderWithCustomer.customer.phone,
+        total:         orderWithCustomer.total,
+        items:         itemsSummary,
+        status:        body.status,
+        wppConfig:     storeRow.wppConfig,
+      });
+    })());
+    // ─────────────────────────────────────────────────────────────────────────
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
@@ -957,45 +1051,51 @@ export async function listCustomersHandler(request: Request, auth?: AuthContext)
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    const storeCustomers = await db.select().from(customers).where(eq(customers.storeId, storeId));
+    // Cache-Aside: query N+1 cara (orders por cliente) — vale cachear por 5 min.
+    // Invalidada imediatamente após create/update de customer (deleteKey abaixo).
+    const customersWithStats = await getCached(
+      customersCacheKey(storeId),
+      async () => {
+        const storeCustomers = await db.select().from(customers).where(eq(customers.storeId, storeId));
 
-    const customersWithStats = await Promise.all(storeCustomers.map(async (c) => {
-      const customerOrders = await db.select().from(orders).where(and(eq(orders.storeId, storeId), eq(orders.customerId, c.id)));
-      const totalSpent = customerOrders.filter(o => o.status !== "cancelled").reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-      
-      // LGPD: Mask sensitive data in list view
-      const maskCPF = (cpf?: string | null) => {
-        if (!cpf || cpf.length < 11) return cpf;
-        return `***.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-**`;
-      };
-      
-      const maskPhone = (phone?: string | null) => {
-        if (!phone || phone.length < 8) return phone;
-        const cleaned = phone.replace(/\D/g, '');
-        if (cleaned.length < 10) return phone;
-        return `(${cleaned.slice(0, 2)}) *****-${cleaned.slice(-4)}`;
-      };
-      
-      const maskEmail = (email?: string | null) => {
-        if (!email || !email.includes('@')) return email;
-        const [local, domain] = email.split('@');
-        if (local.length <= 3) return `***@${domain}`;
-        return `${local.slice(0, 2)}***@${domain}`;
-      };
-      
-      return {
-        id: c.id,
-        name: c.name,
-        email: maskEmail(c.email),
-        phone: maskPhone(c.phone),
-        cpf: maskCPF(c.cpf),
-        isSupplier: c.isSupplier ?? false,
-        status: c.status ?? "ativo",
-        ordersCount: customerOrders.length,
-        totalSpent: `R$ ${totalSpent.toFixed(2).replace(".", ",")}`,
-        since: new Date(c.createdAt).toLocaleDateString("pt-BR", { month: "short", year: "numeric" }),
-      };
-    }));
+        return Promise.all(storeCustomers.map(async (c) => {
+          const customerOrders = await db.select().from(orders).where(and(eq(orders.storeId, storeId), eq(orders.customerId, c.id)));
+          const totalSpent = customerOrders.filter(o => o.status !== "cancelled").reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+
+          // LGPD: Mask sensitive data in list view
+          const maskCPF = (cpf?: string | null) => {
+            if (!cpf || cpf.length < 11) return cpf;
+            return `***.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-**`;
+          };
+          const maskPhone = (phone?: string | null) => {
+            if (!phone || phone.length < 8) return phone;
+            const cleaned = phone.replace(/\D/g, "");
+            if (cleaned.length < 10) return phone;
+            return `(${cleaned.slice(0, 2)}) *****-${cleaned.slice(-4)}`;
+          };
+          const maskEmail = (email?: string | null) => {
+            if (!email || !email.includes("@")) return email;
+            const [local, domain] = email.split("@");
+            if (local.length <= 3) return `***@${domain}`;
+            return `${local.slice(0, 2)}***@${domain}`;
+          };
+
+          return {
+            id: c.id,
+            name: c.name,
+            email: maskEmail(c.email),
+            phone: maskPhone(c.phone),
+            cpf: maskCPF(c.cpf),
+            isSupplier: c.isSupplier ?? false,
+            status: c.status ?? "ativo",
+            ordersCount: customerOrders.length,
+            totalSpent: `R$ ${totalSpent.toFixed(2).replace(".", ",")}`,
+            since: new Date(c.createdAt).toLocaleDateString("pt-BR", { month: "short", year: "numeric" }),
+          };
+        }));
+      },
+      { ttl: 300, storeId }, // 5 min — registra a chave no índice do store
+    );
 
     return new Response(JSON.stringify({ customers: customersWithStats }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
@@ -1068,6 +1168,10 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
       active: (body.status ?? "ativo") === "ativo",
     }).returning();
 
+    // Invalida cache da listagem do CRM em background — não bloqueia a resposta.
+    // Fail-safe: erros do Redis são absorvidos dentro de deleteKey().
+    waitUntil(request, deleteKey(customersCacheKey(storeId)));
+
     return new Response(JSON.stringify({ success: true, customer }), { status: 201, headers: { "content-type": "application/json" } });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -1132,6 +1236,9 @@ export async function updateCustomerHandler(request: Request, auth?: AuthContext
       .where(and(eq(customers.id, body.customerId), eq(customers.storeId, storeId)))
       .returning();
 
+    // Invalida cache da listagem do CRM em background — não bloqueia a resposta.
+    waitUntil(request, deleteKey(customersCacheKey(storeId)));
+
     return new Response(JSON.stringify({ success: true, customer }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -1186,5 +1293,81 @@ export async function validatePublicCouponHandler(request: Request): Promise<Res
   } catch (error) {
     console.error("Validate coupon error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── GET /api/customer/check?storeId=X&phone=Y ──────────────────────────────
+// Busca rápida por telefone para pré-preenchimento do checkout (fluxo público).
+// Normaliza o telefone dos dois lados (regexp_replace) para ignorar formatação.
+export async function checkCustomerByPhoneHandler(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const storeId = url.searchParams.get("storeId");
+  const rawPhone = url.searchParams.get("phone");
+
+  if (!storeId || !rawPhone) {
+    return new Response(JSON.stringify({ error: "storeId e phone são obrigatórios" }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  }
+
+  // Aceita tanto "5511999999999" quanto "(11) 99999-9999" — normaliza para só dígitos
+  const cleanPhone = rawPhone.replace(/\D/g, "");
+  if (cleanPhone.length < 10 || cleanPhone.length > 13) {
+    return new Response(JSON.stringify({ error: "Telefone inválido" }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  }
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    // Seleciona apenas os campos necessários para o checkout (evita CPF, email, avatarUrl, etc.)
+    const [customer] = await db
+      .select({
+        id:    customers.id,
+        name:  customers.name,
+        phone: customers.phone,
+      })
+      .from(customers)
+      .where(
+        and(
+          eq(customers.storeId, storeId),
+          sql`regexp_replace(${customers.phone}, '\D', '', 'g') = ${cleanPhone}`,
+        )
+      )
+      .limit(1);
+
+    if (!customer) {
+      return new Response(JSON.stringify({ exists: false }), {
+        status: 200, headers: { "content-type": "application/json" },
+      });
+    }
+
+    // Busca endereços do cliente — apenas campos de entrega
+    const customerAddresses = await db
+      .select({
+        id:           addresses.id,
+        label:        addresses.label,
+        street:       addresses.street,
+        number:       addresses.number,
+        complement:   addresses.complement,
+        neighborhood: addresses.neighborhood,
+        city:         addresses.city,
+        state:        addresses.state,
+        zip:          addresses.zip,
+        isDefault:    addresses.isDefault,
+      })
+      .from(addresses)
+      .where(eq(addresses.customerId, customer.id))
+      .orderBy(addresses.isDefault, addresses.createdAt);
+
+    return new Response(JSON.stringify({ exists: true, customer, addresses: customerAddresses }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  } catch (error) {
+    console.error("checkCustomerByPhone error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500, headers: { "content-type": "application/json" },
+    });
   }
 }

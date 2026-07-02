@@ -8,7 +8,7 @@ import { logoutHandler } from "./api/auth/logout-handler";
 import { forgotPasswordHandler } from "./api/auth/forgot-password-handler";
 import { resetPasswordHandler } from "./api/auth/reset-password-handler";
 import { resendVerificationHandler } from "./api/auth/resend-verification-handler";
-import { getStoreHandler, updateStoreHandler, getDashboardStatsHandler, getUserStoreHandler } from "./api/store-handler";
+import { getStoreHandler, updateStoreHandler, getDashboardStatsHandler, getUserStoreHandler, savePaymentConfigHandler } from "./api/store-handler";
 import {
   getStockStatsHandler,
   getReportsStatsHandler,
@@ -46,7 +46,9 @@ import {
   createCustomerHandler,
   updateCustomerHandler,
   validatePublicCouponHandler,
+  checkCustomerByPhoneHandler,
 } from "./api/crud-handler";
+import { loginPasswordlessHandler, getCustomerOrdersHandler } from "./api/customer-handler";
 import { saveBannersHandler } from "./api/banners-handler";
 import {
   listBalancesHandler,
@@ -100,6 +102,7 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/auth/resend-verification": resendVerificationHandler,
   "/api/auth/mock-login": mockLoginHandler,
   "/api/orders/create": createOrderHandler, // Público para checkout da loja
+  "/api/customer/login": loginPasswordlessHandler, // Login passwordless por telefone
   "/api/payments/mp-webhook": mpWebhookHandler, // Webhook do MercadoPago
   "/api/subscriptions/mp-webhook": subscriptionWebhookHandler, // Webhook de assinaturas
   "/api/subscriptions/pix-webhook": pixWebhookHandler, // Webhook PIX avulso
@@ -114,6 +117,8 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/products/list": listProductsHandler, // Público para vitrine
   "/api/categories/list": listCategoriesHandler, // Público para vitrine
   "/api/coupons/validate": validatePublicCouponHandler, // Público para vitrine
+  "/api/customer/check": checkCustomerByPhoneHandler,  // Pré-preenchimento checkout
+  "/api/customer/orders": getCustomerOrdersHandler,     // Central do cliente (auth própria via Bearer)
 };
 
 // Rotas protegidas (requerem autenticação)
@@ -147,6 +152,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/stock/adjustment": stockAdjustmentHandler,
   "/api/payments/mp-checkout": createMpCheckoutHandler,
   "/api/payments/mp-token": saveMpTokenHandler,
+  "/api/store/payment-config": savePaymentConfigHandler,
   "/api/banners/save": saveBannersHandler,
   "/api/whatsapp/connect": connectWhatsAppHandler,
   "/api/whatsapp/disconnect": disconnectWhatsAppHandler,

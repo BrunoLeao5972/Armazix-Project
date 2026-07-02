@@ -4,6 +4,7 @@ import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 import { handleApiRequest } from "./lib/api-handler";
 import { isCleanSlug } from "./lib/slug";
+import { bindCtx } from "./lib/execution-context";
 
 // ============================================================================
 // SECURITY HEADERS
@@ -174,6 +175,8 @@ export default {
 
     // Intercept API routes before TanStack Start
     if (url.pathname.startsWith("/api/")) {
+      // Bind the ExecutionContext so handlers can register ctx.waitUntil() tasks
+      bindCtx(request, ctx as { waitUntil(p: Promise<unknown>): void });
       const response = await handleApiRequest(request);
       return IS_DEV ? response : addSecurityHeaders(response);
     }

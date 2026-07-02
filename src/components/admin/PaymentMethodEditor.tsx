@@ -15,7 +15,7 @@ import { Badge }     from "@/components/ui/badge";
 import {
   Plus, Settings2, Trash2, Upload, X, Info, Loader2, ChevronRight,
   CreditCard, Banknote, QrCode, Smartphone, FileText,
-  CheckCircle2, AlertTriangle, SlidersHorizontal,
+  CheckCircle2, AlertTriangle, SlidersHorizontal, KeyRound, Eye, EyeOff,
 } from "lucide-react";
 import type {
   PaymentMethodConfig, EspeciePagamento, OperacaoCartao,
@@ -159,6 +159,9 @@ export function PaymentMethodEditor({
   const [localTaxas,      setLocalTaxas]      = useState<TaxaParcela[]>([]);
   const [previewValueStr, setPreviewValueStr] = useState("1000");
 
+  // ── Mercado Pago credentials state ─────────────────────────────────────────
+  const [showMpToken, setShowMpToken] = useState(false);
+
   // ── Sheet helpers ──────────────────────────────────────────────────────────
   const openEdit = useCallback((idx: number) => {
     const m = normalizeMethod(methods[idx]);
@@ -200,6 +203,18 @@ export function PaymentMethodEditor({
 
   const setLocal = (patch: Partial<PaymentMethodConfig>) =>
     setLocalMethod(prev => prev ? { ...prev, ...patch } : prev);
+
+  const setMpConfig = (patch: Partial<{ publicKey: string; accessToken: string }>) =>
+    setLocalMethod(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        config: {
+          ...prev.config,
+          mercadoPago: { publicKey: "", accessToken: "", ...prev.config?.mercadoPago, ...patch },
+        },
+      };
+    });
 
   // ── QR Code upload ─────────────────────────────────────────────────────────
   const handleQrUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -246,9 +261,10 @@ export function PaymentMethodEditor({
   };
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const isCartaoCredito = localMethod?.especie === "cartao" && localMethod?.operacao === "credito";
-  const isPix           = localMethod?.especie === "pix";
-  const showParcelas    = isCartaoCredito && localMethod?.parcelamentoAtivo;
+  const isCartaoCredito  = localMethod?.especie === "cartao" && localMethod?.operacao === "credito";
+  const isPix            = localMethod?.especie === "pix";
+  const isMercadoPago    = localMethod?.especie === "mercadopago";
+  const showParcelas     = isCartaoCredito && localMethod?.parcelamentoAtivo;
 
   const configuredCount = localMethod?.taxasPorParcela?.filter(t => t.taxa > 0).length ?? 0;
   const previewBase     = parseFloat(previewValueStr) || 1000;
@@ -494,17 +510,103 @@ export function PaymentMethodEditor({
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between h-10 px-3 rounded-xl border border-border/50 bg-muted/30">
-                      <span className="text-sm">Aceita pagamento na entrega</span>
-                      <Switch
-                        checked={localMethod.payAtDelivery !== false}
-                        onCheckedChange={v => setLocal({ payAtDelivery: v })}
-                      />
-                    </div>
+                    {!isMercadoPago && (
+                      <div className="flex items-center justify-between h-10 px-3 rounded-xl border border-border/50 bg-muted/30">
+                        <span className="text-sm">Aceita pagamento na entrega</span>
+                        <Switch
+                          checked={localMethod.payAtDelivery !== false}
+                          onCheckedChange={v => setLocal({ payAtDelivery: v })}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* ── Seção 3: Parcelamento (só cartão crédito) ─────────── */}
+                {/* ── Seção 3: Credenciais Mercado Pago ─────────────────── */}
+                {isMercadoPago && (
+                  <div>
+                    <SectionHeader icon={KeyRound} title="Credenciais Mercado Pago" />
+                    <div className="space-y-3">
+
+                      {/* Como funciona */}
+                      <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/60 dark:bg-indigo-950/20 p-3 space-y-2">
+                        <p className="text-xs font-semibold text-indigo-800 dark:text-indigo-300">Como funciona</p>
+                        <ul className="text-[11px] text-indigo-700 dark:text-indigo-400 space-y-1 list-disc list-inside">
+                          <li>O cliente clica em "Mercado Pago" e é redirecionado para o checkout deles</li>
+                          <li>Aceita PIX, cartão de crédito/débito e boleto automaticamente</li>
+                          <li>O pedido é confirmado via webhook após o pagamento</li>
+                        </ul>
+                      </div>
+
+                      {/* Passo a passo de credenciais */}
+                      <div className="rounded-xl border border-blue-200 dark:border-blue-800/60 bg-blue-50/60 dark:bg-blue-950/20 p-3 space-y-2">
+                        <p className="text-xs font-semibold text-blue-800 dark:text-blue-300">Como obter as credenciais</p>
+                        <ol className="space-y-1.5 text-blue-700 dark:text-blue-400 text-[11px] list-none">
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[9px]">1</span>
+                            Acesse <span className="font-mono mx-1 bg-blue-100 dark:bg-blue-900 px-1 rounded">mercadopago.com.br</span> e faça login
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[9px]">2</span>
+                            Vá em <strong>Sua conta → Ferramentas de integração → Credenciais</strong>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <span className="flex-shrink-0 w-4 h-4 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[9px]">3</span>
+                            Copie a <strong>Public Key</strong> e o <strong>Access Token</strong> de <strong>produção</strong>
+                          </li>
+                        </ol>
+                      </div>
+
+                      <div className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/20 p-3 text-[11px] text-amber-700 dark:text-amber-400 flex items-start gap-2">
+                        <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                        <p>Credenciais salvas criptografadas — nunca expostas ao cliente ou ao frontend.</p>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">Public Key</label>
+                        <Input
+                          value={localMethod.config?.mercadoPago?.publicKey ?? ""}
+                          onChange={e => setMpConfig({ publicKey: e.target.value })}
+                          placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          className="mt-1 h-10 rounded-xl font-mono text-xs"
+                          autoComplete="off"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                          Access Token
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/60 font-normal">
+                            <KeyRound className="w-2.5 h-2.5" /> privado
+                          </span>
+                        </label>
+                        <div className="relative mt-1">
+                          <Input
+                            type={showMpToken ? "text" : "password"}
+                            value={localMethod.config?.mercadoPago?.accessToken ?? ""}
+                            onChange={e => setMpConfig({ accessToken: e.target.value })}
+                            placeholder="APP_USR-0000000000000000-000000-xxxx…"
+                            className="h-10 rounded-xl font-mono text-xs pr-10"
+                            autoComplete="new-password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowMpToken(v => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            tabIndex={-1}
+                          >
+                            {showMpToken
+                              ? <EyeOff className="w-4 h-4" />
+                              : <Eye className="w-4 h-4" />
+                            }
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Seção 4: Parcelamento (só cartão crédito) ─────────── */}
                 {isCartaoCredito && (
                   <div>
                     <SectionHeader icon={CreditCard} title="Configuração de Parcelamento" />
@@ -636,7 +738,7 @@ export function PaymentMethodEditor({
                   </div>
                 )}
 
-                {/* ── Seção 4: PIX ──────────────────────────────────────── */}
+                {/* ── Seção 5: PIX ──────────────────────────────────────── */}
                 {isPix && (
                   <div>
                     <SectionHeader icon={QrCode} title="Configuração PIX" />

@@ -53,12 +53,13 @@ interface RecentOrder {
 }
 
 const statusConfig: Record<string, { label: string; color: string }> = {
-  received: { label: "Novo", color: "bg-blue-500/15 text-blue-600" },
-  preparing: { label: "Preparando", color: "bg-amber-500/15 text-amber-600" },
-  ready: { label: "Pronto", color: "bg-indigo-500/15 text-indigo-600" },
-  delivering: { label: "Em entrega", color: "bg-purple-500/15 text-purple-600" },
-  delivered: { label: "Entregue", color: "bg-primary/15 text-primary" },
-  cancelled: { label: "Cancelado", color: "bg-destructive/15 text-destructive" },
+  pending:    { label: "Em Análise",  color: "bg-amber-500/15 text-amber-600" },
+  received:   { label: "Novo",        color: "bg-blue-500/15 text-blue-600" },
+  preparing:  { label: "Preparando",  color: "bg-orange-500/15 text-orange-600" },
+  ready:      { label: "Pronto",      color: "bg-indigo-500/15 text-indigo-600" },
+  delivering: { label: "Em entrega",  color: "bg-purple-500/15 text-purple-600" },
+  delivered:  { label: "Entregue",    color: "bg-primary/15 text-primary" },
+  cancelled:  { label: "Cancelado",   color: "bg-destructive/15 text-destructive" },
 };
 
 function DashboardPage() {

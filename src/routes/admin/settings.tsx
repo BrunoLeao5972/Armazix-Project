@@ -14,7 +14,6 @@ import {
   HelpCircle,
   Loader2,
   Check,
-  Zap,
   Package,
   Smartphone,
   TrendingUp,
@@ -146,11 +145,6 @@ function SettingsPage() {
   const [hoursSuccess, setHoursSuccess] = useState(false);
 
   // Mercado Pago states
-  const [mpToken, setMpToken] = useState("");
-  const [mpPublicKey, setMpPublicKey] = useState("");
-  const [mpTokenSaving, setMpTokenSaving] = useState(false);
-  const [mpTokenSuccess, setMpTokenSuccess] = useState(false);
-  const [mpTokenError, setMpTokenError] = useState("");
 
   // Payment methods config
   const [paymentMethodsConfig, setPaymentMethodsConfig] = useState<PaymentMethodConfig[]>([
@@ -184,31 +178,6 @@ function SettingsPage() {
   const [pwSaving, setPwSaving] = useState(false);
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState("");
-
-  const saveMpToken = async () => {
-    if (!store || !mpToken) return;
-    setMpTokenSaving(true);
-    setMpTokenSuccess(false);
-    setMpTokenError("");
-    try {
-      const res = await api.post("/api/payments/mp-token", {
-        storeId: store.id,
-        accessToken: mpToken,
-        publicKey: mpPublicKey.trim() || undefined,
-      });
-      const data = await res.json() as { error?: string };
-      if (res.ok) {
-        setMpTokenSuccess(true);
-        setTimeout(() => setMpTokenSuccess(false), 3000);
-      } else {
-        setMpTokenError(data.error || "Erro ao salvar credenciais");
-      }
-    } catch {
-      setMpTokenError("Erro de conexão");
-    } finally {
-      setMpTokenSaving(false);
-    }
-  };
 
   const savePaymentConfig = async () => {
     if (!store) return;
@@ -268,7 +237,6 @@ function SettingsPage() {
         setWhatsappOrderEnabled(data.store.whatsappOrderEnabled === true);
         setWhatsappPhone(data.store.whatsappPhone || data.store.phone || "");
         setHighlightLowStock(data.store.highlightLowStock === true);
-        if (data.store.mpPublicKey) setMpPublicKey(data.store.mpPublicKey);
         if (data.store.paymentMethodsConfig?.length) setPaymentMethodsConfig(data.store.paymentMethodsConfig);
         if (data.store.deliveryPaymentEnabled !== undefined) setDeliveryPaymentEnabled(data.store.deliveryPaymentEnabled !== false);
         if (data.store.address) {
@@ -1038,103 +1006,6 @@ function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Card Mercado Pago credenciais */}
-          <Card className="rounded-2xl border-border/50 shadow-soft">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Zap className="w-4 h-4 text-blue-500" />
-                Mercado Pago — Credenciais
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-
-              {/* Guia visual */}
-              <div className="rounded-xl border border-blue-200 bg-blue-50/60 dark:bg-blue-950/30 dark:border-blue-900 p-4 space-y-3">
-                <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">Como encontrar suas credenciais</p>
-                <ol className="space-y-1.5 text-blue-700 dark:text-blue-400 text-xs list-none">
-                  <li className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[10px]">1</span>
-                    Acesse <span className="font-mono mx-1 bg-blue-100 dark:bg-blue-900 px-1 rounded">mercadopago.com.br</span> e faça login
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[10px]">2</span>
-                    Vá em <strong>Sua conta → Ferramentas de integração → Credenciais</strong>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center text-[10px]">3</span>
-                    Copie a <strong>Public Key</strong> e o <strong>Access Token</strong> de <strong>produção</strong>
-                  </li>
-                </ol>
-              </div>
-
-              {/* Public Key */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Label className="text-sm font-medium">Public Key</Label>
-                  <Badge variant="secondary" className="text-[10px] rounded-full">Pública — segura para o frontend</Badge>
-                </div>
-                <Input
-                  type="text"
-                  value={mpPublicKey}
-                  onChange={(e) => setMpPublicKey(e.target.value)}
-                  placeholder="APP_USR-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  className="h-11 rounded-xl font-mono text-sm"
-                />
-                <p className="text-[11px] text-muted-foreground">Começa com <code className="bg-muted px-1 rounded">APP_USR-</code> ou <code className="bg-muted px-1 rounded">TEST-</code></p>
-              </div>
-
-              <Separator />
-
-              {/* Access Token */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Label className="text-sm font-medium">Access Token</Label>
-                  <Badge className="text-[10px] rounded-full bg-amber-500/15 text-amber-700 border-0 hover:bg-amber-500/15">Privado — nunca compartilhe</Badge>
-                </div>
-                <Input
-                  type="password"
-                  value={mpToken}
-                  onChange={(e) => { setMpToken(e.target.value); setMpTokenError(""); }}
-                  placeholder="APP_USR-0000000000000000-000000-xxxxxxxx-000000000"
-                  className="h-11 rounded-xl font-mono text-sm"
-                />
-                <p className="text-[11px] text-muted-foreground">Armazenado de forma criptografada. Começa com <code className="bg-muted px-1 rounded">APP_USR-</code> (produção) ou <code className="bg-muted px-1 rounded">TEST-</code> (sandbox).</p>
-              </div>
-
-              {mpTokenError && (
-                <div className="flex items-center gap-2 text-sm text-destructive">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  {mpTokenError}
-                </div>
-              )}
-              {mpTokenSuccess && (
-                <div className="flex items-center gap-2 text-sm text-green-600">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Credenciais salvas com sucesso!
-                </div>
-              )}
-
-              <Button
-                onClick={saveMpToken}
-                disabled={mpTokenSaving || !mpToken}
-                className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
-              >
-                {mpTokenSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar credenciais"}
-              </Button>
-
-              <Separator />
-
-              <div className="space-y-1.5">
-                <p className="text-sm font-medium">Como funciona o Checkout Pro</p>
-                <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
-                  <li>O cliente escolhe "Mercado Pago" e é redirecionado para a página de pagamento</li>
-                  <li>Aceita PIX, cartão de crédito/débito e boleto automaticamente</li>
-                  <li>O pedido é confirmado via webhook após o pagamento</li>
-                  <li>Ative "Mercado Pago" na lista acima para disponibilizar no checkout</li>
-                </ul>
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
 
         <TabsContent value="perfil" className="mt-6 space-y-6">

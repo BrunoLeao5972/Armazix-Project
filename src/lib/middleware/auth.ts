@@ -13,8 +13,33 @@ export interface AuthContext {
   storeRole?: string;
 }
 
+// ─── Isolate-level session cache ─────────────────────────────────────────────
+// CF Workers are single-threaded per isolate but can handle multiple concurrent
+// requests in the same V8 context. When a client fires several parallel API
+// calls (e.g. dashboard load), each would re-derive the JWT independently.
+// This Map caches the decoded payload for SESSION_CACHE_TTL ms, eliminating
+// redundant crypto.subtle operations for rapid-fire identical tokens.
+//
+// Security: the cache is keyed by the full signed token string (not the payload),
+// so forged or mutated tokens always produce a cache miss and go through jwtVerify.
+
+const SESSION_CACHE_TTL = 10_000; // 10 seconds — short enough to be safe on key rotation
+const _sessionCache = new Map<string, { auth: AuthContext; exp: number }>();
+let   _lastPrune    = 0;
+
+function pruneIfStale(): void {
+  const now = Date.now();
+  // Prune at most once per second to avoid O(n) on every request
+  if (now - _lastPrune < 1_000) return;
+  _lastPrune = now;
+  for (const [k, v] of _sessionCache) {
+    if (v.exp < now) _sessionCache.delete(k);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export async function requireAuth(request: Request): Promise<AuthContext | Response> {
-  // Extrair token do cookie HttpOnly
   const cookieHeader = request.headers.get("cookie");
   const token = cookieHeader?.match(/armazix_token=([^;]+)/)?.[1];
 
@@ -25,21 +50,33 @@ export async function requireAuth(request: Request): Promise<AuthContext | Respo
     );
   }
 
+  // ── Cache hit ──────────────────────────────────────────────────────────────
+  pruneIfStale();
+  const cached = _sessionCache.get(token);
+  if (cached && cached.exp > Date.now()) {
+    return cached.auth;
+  }
+
+  // ── Cache miss — full crypto verification ──────────────────────────────────
   const payload = await verifyJWT(token, process.env.JWT_SECRET || "dev-secret-mock");
-  
+
   if (!payload) {
+    _sessionCache.delete(token); // evict stale/invalid entry if any
     return new Response(
       JSON.stringify({ error: "Token inválido ou expirado" }),
       { status: 401, headers: { "content-type": "application/json" } }
     );
   }
 
-  return {
-    userId: payload.userId,
-    email: payload.email,
-    role: payload.role,
-    storeId: payload.storeId, // From JWT — never from request
+  const auth: AuthContext = {
+    userId:  payload.userId,
+    email:   payload.email,
+    role:    payload.role,
+    storeId: payload.storeId,
   };
+
+  _sessionCache.set(token, { auth, exp: Date.now() + SESSION_CACHE_TTL });
+  return auth;
 }
 
 export async function requireStoreAccess(
@@ -47,8 +84,6 @@ export async function requireStoreAccess(
   auth: AuthContext,
   requestedStoreId: string
 ): Promise<AuthContext | Response> {
-  // SECURITY: requestedStoreId must ALWAYS equal auth.storeId (from JWT).
-  // Never allow the frontend to switch tenants via query/body.
   const jwtStoreId = auth.storeId;
 
   if (!jwtStoreId) {
@@ -64,8 +99,6 @@ export async function requireStoreAccess(
     );
   }
 
-  // If a requestedStoreId was provided (legacy path), it must match the JWT storeId.
-  // This prevents horizontal privilege escalation even if callers pass storeId from the request.
   if (requestedStoreId !== jwtStoreId) {
     logSecurityEvent({
       action: AuditActions.IDOR_ATTEMPT,
@@ -81,7 +114,6 @@ export async function requireStoreAccess(
     );
   }
 
-  // Mock user bypass — only in development
   if (process.env.NODE_ENV === "development" && auth.userId === "mock-user-001" && jwtStoreId === "mock-store-001") {
     return { ...auth, storeId: jwtStoreId, storeRole: "owner" };
   }
@@ -90,12 +122,10 @@ export async function requireStoreAccess(
   const db = createDb(dbUrl);
 
   try {
-    // Admin can access any store — but storeId must still be in JWT
     if (auth.role === "admin") {
       return { ...auth, storeId: jwtStoreId, storeRole: "admin" };
     }
 
-    // Verify user has explicit DB-level access to this store
     const access = await db.query.storeUsers.findFirst({
       where: and(
         eq(storeUsers.userId, auth.userId),
@@ -117,11 +147,7 @@ export async function requireStoreAccess(
       );
     }
 
-    return {
-      ...auth,
-      storeId: jwtStoreId,
-      storeRole: access.role,
-    };
+    return { ...auth, storeId: jwtStoreId, storeRole: access.role };
   } catch (error) {
     console.error("Store access check error:", error);
     return new Response(
@@ -132,8 +158,6 @@ export async function requireStoreAccess(
 }
 
 export function getStoreIdFromRequest(_request: Request): string | null {
-  // SECURITY: Do NOT read storeId from the request URL or body.
-  // storeId must come from the JWT (auth.storeId set by requireAuth).
-  // This function is intentionally a no-op to enforce the JWT-as-truth rule.
+  // SECURITY: storeId must come from the JWT — never from the request URL or body.
   return null;
 }

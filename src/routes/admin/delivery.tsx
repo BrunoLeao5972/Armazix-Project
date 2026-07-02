@@ -22,6 +22,7 @@ const STATUS_CONFIG: Record<string, {
   color: string;
   bgColor: string;
 }> = {
+  pending:    { label: "Em Análise",   icon: Loader2,       color: "text-amber-600",      bgColor: "bg-amber-500/15" },
   received:   { label: "Recebido",     icon: Clock,         color: "text-blue-600",       bgColor: "bg-blue-500/15" },
   preparing:  { label: "Em Preparo",   icon: ChefHat,       color: "text-amber-600",      bgColor: "bg-amber-500/15" },
   ready:      { label: "Pronto",       icon: PackageCheck,  color: "text-emerald-600",    bgColor: "bg-emerald-500/15" },
