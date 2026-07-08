@@ -26,6 +26,7 @@ import { Route as StoreCategoriesRouteImport } from './routes/store/categories'
 import { Route as StoreCartRouteImport } from './routes/store/cart'
 import { Route as StoreAccountRouteImport } from './routes/store/account'
 import { Route as LojaSlugOuIdRouteImport } from './routes/loja.$slugOuId'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminStockRouteImport } from './routes/admin/stock'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminReportsPreviewRouteImport } from './routes/admin/reports-preview'
@@ -127,6 +128,11 @@ const LojaSlugOuIdRoute = LojaSlugOuIdRouteImport.update({
   id: '/loja/$slugOuId',
   path: '/loja/$slugOuId',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminStockRoute = AdminStockRouteImport.update({
   id: '/stock',
@@ -232,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/admin/reports-preview': typeof AdminReportsPreviewRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/stock': typeof AdminStockRoute
+  '/admin/users': typeof AdminUsersRoute
   '/loja/$slugOuId': typeof LojaSlugOuIdRoute
   '/store/account': typeof StoreAccountRoute
   '/store/cart': typeof StoreCartRoute
@@ -265,6 +272,7 @@ export interface FileRoutesByTo {
   '/admin/reports-preview': typeof AdminReportsPreviewRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/stock': typeof AdminStockRoute
+  '/admin/users': typeof AdminUsersRoute
   '/loja/$slugOuId': typeof LojaSlugOuIdRoute
   '/store/account': typeof StoreAccountRoute
   '/store/cart': typeof StoreCartRoute
@@ -301,6 +309,7 @@ export interface FileRoutesById {
   '/admin/reports-preview': typeof AdminReportsPreviewRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/stock': typeof AdminStockRoute
+  '/admin/users': typeof AdminUsersRoute
   '/loja/$slugOuId': typeof LojaSlugOuIdRoute
   '/store/account': typeof StoreAccountRoute
   '/store/cart': typeof StoreCartRoute
@@ -338,6 +347,7 @@ export interface FileRouteTypes {
     | '/admin/reports-preview'
     | '/admin/settings'
     | '/admin/stock'
+    | '/admin/users'
     | '/loja/$slugOuId'
     | '/store/account'
     | '/store/cart'
@@ -371,6 +381,7 @@ export interface FileRouteTypes {
     | '/admin/reports-preview'
     | '/admin/settings'
     | '/admin/stock'
+    | '/admin/users'
     | '/loja/$slugOuId'
     | '/store/account'
     | '/store/cart'
@@ -406,6 +417,7 @@ export interface FileRouteTypes {
     | '/admin/reports-preview'
     | '/admin/settings'
     | '/admin/stock'
+    | '/admin/users'
     | '/loja/$slugOuId'
     | '/store/account'
     | '/store/cart'
@@ -552,6 +564,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LojaSlugOuIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/stock': {
       id: '/admin/stock'
       path: '/stock'
@@ -682,6 +701,7 @@ interface AdminRouteChildren {
   AdminReportsPreviewRoute: typeof AdminReportsPreviewRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminStockRoute: typeof AdminStockRoute
+  AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -700,6 +720,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminReportsPreviewRoute: AdminReportsPreviewRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminStockRoute: AdminStockRoute,
+  AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

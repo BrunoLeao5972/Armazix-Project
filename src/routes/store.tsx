@@ -123,14 +123,32 @@ function CustomerOrdersSheet({
   onLogin: (token: string, name: string) => void;
   onLogout: () => void;
 }) {
+  // ── Login state ──────────────────────────────────────────────────────────
+  const [loginStep, setLoginStep] = useState<"phone" | "code">("phone");
   const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [resendCountdown, setResendCountdown] = useState(0);
+
+  // ── Orders state ─────────────────────────────────────────────────────────
   const [orders, setOrders] = useState<CustomerOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const hasActiveRef = useRef(false);
   const onLogoutRef = useRef(onLogout);
   useEffect(() => { onLogoutRef.current = onLogout; }, [onLogout]);
+
+  // Reset login state when sheet closes
+  useEffect(() => {
+    if (!open) { setLoginStep("phone"); setOtp(""); setLoginError(""); }
+  }, [open]);
+
+  // Countdown tick for "Reenviar código"
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+    const id = setTimeout(() => setResendCountdown(c => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [resendCountdown]);
 
   const fetchOrders = useCallback(async () => {
     if (!token) return;
@@ -162,22 +180,24 @@ function CustomerOrdersSheet({
     return () => clearInterval(id);
   }, [open, token, fetchOrders]);
 
-  const handleLogin = async () => {
+  // ── Step 1: solicita código OTP ──────────────────────────────────────────
+  const handleRequestCode = async () => {
     const digits = phone.replace(/\D/g, "");
     if (digits.length < 10) { setLoginError("Digite um telefone válido"); return; }
     setLoginLoading(true);
     setLoginError("");
     try {
-      const res = await fetch("/api/customer/login", {
+      const res = await fetch("/api/customer/auth/request-code", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ phone: digits, storeId }),
       });
-      const data = await res.json() as { token?: string; customer?: { name: string }; error?: string };
-      if (res.ok && data.token) {
-        onLogin(data.token, data.customer?.name || "");
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (res.ok && data.success) {
+        setLoginStep("code");
+        setResendCountdown(60);
       } else {
-        setLoginError(data.error || "Erro ao entrar");
+        setLoginError(data.error || "Erro ao enviar código");
       }
     } catch {
       setLoginError("Erro de conexão. Tente novamente.");
@@ -185,6 +205,49 @@ function CustomerOrdersSheet({
       setLoginLoading(false);
     }
   };
+
+  // ── Step 2: valida OTP e autentica ───────────────────────────────────────
+  const handleVerifyCode = useCallback(async (codeOverride?: string) => {
+    const code = (codeOverride ?? otp).replace(/\D/g, "");
+    if (code.length !== 6) { setLoginError("Digite os 6 dígitos do código"); return; }
+    setLoginLoading(true);
+    setLoginError("");
+    try {
+      const res = await fetch("/api/customer/auth/verify-code", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: phone.replace(/\D/g, ""), storeId, code }),
+      });
+      const data = await res.json() as { token?: string; customer?: { name: string }; error?: string };
+      if (res.ok && data.token) {
+        onLogin(data.token, data.customer?.name || "");
+      } else {
+        setLoginError(data.error || "Código inválido");
+        setOtp("");
+      }
+    } catch {
+      setLoginError("Erro de conexão. Tente novamente.");
+    } finally {
+      setLoginLoading(false);
+    }
+  }, [otp, phone, storeId, onLogin]);
+
+  // Auto-submit ao digitar o 6º dígito
+  useEffect(() => {
+    if (otp.length === 6 && !loginLoading) handleVerifyCode(otp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp]);
+
+  const maskedPhone = (() => {
+    const d = phone.replace(/\D/g, "");
+    if (d.length >= 10) {
+      const area = d.slice(0, 2);
+      const num = d.slice(2);
+      const masked = num.slice(0, 3) + "***" + num.slice(-2);
+      return `(${area}) ${masked}`;
+    }
+    return phone;
+  })();
 
   const fmtDate = (iso: string) => {
     try {
@@ -214,33 +277,99 @@ function CustomerOrdersSheet({
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center shadow-sm">
               <Phone className="w-8 h-8 text-primary" />
             </div>
-            <div className="text-center">
-              <p className="font-semibold text-base">Identifique-se</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Digite seu WhatsApp para ver o histórico de pedidos
-              </p>
-            </div>
-            <div className="w-full max-w-xs space-y-3">
-              <input
-                value={phone}
-                onChange={e => setPhone(maskPhoneStore(e.target.value))}
-                onKeyDown={e => e.key === "Enter" && handleLogin()}
-                placeholder="(11) 99999-9999"
-                inputMode="numeric"
-                autoFocus
-                className="w-full h-12 rounded-2xl border border-border/50 bg-background px-4 text-center text-lg font-semibold tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
-              />
-              {loginError && (
-                <p className="text-sm text-destructive text-center">{loginError}</p>
-              )}
-              <Button
-                className="w-full h-12 rounded-2xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
-                onClick={handleLogin}
-                disabled={loginLoading}
-              >
-                {loginLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Ver meus pedidos"}
-              </Button>
-            </div>
+
+            {loginStep === "phone" ? (
+              /* ── Etapa 1: telefone ── */
+              <>
+                <div className="text-center">
+                  <p className="font-semibold text-base">Identifique-se</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Digite seu WhatsApp para ver o histórico de pedidos
+                  </p>
+                </div>
+                <div className="w-full max-w-xs space-y-3">
+                  <input
+                    value={phone}
+                    onChange={e => setPhone(maskPhoneStore(e.target.value))}
+                    onKeyDown={e => e.key === "Enter" && handleRequestCode()}
+                    placeholder="(11) 99999-9999"
+                    inputMode="numeric"
+                    autoFocus
+                    className="w-full h-12 rounded-2xl border border-border/50 bg-background px-4 text-center text-lg font-semibold tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
+                  />
+                  {loginError && (
+                    <p className="text-sm text-destructive text-center">{loginError}</p>
+                  )}
+                  <Button
+                    className="w-full h-12 rounded-2xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
+                    onClick={handleRequestCode}
+                    disabled={loginLoading}
+                  >
+                    {loginLoading
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : "Receber código por WhatsApp"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              /* ── Etapa 2: código OTP ── */
+              <>
+                <div className="text-center">
+                  <p className="font-semibold text-base">Código enviado!</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Enviamos um código para o WhatsApp
+                  </p>
+                  <p className="text-sm font-semibold text-foreground mt-0.5">{maskedPhone}</p>
+                </div>
+                <div className="w-full max-w-xs space-y-4">
+                  <input
+                    value={otp}
+                    onChange={e => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    onKeyDown={e => e.key === "Enter" && handleVerifyCode()}
+                    placeholder="000000"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    autoFocus
+                    maxLength={6}
+                    className="w-full h-14 rounded-2xl border border-border/50 bg-background px-4 text-center text-2xl font-bold tracking-[0.5em] focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
+                  />
+                  {loginError && (
+                    <p className="text-sm text-destructive text-center">{loginError}</p>
+                  )}
+                  <Button
+                    className="w-full h-12 rounded-2xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
+                    onClick={() => handleVerifyCode()}
+                    disabled={loginLoading || otp.replace(/\D/g, "").length < 6}
+                  >
+                    {loginLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar"}
+                  </Button>
+                  <div className="text-center">
+                    {resendCountdown > 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Reenviar em{" "}
+                        <span className="tabular-nums font-semibold text-foreground">
+                          {resendCountdown}s
+                        </span>
+                      </p>
+                    ) : (
+                      <button
+                        onClick={handleRequestCode}
+                        disabled={loginLoading}
+                        className="text-xs text-primary hover:underline disabled:opacity-50 transition-opacity"
+                      >
+                        Reenviar código
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setLoginStep("phone"); setOtp(""); setLoginError(""); }}
+                    className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors text-center"
+                  >
+                    ← Trocar número
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           /* ── Orders list ── */

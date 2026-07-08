@@ -38,6 +38,7 @@ import {
   CheckCircle2,
   ExternalLink,
   Fingerprint,
+  Truck,
 } from "lucide-react";
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,9 +49,20 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ImageUploadCrop } from "@/components/armazix/ImageUploadCrop";
 import { PaymentMethodEditor } from "@/components/admin/PaymentMethodEditor";
 import type { PaymentMethodConfig } from "@/lib/store-context";
+import { DeliveryPricingConfig, DEFAULT_DELIVERY_MODEL_CONFIG } from "@/components/admin/DeliveryPricingConfig";
+import type { DeliveryModelConfig } from "@/components/admin/DeliveryPricingConfig";
+import { PermissionsTab } from "@/components/admin/PermissionsTab";
 
 export const Route = createFileRoute("/admin/settings")({
   component: SettingsPage,
@@ -79,6 +91,15 @@ interface StoreData {
   whatsappOrderEnabled?: boolean;
   whatsappPhone?: string;
   highlightLowStock?: boolean;
+  freeShippingAbove?: string | null;
+  deliveryConfig?: {
+    modalidade?: string;
+    consumirNoLocal?: boolean;
+    entregaUber?: boolean;
+    modeloCobranca?: string;
+    taxaEntregaCliente?: string;
+    modelConfig?: DeliveryModelConfig;
+  };
   address?: {
     street: string;
     number: string;
@@ -108,7 +129,6 @@ function SettingsPage() {
   const [primaryColor, setPrimaryColor] = useState("#00C853");
   const [logoUrl, setLogoUrl] = useState("");
   const [bannerImages, setBannerImages] = useState<string[]>([]);
-  const [bannersSaving, setBannersSaving] = useState(false);
   const [backgroundColor, setBackgroundColor] = useState("#ffffff");
   const [textColor, setTextColor] = useState("#0f172a");
   const [showPrice, setShowPrice] = useState(true);
@@ -171,6 +191,18 @@ function SettingsPage() {
   const [vitrineSuccess, setVitrineSuccess] = useState(false);
   const [vitrineError, setVitrineError] = useState("");
 
+  // Delivery config states
+  const [modalidadeEntrega, setModalidadeEntrega] = useState("todas");
+  const [consumirNoLocal, setConsumirNoLocal] = useState(false);
+  const [entregaUber, setEntregaUber] = useState(false);
+  const [freeShippingEnabled, setFreeShippingEnabled] = useState(false);
+  const [freeShippingAbove, setFreeShippingAbove] = useState("0.00");
+  const [modeloCobranca, setModeloCobranca] = useState("fixa");
+  const [deliveryModelConfig, setDeliveryModelConfig] = useState<DeliveryModelConfig>(DEFAULT_DELIVERY_MODEL_CONFIG);
+  const [deliverySaving, setDeliverySaving] = useState(false);
+  const [deliverySuccess, setDeliverySuccess] = useState(false);
+  const [deliveryError, setDeliveryError] = useState("");
+
   // Password states
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -178,6 +210,38 @@ function SettingsPage() {
   const [pwSaving, setPwSaving] = useState(false);
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState("");
+
+  const handleSaveDelivery = async () => {
+    if (!store) return;
+    setDeliverySaving(true);
+    setDeliverySuccess(false);
+    setDeliveryError("");
+    try {
+      const res = await api.post("/api/store/update", {
+        storeId: store.id,
+        deliveryConfig: {
+          modalidade: modalidadeEntrega,
+          consumirNoLocal,
+          entregaUber,
+          modeloCobranca,
+          taxaEntregaCliente: deliveryModelConfig.fixa.taxaCliente,
+          modelConfig: deliveryModelConfig,
+        },
+        freeShippingAbove: freeShippingEnabled ? freeShippingAbove : null,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setDeliverySuccess(true);
+        setTimeout(() => setDeliverySuccess(false), 3000);
+      } else {
+        setDeliveryError((data as { error?: string }).error || "Erro ao salvar");
+      }
+    } catch {
+      setDeliveryError("Erro de conexão");
+    } finally {
+      setDeliverySaving(false);
+    }
+  };
 
   const savePaymentConfig = async () => {
     if (!store) return;
@@ -223,14 +287,14 @@ function SettingsPage() {
         setEmail(data.store.email || "");
         setPrimaryColor(data.store.primaryColor || "#00C853");
         setLogoUrl(data.store.logoUrl || "");
-        if (data.store.banners && data.store.banners.length > 0) {
-          setBannerImages(
-            [...data.store.banners]
-              .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-              .map((b: { imageUrl: string | null }) => b.imageUrl || "")
-              .filter(Boolean)
-          );
-        }
+        // Sempre atualiza bannerImages do DB (mesmo array vazio limpa o estado)
+        setBannerImages(
+          (data.store.banners ?? [])
+            .slice()
+            .sort((a: { position: number | null }, b: { position: number | null }) => (a.position ?? 0) - (b.position ?? 0))
+            .map((b: { imageUrl: string | null }) => b.imageUrl || "")
+            .filter(Boolean)
+        );
         setBackgroundColor(data.store.backgroundColor || "#ffffff");
         setTextColor(data.store.textColor || "#0f172a");
         setShowPrice(data.store.showPrice !== false);
@@ -239,6 +303,26 @@ function SettingsPage() {
         setHighlightLowStock(data.store.highlightLowStock === true);
         if (data.store.paymentMethodsConfig?.length) setPaymentMethodsConfig(data.store.paymentMethodsConfig);
         if (data.store.deliveryPaymentEnabled !== undefined) setDeliveryPaymentEnabled(data.store.deliveryPaymentEnabled !== false);
+        if (data.store.freeShippingAbove != null) {
+          setFreeShippingEnabled(true);
+          setFreeShippingAbove(data.store.freeShippingAbove);
+        }
+        if (data.store.deliveryConfig) {
+          const dc = data.store.deliveryConfig;
+          if (dc.modalidade) setModalidadeEntrega(dc.modalidade);
+          setConsumirNoLocal(dc.consumirNoLocal === true);
+          setEntregaUber(dc.entregaUber === true);
+          if (dc.modeloCobranca) setModeloCobranca(dc.modeloCobranca);
+          if (dc.modelConfig) {
+            setDeliveryModelConfig({
+              ...DEFAULT_DELIVERY_MODEL_CONFIG,
+              ...dc.modelConfig,
+              fixa: dc.modelConfig.fixa ?? (dc.taxaEntregaCliente ? { taxaCliente: dc.taxaEntregaCliente } : DEFAULT_DELIVERY_MODEL_CONFIG.fixa),
+            });
+          } else if (dc.taxaEntregaCliente) {
+            setDeliveryModelConfig((prev) => ({ ...prev, fixa: { taxaCliente: dc.taxaEntregaCliente! } }));
+          }
+        }
         if (data.store.address) {
           setAddressCep(data.store.address.zip || "");
           setAddressStreet(data.store.address.street || "");
@@ -300,6 +384,20 @@ function SettingsPage() {
     }
   };
 
+  // Re-fetcha apenas os banners do DB para confirmar persistência sem resetar os outros estados do formulário
+  const reloadBanners = async (storeId: string) => {
+    try {
+      const res = await fetch(`/api/store/get?id=${storeId}`);
+      if (!res.ok) return;
+      const data = await res.json() as { store?: { banners?: Array<{ imageUrl: string | null; position: number | null }> } };
+      const loaded = (data.store?.banners ?? [])
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+        .map(b => b.imageUrl || "")
+        .filter(Boolean);
+      setBannerImages(loaded);
+    } catch {}
+  };
+
   const handleSaveVitrine = async () => {
     if (!store) return;
     setVitrineSaving(true);
@@ -310,25 +408,44 @@ function SettingsPage() {
         setVitrineError("Informe o WhatsApp para ativar o pedido via WhatsApp");
         return;
       }
-      const res = await api.post("/api/store/update", {
-        storeId: store.id,
-        logoUrl: logoUrl || null,
-        primaryColor,
-        backgroundColor,
-        textColor,
-        showPrice,
-        whatsappOrderEnabled,
-        whatsappPhone: whatsappOrderEnabled ? whatsappPhone : null,
-        highlightLowStock,
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setVitrineSuccess(true);
-        setStore(data.store);
-        setTimeout(() => setVitrineSuccess(false), 3000);
-      } else {
-        setVitrineError(data.error || "Erro ao salvar vitrine");
+
+      // Salva configurações da loja + banners em paralelo
+      const [storeRes, bannerRes] = await Promise.all([
+        api.post("/api/store/update", {
+          storeId: store.id,
+          logoUrl: logoUrl || null,
+          primaryColor,
+          backgroundColor,
+          textColor,
+          showPrice,
+          whatsappOrderEnabled,
+          whatsappPhone: whatsappOrderEnabled ? whatsappPhone : null,
+          highlightLowStock,
+        }),
+        api.post("/api/banners/save", {
+          imageUrls: bannerImages.filter(Boolean),
+        }),
+      ]);
+
+      if (!storeRes.ok) {
+        const d = await storeRes.json() as { error?: string };
+        setVitrineError(d.error || "Erro ao salvar personalização");
+        return;
       }
+
+      if (!bannerRes.ok) {
+        const d = await bannerRes.json() as { error?: string };
+        setVitrineError(d.error || "Erro ao salvar banners");
+      }
+
+      setVitrineSuccess(true);
+      setTimeout(() => setVitrineSuccess(false), 3000);
+
+      // Re-fetcha os banners do DB para confirmar que persistiram
+      await reloadBanners(store.id);
+
+      const storeData = await storeRes.json() as { store?: typeof store };
+      if (storeData.store) setStore(storeData.store);
     } catch {
       setVitrineError("Erro de conexão");
     } finally {
@@ -463,12 +580,14 @@ function SettingsPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         {/* Scrollable tab bar: fills full width on desktop, scrolls on mobile */}
-        <div className="w-full overflow-x-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
+        <div className="w-full overflow-x-auto rounded-2xl [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
           <TabsList className="flex w-full min-w-max h-auto justify-start items-center gap-1 p-1.5 rounded-2xl">
             <TabsTrigger value="geral"          className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Geral</TabsTrigger>
             <TabsTrigger value="horarios"       className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Horários</TabsTrigger>
             <TabsTrigger value="personalizacao" className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Personalização</TabsTrigger>
             <TabsTrigger value="pagamentos"     className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Formas de pagamento</TabsTrigger>
+            <TabsTrigger value="entrega"        className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Entrega</TabsTrigger>
+            <TabsTrigger value="permissoes"     className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Permissões</TabsTrigger>
             <TabsTrigger value="perfil"         className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Perfil</TabsTrigger>
             <TabsTrigger value="planos"         className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Planos</TabsTrigger>
             <TabsTrigger value="auditoria"      className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Auditoria</TabsTrigger>
@@ -818,10 +937,7 @@ function SettingsPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="text-sm font-medium">Banners da loja</div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">{bannerImages.length}/5 banners</span>
-                      {bannersSaving && <span className="text-xs text-muted-foreground">Salvando...</span>}
-                    </div>
+                    <span className="text-xs text-muted-foreground">{bannerImages.length}/5 banners</span>
                   </div>
 
                   <div className="space-y-4">
@@ -866,34 +982,9 @@ function SettingsPage() {
                     </button>
                   )}
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 rounded-xl text-sm"
-                      disabled={bannersSaving}
-                      onClick={async () => {
-                        if (!store) return;
-                        setBannersSaving(true);
-                        try {
-                          const res = await api.post("/api/banners/save", {
-                            imageUrls: bannerImages.filter(Boolean),
-                          });
-                          if (!res.ok) {
-                            const d = await res.json() as { error?: string };
-                            setVitrineError(d.error || "Erro ao salvar banners");
-                          }
-                        } catch {
-                          setVitrineError("Erro de conexão ao salvar banners");
-                        } finally {
-                          setBannersSaving(false);
-                        }
-                      }}
-                    >
-                      {bannersSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar banners"}
-                    </Button>
-                    <span className="text-xs text-muted-foreground">Banners são salvos separadamente das demais configurações</span>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Banners são salvos junto com "Salvar personalização".
+                  </p>
                 </div>
               </div>
 
@@ -1006,6 +1097,174 @@ function SettingsPage() {
             </CardContent>
           </Card>
 
+        </TabsContent>
+
+        {/* ── Entrega ──────────────────────────────────────────────────── */}
+        <TabsContent value="entrega" className="mt-6 space-y-6">
+
+          {/* Seção 1: Tipo de Entrega */}
+          <Card className="rounded-2xl border-border/50 shadow-soft">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Truck className="w-4 h-4" />
+                Tipo de Entrega
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-2">
+                <Label>Modalidade</Label>
+                <Select value={modalidadeEntrega} onValueChange={setModalidadeEntrega}>
+                  <SelectTrigger className="h-11 rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas (Delivery + Retirada no Local)</SelectItem>
+                    <SelectItem value="delivery">Apenas Delivery</SelectItem>
+                    <SelectItem value="retirada">Apenas Retirada</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Consumir no Local */}
+              <label className="flex items-start gap-4 p-4 rounded-xl border border-border/50 cursor-pointer hover:border-primary/30 hover:bg-secondary/20 transition-colors select-none">
+                <Checkbox
+                  checked={consumirNoLocal}
+                  onCheckedChange={(v) => setConsumirNoLocal(v === true)}
+                  className="mt-0.5 shrink-0"
+                />
+                <div>
+                  <div className="text-sm font-medium">Habilitar Consumir no Local</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    A opção 'Consumir no Local' aparecerá no app para o cliente.
+                  </div>
+                </div>
+              </label>
+
+              {/* Entrega pelo Uber */}
+              <label className="flex items-start gap-4 p-4 rounded-xl border border-border/50 cursor-pointer hover:border-primary/30 hover:bg-secondary/20 transition-colors select-none">
+                <Checkbox
+                  checked={entregaUber}
+                  onCheckedChange={(v) => setEntregaUber(v === true)}
+                  className="mt-0.5 shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium">Entrega pelo Uber</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black tracking-tight bg-black text-white dark:bg-white dark:text-black">
+                      UBER
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                    Mostra no app que a entrega será feita pelo Uber. A taxa de entrega do cliente fica zerada e os valores serão contabilizados fora da plataforma.
+                  </div>
+                </div>
+              </label>
+
+              {/* Frete Grátis acima de */}
+              <div
+                className={[
+                  "rounded-xl border transition-colors",
+                  freeShippingEnabled
+                    ? "border-primary/30 bg-primary/5"
+                    : "border-border/50 hover:border-primary/30 hover:bg-secondary/20",
+                ].join(" ")}
+              >
+                <label className="flex items-start gap-4 p-4 cursor-pointer select-none">
+                  <Checkbox
+                    checked={freeShippingEnabled}
+                    onCheckedChange={(v) => setFreeShippingEnabled(v === true)}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">Frete grátis acima de</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Pedidos acima do valor definido não cobram taxa de entrega.
+                    </div>
+                  </div>
+                </label>
+                {freeShippingEnabled && (
+                  <div className="px-4 pb-4">
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 text-sm text-muted-foreground select-none">R$</span>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={freeShippingAbove}
+                        onChange={(e) => setFreeShippingAbove(e.target.value)}
+                        placeholder="0.00"
+                        className="h-11 rounded-xl pl-9"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Seção 2: Modelo de Cobrança */}
+          <Card className="rounded-2xl border-border/50 shadow-soft">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
+                Modelo de Cobrança
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Selecione como a taxa de entrega será calculada.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {DELIVERY_MODELS.map((m) => (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => setModeloCobranca(m.key)}
+                    className={[
+                      "flex flex-col items-start gap-1 p-4 rounded-xl border text-left transition-all",
+                      modeloCobranca === m.key
+                        ? "border-primary bg-primary/5 ring-1 ring-primary/20 shadow-glow"
+                        : "border-border/50 bg-background hover:border-primary/30 hover:bg-secondary/20",
+                    ].join(" ")}
+                  >
+                    <span className="text-sm font-semibold">{m.label}</span>
+                    <span className="text-xs text-muted-foreground">{m.sub}</span>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Seção 3: Configuração do modelo selecionado */}
+          <Card className="rounded-2xl border-border/50 shadow-soft animate-in fade-in duration-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">
+                {DELIVERY_MODELS.find((m) => m.key === modeloCobranca)?.label ?? "Configuração"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DeliveryPricingConfig
+                model={modeloCobranca}
+                value={deliveryModelConfig}
+                onChange={setDeliveryModelConfig}
+              />
+            </CardContent>
+          </Card>
+
+          {deliveryError && <p className="text-sm text-destructive">{deliveryError}</p>}
+          {deliverySuccess && (
+            <div className="flex items-center gap-2 text-sm text-green-600">
+              <Check className="w-4 h-4" />
+              Configurações de entrega salvas com sucesso!
+            </div>
+          )}
+          <Button
+            onClick={handleSaveDelivery}
+            disabled={deliverySaving}
+            className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
+          >
+            {deliverySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar configurações"}
+          </Button>
         </TabsContent>
 
         <TabsContent value="perfil" className="mt-6 space-y-6">
@@ -1198,6 +1457,10 @@ function SettingsPage() {
 
         <TabsContent value="auditoria" className="mt-6">
           <AuditoriaSection />
+        </TabsContent>
+
+        <TabsContent value="permissoes" className="mt-6">
+          <PermissionsTab />
         </TabsContent>
       </Tabs>
 
@@ -1653,6 +1916,15 @@ const PLANS_DEF: PlanDef[] = [
 
 const PDV_PRICE_CONST = 50;
 const fmtPrice = (v: number) => v.toFixed(2).replace(".", ",");
+
+const DELIVERY_MODELS = [
+  { key: "fixa",       label: "Taxa Fixa",    sub: "Valor único"          },
+  { key: "dinamica",   label: "Dinâmica",     sub: "Por distância"        },
+  { key: "bairro",     label: "Por Bairro",   sub: "Área específica"      },
+  { key: "raio",       label: "Raio",         sub: "Círculos no mapa"     },
+  { key: "matriz",     label: "Matriz",       sub: "Faixas de distância"  },
+  { key: "bairroFixo", label: "Bairro Fixo",  sub: "Valor por bairro"     },
+] as const;
 
 // ─── Plans Section Component ─────────────────────────────────────
 function PlansSection() {

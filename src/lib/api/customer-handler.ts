@@ -1,6 +1,9 @@
 import { createDb, schema } from "@/lib/db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { signCustomerJWT, verifyCustomerJWT } from "@/lib/auth";
+import { waitUntil } from "@/lib/execution-context";
+import { storeOtp, consumeOtp } from "@/lib/cache/redis";
+import { sendWppText, normalizePhone } from "@/lib/whatsapp-sender";
 
 const { customers, orders, orderItems } = schema;
 
@@ -96,6 +99,93 @@ export async function getCustomerOrdersHandler(request: Request): Promise<Respon
     return json({ orders: orderList.map(o => ({ ...o, items: byOrder[o.id] ?? [] })) }, 200);
   } catch (err) {
     console.error("[customer/orders]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── POST /api/customer/auth/request-code ────────────────────────────────────
+// Gera e armazena um OTP de 6 dígitos no Redis (TTL 5min) e envia via WhatsApp.
+export async function requestOtpHandler(request: Request): Promise<Response> {
+  const body = await request.json() as { phone?: string; storeId?: string };
+  const rawPhone = body.phone?.replace(/\D/g, "");
+  const storeId = body.storeId;
+
+  if (!rawPhone || rawPhone.length < 10 || !storeId) {
+    return json({ error: "Telefone e loja obrigatórios" }, 400);
+  }
+
+  const phone = normalizePhone(rawPhone);
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+
+  const saved = await storeOtp(storeId, phone, code);
+  if (!saved) {
+    return json({ error: "Serviço de autenticação indisponível. Tente novamente." }, 503);
+  }
+
+  const text = `🔐 *Armazix*: Seu código de verificação é *${code}*.\n\nVálido por 5 minutos. Não compartilhe com ninguém.`;
+  waitUntil(request, sendWppText(storeId, phone, text));
+
+  return json({ success: true }, 200);
+}
+
+// ─── POST /api/customer/auth/verify-code ─────────────────────────────────────
+// Valida o OTP, faz upsert do cliente e retorna um JWT de 30 dias.
+export async function verifyOtpHandler(request: Request): Promise<Response> {
+  const body = await request.json() as { phone?: string; storeId?: string; code?: string; name?: string };
+  const rawPhone = body.phone?.replace(/\D/g, "");
+  const storeId = body.storeId;
+  const code = body.code?.trim();
+
+  if (!rawPhone || rawPhone.length < 10 || !storeId || !code) {
+    return json({ error: "Telefone, loja e código obrigatórios" }, 400);
+  }
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return json({ error: "Configuração inválida" }, 500);
+
+  const phone = normalizePhone(rawPhone);
+
+  const valid = await consumeOtp(storeId, phone, code);
+  if (!valid) {
+    return json({ error: "Código inválido ou expirado" }, 401);
+  }
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    // Lookup cliente existente pelo telefone normalizado
+    const [existing] = await db
+      .select({ id: customers.id, name: customers.name })
+      .from(customers)
+      .where(and(
+        eq(customers.storeId, storeId),
+        sql`regexp_replace(${customers.phone}, '\D', '', 'g') = ${rawPhone}`,
+      ))
+      .limit(1);
+
+    let customerId: string;
+    let customerName: string;
+
+    if (existing) {
+      customerId = existing.id;
+      customerName = existing.name ?? "";
+    } else {
+      // Cria cliente com o nome fornecido (opcional) ou telefone como fallback
+      const name = body.name?.trim() || rawPhone;
+      const [created] = await db
+        .insert(customers)
+        .values({ storeId, phone: rawPhone, name })
+        .returning({ id: customers.id, name: customers.name });
+
+      if (!created) return json({ error: "Erro ao criar conta" }, 500);
+      customerId = created.id;
+      customerName = created.name ?? "";
+    }
+
+    const token = await signCustomerJWT({ customerId, storeId }, secret);
+    return json({ token, customer: { id: customerId, name: customerName } }, 200);
+  } catch (err) {
+    console.error("[customer/verify-code]", err);
     return json({ error: "Internal server error" }, 500);
   }
 }

@@ -91,6 +91,8 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
       zip: string;
       complement?: string;
     };
+    deliveryConfig?: Record<string, unknown>;
+    freeShippingAbove?: string | null;
   };
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -135,6 +137,8 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
         whatsappPhone: body.whatsappPhone,
         highlightLowStock: body.highlightLowStock,
         address: body.address,
+        ...(body.deliveryConfig !== undefined ? { deliveryConfig: body.deliveryConfig } : {}),
+        ...(body.freeShippingAbove !== undefined ? { freeShippingAbove: body.freeShippingAbove } : {}),
         updatedAt: new Date(),
       })
       .where(eq(stores.id, storeId))

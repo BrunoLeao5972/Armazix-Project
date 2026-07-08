@@ -48,8 +48,21 @@ import {
   validatePublicCouponHandler,
   checkCustomerByPhoneHandler,
 } from "./api/crud-handler";
-import { loginPasswordlessHandler, getCustomerOrdersHandler } from "./api/customer-handler";
+import { loginPasswordlessHandler, getCustomerOrdersHandler, requestOtpHandler, verifyOtpHandler } from "./api/customer-handler";
 import { saveBannersHandler } from "./api/banners-handler";
+import {
+  listStoreUsersHandler,
+  createStoreUserHandler,
+  updateStoreUserHandler,
+  adminChangeUserPasswordHandler,
+  toggleStoreUserStatusHandler,
+} from "./api/user-handler";
+import {
+  listRoleProfilesHandler,
+  saveRoleProfileHandler,
+  createRoleProfileHandler,
+  deleteRoleProfileHandler,
+} from "./api/permissions-handler";
 import {
   listBalancesHandler,
   createBalanceHandler,
@@ -102,7 +115,9 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/auth/resend-verification": resendVerificationHandler,
   "/api/auth/mock-login": mockLoginHandler,
   "/api/orders/create": createOrderHandler, // Público para checkout da loja
-  "/api/customer/login": loginPasswordlessHandler, // Login passwordless por telefone
+  "/api/customer/login": loginPasswordlessHandler,             // Login passwordless por telefone
+  "/api/customer/auth/request-code": requestOtpHandler,       // Solicita OTP via WhatsApp
+  "/api/customer/auth/verify-code": verifyOtpHandler,         // Valida OTP e retorna JWT
   "/api/payments/mp-webhook": mpWebhookHandler, // Webhook do MercadoPago
   "/api/subscriptions/mp-webhook": subscriptionWebhookHandler, // Webhook de assinaturas
   "/api/subscriptions/pix-webhook": pixWebhookHandler, // Webhook PIX avulso
@@ -164,6 +179,13 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/pdv/caixa/movimentar":  movimentarCaixaHandler,
   "/api/pdv/mesas/salvar":      salvarMesasHandler,
   "/api/pdv/finalizar-venda":   finalizarVendaPdvHandler,
+  "/api/store-users/create":          createStoreUserHandler,
+  "/api/store-users/update":          updateStoreUserHandler,
+  "/api/store-users/change-password": adminChangeUserPasswordHandler,
+  "/api/store-users/toggle-status":   toggleStoreUserStatusHandler,
+  "/api/role-profiles/save":          saveRoleProfileHandler,
+  "/api/role-profiles/create":        createRoleProfileHandler,
+  "/api/role-profiles/delete":        deleteRoleProfileHandler,
 };
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
@@ -190,6 +212,8 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/pdv/caixa/sessoes":      listCaixaSessoesHandler,
   "/api/pdv/mesas":              listMesasHandler,
   "/api/pdv/financeiro":         listFinanceiroLancamentosHandler,
+  "/api/store-users/list":       listStoreUsersHandler,
+  "/api/role-profiles/list":     listRoleProfilesHandler,
 };
 
 // Mapeamento de rotas para configurações de rate limit

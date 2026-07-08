@@ -109,6 +109,41 @@ export function customersCacheKey(storeId: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// OTP — armazena/verifica/consome códigos temporários por telefone+store.
+// TTL de 5 min; consumeOtp faz get+del em sequência (suficiente para OTP
+// de baixo tráfego — race condition resulta em "código já usado", não em
+// acesso indevido).
+// ─────────────────────────────────────────────────────────────────────
+const OTP_TTL = 300; // 5 minutos
+
+export async function storeOtp(storeId: string, phone: string, code: string): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return false;
+  try {
+    await redis.set(`otp:${storeId}:${phone}`, code, { ex: OTP_TTL });
+    return true;
+  } catch (err) {
+    console.error("[redis] storeOtp error:", (err as Error).message);
+    return false;
+  }
+}
+
+export async function consumeOtp(storeId: string, phone: string, code: string): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return false;
+  try {
+    const key    = `otp:${storeId}:${phone}`;
+    const stored = await redis.get<string>(key);
+    if (!stored || stored !== code) return false;
+    await redis.del(key);
+    return true;
+  } catch (err) {
+    console.error("[redis] consumeOtp error:", (err as Error).message);
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Deleção direcionada de uma ou mais chaves. Fail-safe: erros do Redis
 // são logados mas nunca propagados, garantindo que mutations no DB
 // retornem normalmente mesmo que o Redis esteja indisponível.

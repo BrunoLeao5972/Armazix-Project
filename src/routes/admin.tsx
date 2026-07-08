@@ -26,6 +26,7 @@ import {
   X,
   LogOut,
   MessageCircle,
+  UserCog,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +61,7 @@ const NAV_ITEMS = [
   { label: "Delivery", icon: Truck, href: "/admin/delivery" },
   { label: "Cupons", icon: Ticket, href: "/admin/coupons" },
   { label: "Relatórios", icon: BarChart3, href: "/admin/reports" },
+  { label: "Usuários", icon: UserCog, href: "/admin/users" },
   { label: "Configurações", icon: Settings, href: "/admin/settings" },
 ];
 

@@ -10,6 +10,7 @@ import {
   jsonb,
   index,
   primaryKey,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -55,6 +56,7 @@ export const stores = pgTable("stores", {
   /** Modelo v2 de configuração de pagamento — substitui paymentMethodsConfig + deliveryPaymentEnabled */
   paymentConfig: jsonb("payment_config").$type<import("@/lib/store-context").PaymentConfig>(),
   wppConfig: jsonb("wpp_config").$type<import("@/lib/whatsapp-sender").WppConfig>(),
+  deliveryConfig: jsonb("delivery_config").$type<Record<string, unknown>>(),
   plan: varchar("plan", { length: 20 }).default("free"),
   planStatus: varchar("plan_status", { length: 20 }).default("active"),
   planExpiresAt: timestamp("plan_expires_at"),
@@ -80,6 +82,7 @@ export const storesRelations = relations(stores, ({ many }) => ({
   coupons: many(coupons),
   banners: many(banners),
   storeUsers: many(storeUsers),
+  roleProfiles: many(roleProfiles),
 }));
 
 // ─── BANNERS ────────────────────────────────────────────────────
@@ -409,6 +412,7 @@ export const users = pgTable("users", {
   name: varchar("name", { length: 120 }).notNull(),
   avatarUrl: text("avatar_url"),
   phone: varchar("phone", { length: 20 }),
+  cpf: varchar("cpf", { length: 14 }),
   role: varchar("role", { length: 20 }).notNull().default("merchant"), // merchant | customer | admin
   emailVerified: boolean("email_verified").default(false),
   active: boolean("active").default(true),
@@ -691,4 +695,23 @@ export const financeiroLancamentosRelations = relations(financeiroLancamentos, (
   store:  one(stores,       { fields: [financeiroLancamentos.storeId],  references: [stores.id] }),
   order:  one(orders,       { fields: [financeiroLancamentos.orderId],  references: [orders.id] }),
   sessao: one(caixaSessoes, { fields: [financeiroLancamentos.sessaoId], references: [caixaSessoes.id] }),
+}));
+
+// ─── ROLE PROFILES (Perfis de Acesso RBAC) ──────────────────────
+export const roleProfiles = pgTable("role_profiles", {
+  id:          uuid("id").defaultRandom().primaryKey(),
+  storeId:     uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  name:        varchar("name", { length: 60 }).notNull(),
+  slug:        varchar("slug", { length: 40 }).notNull(),
+  isSystem:    boolean("is_system").notNull().default(false),
+  permissions: jsonb("permissions").$type<Record<string, boolean>>().notNull().default({}),
+  createdAt:   timestamp("created_at").defaultNow().notNull(),
+  updatedAt:   timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("role_profiles_store_slug_idx").on(t.storeId, t.slug),
+  index("role_profiles_store_idx").on(t.storeId),
+]);
+
+export const roleProfilesRelations = relations(roleProfiles, ({ one }) => ({
+  store: one(stores, { fields: [roleProfiles.storeId], references: [stores.id] }),
 }));
