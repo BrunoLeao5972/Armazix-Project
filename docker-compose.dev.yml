@@ -1,0 +1,90 @@
+# ── Armazix — Ambiente de Desenvolvimento Local ──────────────────────────────
+#
+# Sobe serviços auxiliares para desenvolvimento sem depender de SaaS externos.
+# O Workers em si roda via "npm run deploy:dev" (wrangler dev) ou "npm run dev".
+#
+# Uso:
+#   docker compose -f docker-compose.dev.yml up -d
+#   docker compose -f docker-compose.dev.yml down
+#
+# ── Nota sobre Redis ──────────────────────────────────────────────────────────
+# O Armazix usa @upstash/redis, que se comunica via HTTP REST API.
+# Em produção isso aponta para o Upstash (https://upstash.com — free tier).
+# Para desenvolvimento local, temos duas opções:
+#
+# OPÇÃO A (recomendada): Conta gratuita no Upstash
+#   Crie um banco em upstash.com → copie REST URL e REST TOKEN → cole no .env
+#   → Cache e rate limiting funcionam 100% igual à produção.
+#
+# OPÇÃO B (offline): Redis local + adaptador HTTP (este arquivo)
+#   Usamos a imagem `redis/redis-stack` + `hiett/skerrick` como proxy REST.
+#   Configure .env com:
+#     UPSTASH_REDIS_REST_URL=http://localhost:8079
+#     UPSTASH_REDIS_REST_TOKEN=local-dev-token
+#
+# Se nenhum Redis for configurado, o sistema funciona normalmente fazendo
+# todas as queries diretamente no banco (fail-safe by design).
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Redis (armazenamento) ──────────────────────────────────────────────────
+  redis:
+    image: redis/redis-stack-server:latest
+    container_name: armazix-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"   # Redis protocolo nativo (para redis-cli / redis-insight)
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --requirepass local-dev-password
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "local-dev-password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Upstash REST Proxy ─────────────────────────────────────────────────────
+  # Expõe o Redis local via HTTP com o mesmo protocolo REST do Upstash.
+  # Permite usar @upstash/redis apontando para localhost.
+  redis-rest:
+    image: hiett/skerrick:latest
+    container_name: armazix-redis-rest
+    restart: unless-stopped
+    ports:
+      - "8079:8079"
+    environment:
+      SKERRICK_REDIS_CONNECTION_URL: "redis://:local-dev-password@redis:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ── Redis Insight (GUI opcional) ───────────────────────────────────────────
+  # Acesse em http://localhost:5540 para inspecionar chaves, TTLs, etc.
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: armazix-redis-insight
+    restart: unless-stopped
+    ports:
+      - "5540:5540"
+    volumes:
+      - redis_insight_data:/data
+    profiles:
+      - gui   # Inicia apenas com: docker compose --profile gui up -d
+
+volumes:
+  redis_data:
+  redis_insight_data:
+
+# ── Configuração local (.env) com a OPÇÃO B ───────────────────────────────────
+# Adicione ao seu .env local:
+#
+#   UPSTASH_REDIS_REST_URL=http://localhost:8079
+#   UPSTASH_REDIS_REST_TOKEN=local-dev-token
+#
+# Para inspecionar o Redis via CLI:
+#   docker exec -it armazix-redis redis-cli -a local-dev-password

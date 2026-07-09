@@ -81,7 +81,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     }).returning();
 
     // Invalida cache da vitrine — novo produto deve aparecer imediatamente
-    await invalidateStoreCache(storeId);
+    waitUntil(request, invalidateStoreCache(storeId));
 
     return new Response(JSON.stringify({ success: true, product }), {
       status: 201, headers: { "content-type": "application/json" },
@@ -287,7 +287,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
       .returning();
 
     // Invalida cache — alterações de preço/promo/estoque devem refletir imediatamente
-    await invalidateStoreCache(storeId);
+    waitUntil(request, invalidateStoreCache(storeId));
 
     return new Response(JSON.stringify({ success: true, product: updated }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -335,7 +335,7 @@ export async function deleteProductHandler(request: Request, auth?: AuthContext)
     await db.update(products).set({ active: false, updatedAt: new Date() }).where(and(eq(products.id, body.productId), eq(products.storeId, storeId)));
 
     // Invalida cache — produto removido não deve aparecer na vitrine
-    await invalidateStoreCache(storeId);
+    waitUntil(request, invalidateStoreCache(storeId));
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
@@ -360,7 +360,7 @@ export async function createCategoryHandler(request: Request, auth?: AuthContext
   }
 
   const body = await request.json() as {
-    name: string; slug?: string; emoji?: string; color?: string; imageUrl?: string;
+    name: string; slug?: string; emoji?: string; icon?: string; color?: string; imageUrl?: string;
     parentId?: string; position?: number; active?: boolean; showInMenu?: boolean;
     featured?: boolean; analytic?: boolean; metaTitle?: string; metaDescription?: string;
   };
@@ -379,6 +379,7 @@ export async function createCategoryHandler(request: Request, auth?: AuthContext
       name: body.name,
       slug: autoSlug,
       emoji: body.emoji || null,
+      icon: body.icon || null,
       color: body.color || null,
       imageUrl: body.imageUrl || null,
       parentId: body.parentId || null,
@@ -391,7 +392,7 @@ export async function createCategoryHandler(request: Request, auth?: AuthContext
       metaDescription: body.metaDescription || null,
     }).returning();
 
-    await invalidateStoreCache(storeId);
+    waitUntil(request, invalidateStoreCache(storeId));
 
     return new Response(JSON.stringify({ success: true, category: cat }), { status: 201, headers: { "content-type": "application/json" } });
   } catch (error) {
@@ -421,6 +422,7 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
               id:       categories.id,
               name:     categories.name,
               emoji:    categories.emoji,
+              icon:     categories.icon,
               imageUrl: categories.imageUrl,
               parentId: categories.parentId,
               position: categories.position,
@@ -484,7 +486,7 @@ export async function updateCategoryHandler(request: Request, auth?: AuthContext
   }
 
   const body = await request.json() as {
-    categoryId: string; name?: string; slug?: string; emoji?: string; color?: string;
+    categoryId: string; name?: string; slug?: string; emoji?: string; icon?: string; color?: string;
     imageUrl?: string; parentId?: string | null; position?: number; active?: boolean;
     showInMenu?: boolean; featured?: boolean; analytic?: boolean; metaTitle?: string; metaDescription?: string;
   };
@@ -507,6 +509,7 @@ export async function updateCategoryHandler(request: Request, auth?: AuthContext
       patch.slug = body.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     }
     if (body.emoji !== undefined) patch.emoji = body.emoji || null;
+    if (body.icon !== undefined) patch.icon = body.icon || null;
     if (body.color !== undefined) patch.color = body.color || null;
     if (body.imageUrl !== undefined) patch.imageUrl = body.imageUrl || null;
     if (body.parentId !== undefined) patch.parentId = body.parentId || null;
@@ -520,7 +523,7 @@ export async function updateCategoryHandler(request: Request, auth?: AuthContext
 
     const [updated] = await db.update(categories).set(patch).where(and(eq(categories.id, body.categoryId), eq(categories.storeId, storeId))).returning();
 
-    await invalidateStoreCache(storeId);
+    waitUntil(request, invalidateStoreCache(storeId));
 
     return new Response(JSON.stringify({ success: true, category: updated }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
@@ -567,7 +570,7 @@ export async function deleteCategoryHandler(request: Request, auth?: AuthContext
     // IDOR Fix: Include storeId in WHERE clause
     await db.delete(categories).where(and(eq(categories.id, body.categoryId), eq(categories.storeId, storeId)));
 
-    await invalidateStoreCache(storeId);
+    waitUntil(request, invalidateStoreCache(storeId));
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
@@ -785,28 +788,49 @@ export async function createOrderHandler(request: Request): Promise<Response> {
 
         if (!storeRow?.wppConfig) return;
 
+        const itemsOwner = body.items.map(i => `• ${i.productName} ×${i.quantity}`).join("\n");
+        const itemsCustomer = body.items.slice(0, 3).map(i => `• ${i.productName} ×${i.quantity}`).join("\n");
+
+        const entregaText = (() => {
+          const t = (body.type ?? "").toLowerCase();
+          if (t === "pickup" || t === "retirada") return "Retirada no local";
+          if (t === "local" || t === "dine-in" || t === "mesa") return "Consumo no local";
+          if (body.addressSnapshot) {
+            const a = body.addressSnapshot;
+            const parts = [`${a.street}, ${a.number}`, a.neighborhood, `${a.city}/${a.state}`, `CEP: ${a.zip}`];
+            if (a.complement) parts.splice(2, 0, a.complement);
+            return `Delivery\n📍 ${parts.filter(Boolean).join(" — ")}`;
+          }
+          return "Delivery";
+        })();
+
         await Promise.all([
           notifyOwnerNewOrder({
-            storeId:      body.storeId,
-            storeName:    storeRow.name,
-            orderNumber:  nextNumber,
-            customerName: custRow?.name ?? "Cliente",
+            storeId:       body.storeId,
+            storeName:     storeRow.name,
+            orderNumber:   nextNumber,
+            customerName:  custRow?.name ?? "Cliente",
             customerPhone: custRow?.phone ?? null,
-            total:        body.total,
-            items:        body.items.slice(0, 3).map(i => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`).join("\n"),
-            status:       "pending",
-            wppConfig:    storeRow.wppConfig,
+            total:         body.total,
+            subtotal:      body.subtotal,
+            deliveryFee:   body.deliveryFee ?? null,
+            paymentMethod: body.paymentMethod ?? null,
+            entrega:       entregaText,
+            items:         itemsOwner,
+            status:        "pending",
+            wppConfig:     storeRow.wppConfig,
           }),
           notifyCustomerStatus({
-            storeId:      body.storeId,
-            storeName:    storeRow.name,
-            orderNumber:  nextNumber,
-            customerName: custRow?.name ?? "Cliente",
+            storeId:       body.storeId,
+            storeName:     storeRow.name,
+            orderNumber:   nextNumber,
+            customerName:  custRow?.name ?? "Cliente",
             customerPhone: custRow?.phone ?? null,
-            total:        body.total,
-            items:        body.items.slice(0, 3).map(i => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`).join("\n"),
-            status:       "pending",
-            wppConfig:    storeRow.wppConfig,
+            total:         body.total,
+            paymentMethod: body.paymentMethod ?? null,
+            items:         itemsCustomer,
+            status:        "pending",
+            wppConfig:     storeRow.wppConfig,
           }),
         ]);
       } catch (err) {
@@ -938,7 +962,7 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     // ── WhatsApp notification — background via ctx.waitUntil ──────────────────
     waitUntil(request, (async () => {
       const [storeRow, orderWithCustomer] = await Promise.all([
-        db.select({ name: stores.name, wppConfig: stores.wppConfig })
+        db.select({ name: stores.name, wppConfig: stores.wppConfig, address: stores.address })
           .from(stores).where(eq(stores.id, storeId)).limit(1)
           .then(r => r[0] ?? null),
         db.query.orders.findFirst({
@@ -952,7 +976,7 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
 
       const itemsSummary = (orderWithCustomer.items ?? [])
         .slice(0, 3)
-        .map(i => `${i.productEmoji || "📦"} ${i.productName} x${i.quantity}`)
+        .map(i => `• ${i.productName} ×${i.quantity}`)
         .join("\n");
 
       await notifyCustomerStatus({
@@ -962,6 +986,8 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
         customerName:  orderWithCustomer.customer.name,
         customerPhone: orderWithCustomer.customer.phone,
         total:         orderWithCustomer.total,
+        paymentMethod: orderWithCustomer.paymentMethod ?? null,
+        storeAddress:  storeRow.address ?? null,
         items:         itemsSummary,
         status:        body.status,
         wppConfig:     storeRow.wppConfig,

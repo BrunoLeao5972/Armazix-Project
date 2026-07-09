@@ -6,6 +6,7 @@ import {
   Eye, EyeOff, Pencil, Trash2, Star, Menu, X, Globe, CheckCircle2,
   FolderOpen, Package, ArrowUpDown, Filter, BarChart2,
 } from "lucide-react";
+import { CategoryIcon, CATEGORY_ICONS } from "@/lib/category-icons";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -35,6 +37,7 @@ interface Category {
   name: string;
   slug: string | null;
   emoji: string | null;
+  icon: string | null;
   color: string | null;
   imageUrl: string | null;
   parentId: string | null;
@@ -52,6 +55,7 @@ interface Category {
 const EMPTY_FORM = {
   name: "", slug: "", imageUrl: "",
   parentId: "", position: 0, active: true, showInMenu: true, featured: false, analytic: false,
+  icon: "Package",
 };
 
 function toSlug(text: string) {
@@ -90,7 +94,17 @@ function CategoryForm({
   onClose: () => void;
   validationError?: string | null;
 }) {
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [iconSearch, setIconSearch] = useState("");
+
   const domainPreview = "armazix.com.br";
+
+  const filteredIcons = iconSearch.trim()
+    ? CATEGORY_ICONS.filter(
+        i => i.label.toLowerCase().includes(iconSearch.toLowerCase()) ||
+             i.name.toLowerCase().includes(iconSearch.toLowerCase())
+      )
+    : CATEGORY_ICONS;
 
   const handleNameChange = (v: string) => {
     setForm({ ...form, name: v, slug: toSlug(v) });
@@ -144,6 +158,70 @@ function CategoryForm({
               className="h-11 rounded-xl border-border/70 focus:border-primary/50"
               autoFocus
             />
+          </div>
+
+          {/* Ícone */}
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Ícone</Label>
+            <Popover open={iconPickerOpen} onOpenChange={setIconPickerOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-3 w-full h-11 px-3 rounded-xl border border-border/70 hover:border-primary/50 transition-colors bg-background text-left"
+                >
+                  <span className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                    <CategoryIcon name={form.icon} className="w-4 h-4" />
+                  </span>
+                  <span className="text-sm text-foreground flex-1">
+                    {CATEGORY_ICONS.find(i => i.name === form.icon)?.label ?? form.icon ?? "Package"}
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-muted-foreground/60 shrink-0" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-0 rounded-2xl overflow-clip" align="start">
+                {/* Barra de busca — fixa no topo */}
+                <div className="px-3 pt-3 pb-2 border-b border-border/50">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar ícone..."
+                      value={iconSearch}
+                      onChange={e => setIconSearch(e.target.value)}
+                      className="pl-8 h-8 rounded-lg text-sm border-border/70"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                {/* Grid com scroll — overflow-clip no pai garante que wheel events chegam aqui */}
+                <div className="p-2 max-h-64 overflow-y-auto overscroll-contain [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-200 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 [&::-webkit-scrollbar-track]:bg-transparent">
+                  <div className="grid grid-cols-4 gap-1">
+                    {filteredIcons.map(({ name, label }) => (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => {
+                          setForm({ ...form, icon: name });
+                          setIconPickerOpen(false);
+                          setIconSearch("");
+                        }}
+                        className={`flex flex-col items-center gap-1 px-1 py-2 rounded-xl transition-colors ${
+                          form.icon === name
+                            ? "bg-primary/10 text-primary ring-1 ring-primary/30"
+                            : "hover:bg-muted text-muted-foreground"
+                        }`}
+                        title={label}
+                      >
+                        <CategoryIcon name={name} className="w-5 h-5 shrink-0" />
+                        <span className="text-[10px] leading-tight text-center w-full truncate px-0.5">{label}</span>
+                      </button>
+                    ))}
+                    {filteredIcons.length === 0 && (
+                      <p className="col-span-4 text-center text-xs text-muted-foreground py-6">Nenhum ícone encontrado</p>
+                    )}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Slug — somente leitura */}
@@ -320,6 +398,7 @@ function CategoriesPage() {
       parentId: cat.parentId || "", position: cat.position,
       active: cat.active, showInMenu: cat.showInMenu, featured: cat.featured,
       analytic: cat.analytic ?? false,
+      icon: cat.icon || "Package",
     });
     setValidationError(null);
     await refreshCategories();
@@ -361,6 +440,7 @@ function CategoriesPage() {
         parentId: form.parentId || undefined, position: form.position,
         active: form.active, showInMenu: form.showInMenu, featured: form.featured,
         analytic: form.analytic,
+        icon: form.icon || "Package",
       };
       let res: Response;
       if (editingId) {

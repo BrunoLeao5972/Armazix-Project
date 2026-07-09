@@ -212,6 +212,7 @@ export interface StoreCategory {
   id: string;
   name: string;
   emoji: string | null;
+  icon: string | null;
   color: string | null;
   imageUrl: string | null;
   parentId: string | null;

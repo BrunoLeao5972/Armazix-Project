@@ -115,6 +115,7 @@ export const categories = pgTable("categories", {
   name: varchar("name", { length: 80 }).notNull(),
   slug: varchar("slug", { length: 100 }),
   emoji: varchar("emoji", { length: 10 }),
+  icon: varchar("icon", { length: 40 }),
   color: varchar("color", { length: 7 }),
   imageUrl: text("image_url"),
   position: integer("position").default(0),

@@ -108,6 +108,52 @@ export function customersCacheKey(storeId: string): string {
   return `store:${storeId}:customers:list`;
 }
 
+// Chave da configuração pública da loja (nome, logo, cores, pagamento, entrega)
+export function storeCacheKey(storeId: string): string {
+  return `store:${storeId}:config`;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Rate Limiting distribuído via Redis — sliding fixed-window counter.
+// Usa INCR + EXPIRE NX (atômico o suficiente para RL: falso-positivos
+// de ±1 na janela de abertura são inócuos para anti-abuso).
+// Fail-open: Redis indisponível → retorna allowed=true para não bloquear
+// usuários legítimos durante falhas de infraestrutura.
+// ─────────────────────────────────────────────────────────────────────
+export async function redisRateLimit(
+  key: string,
+  max: number,
+  windowSeconds: number,
+): Promise<{ allowed: boolean; count: number; remaining: number; ttlSeconds: number }> {
+  const redis = getRedis();
+  if (!redis) {
+    // Redis não configurado → fail-open (não bloqueia nada)
+    return { allowed: true, count: 0, remaining: max, ttlSeconds: windowSeconds };
+  }
+
+  try {
+    // Pipeline de 3 comandos: INCR → EXPIRE NX → TTL
+    // EXPIRE NX: define expiração apenas na criação (count === 1), nunca redefine janela existente
+    const [count, , ttl] = await redis.pipeline()
+      .incr(key)
+      .expire(key, windowSeconds, "NX")
+      .ttl(key)
+      .exec() as [number, 0 | 1, number];
+
+    const effectiveTtl = ttl > 0 ? ttl : windowSeconds;
+
+    return {
+      allowed:    count <= max,
+      count,
+      remaining:  Math.max(0, max - count),
+      ttlSeconds: effectiveTtl,
+    };
+  } catch (err) {
+    console.error("[redis] rateLimit error (fail-open):", (err as Error).message);
+    return { allowed: true, count: 0, remaining: max, ttlSeconds: windowSeconds };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // OTP — armazena/verifica/consome códigos temporários por telefone+store.
 // TTL de 5 min; consumeOtp faz get+del em sequência (suficiente para OTP

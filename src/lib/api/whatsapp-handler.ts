@@ -2,7 +2,44 @@ import { requireStoreAccess, AuthContext } from "@/lib/auth/require-store-access
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { DEFAULT_WPP_CONFIG, type WppConfig } from "@/lib/whatsapp-sender";
+import { DEFAULT_WPP_CONFIG, DEFAULT_CUSTOMER_TEMPLATES, DEFAULT_OWNER_TEMPLATE, type WppConfig } from "@/lib/whatsapp-sender";
+
+// ── Migração de templates legados ─────────────────────────────────────────────
+// Se o cliente ainda tiver um template igual ao antigo padrão, substitui pelo
+// novo. Templates que foram editados manualmente pelo usuário são preservados.
+const LEGACY_OWNER_TEMPLATE =
+  "🛒 *Novo pedido #{{numero}}*\n\n👤 {{nome}}\n💰 Total: R$ {{total}}\n📦 {{itens}}\n\nAcesse o painel para confirmar.";
+
+const LEGACY_CUSTOMER_TEMPLATES: WppConfig["customerTemplates"] = {
+  received:
+    "Olá, {{nome}}! 🎉 Seu pedido *#{{numero}}* foi recebido!\n\n💰 Total: R$ {{total}}\n\nEm instantes começaremos a preparar. Obrigado por escolher a *{{loja}}*!",
+  preparing:
+    "👨‍🍳 Seu pedido *#{{numero}}* está sendo preparado!\n\nAguarde um pouquinho, logo estará pronto. 😊",
+  ready:
+    "✅ Pedido *#{{numero}}* pronto para retirada!\n\nVenha buscar quando quiser. Te esperamos! 🏃",
+  delivering:
+    "🚀 Seu pedido *#{{numero}}* saiu para entrega!\n\nNosso entregador está a caminho. Fique de olho! 📍",
+  delivered:
+    "✅ Pedido *#{{numero}}* entregue! Esperamos que tenha curtido! ❤️\n\nObrigado por comprar na *{{loja}}*. Volte sempre!",
+  cancelled:
+    "😔 Infelizmente seu pedido *#{{numero}}* foi cancelado.\n\nQualquer dúvida, entre em contato. Pedimos desculpas pelo transtorno.",
+};
+
+function migrateConfig(stored: WppConfig): WppConfig {
+  const customerTemplates = { ...stored.customerTemplates };
+  for (const key of Object.keys(customerTemplates) as (keyof typeof customerTemplates)[]) {
+    if (customerTemplates[key] === LEGACY_CUSTOMER_TEMPLATES[key]) {
+      customerTemplates[key] = DEFAULT_CUSTOMER_TEMPLATES[key];
+    }
+  }
+  return {
+    ...stored,
+    ownerTemplate: stored.ownerTemplate === LEGACY_OWNER_TEMPLATE
+      ? DEFAULT_OWNER_TEMPLATE
+      : stored.ownerTemplate,
+    customerTemplates,
+  };
+}
 
 const { stores } = schema;
 
@@ -200,7 +237,8 @@ export async function getWppConfigHandler(
 
   const db = createDb(process.env.DATABASE_URL!);
   const [store] = await db.select({ wppConfig: stores.wppConfig }).from(stores).where(eq(stores.id, storeId)).limit(1);
-  return jsonRes({ config: store?.wppConfig ?? DEFAULT_WPP_CONFIG });
+  const raw = store?.wppConfig ?? DEFAULT_WPP_CONFIG;
+  return jsonRes({ config: migrateConfig(raw) });
 }
 
 // ─── POST /api/whatsapp/config ───────────────────────────────────────────────

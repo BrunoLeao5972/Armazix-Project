@@ -3,6 +3,8 @@ import { schema } from "@/lib/db";
 import { eq, and, desc, sql, ne } from "drizzle-orm";
 import { requireStoreAccess, requireStoreOwner, AuthContext } from "@/lib/auth/require-store-access";
 import { generateCleanSlug } from "@/lib/slug";
+import { getCached, deleteKey, storeCacheKey } from "@/lib/cache/redis";
+import { waitUntil } from "@/lib/execution-context";
 
 const { stores, storeUsers, orders, orderItems, products, customers } = schema;
 
@@ -22,22 +24,37 @@ export async function getStoreHandler(request: Request): Promise<Response> {
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
-  try {
-    const store = await db.query.stores.findFirst({
-      where: storeId ? eq(stores.id, storeId) : eq(stores.slug, slug!),
-      with: { banners: { where: (b, { eq }) => eq(b.active, true), orderBy: (b, { asc }) => [asc(b.position)] } },
-    });
+  // Chave de cache: por ID (admin) ou por slug (vitrine pública).
+  // TTL de 10 min — equilibra performance e freshness da config da loja.
+  // Invalidação imediata via deleteKey() em todos os handlers de update.
+  const lookupKey = storeId ?? `slug:${slug}`;
+  const cacheKey  = `store:${lookupKey}:config`;
 
-    if (!store) {
+  try {
+    const publicStoreData = await getCached(
+      cacheKey,
+      async () => {
+        const store = await db.query.stores.findFirst({
+          where: storeId ? eq(stores.id, storeId) : eq(stores.slug, slug!),
+          with: { banners: { where: (b, { eq }) => eq(b.active, true), orderBy: (b, { asc }) => [asc(b.position)] } },
+        });
+
+        if (!store) return null;
+
+        // SECURITY: nunca expõe campos sensíveis de pagamento/billing.
+        const { mpAccessToken: _mpToken, plan: _plan, planStatus: _planStatus,
+                planExpiresAt: _planExpiry, mpSubscriptionId: _subId, ...safe } = store;
+        return safe;
+      },
+      { ttl: 600 }, // 10 min — sem tracking por storeId (invalidação própria via deleteKey)
+    );
+
+    if (!publicStoreData) {
       return new Response(JSON.stringify({ error: "Store not found" }), {
         status: 404,
         headers: { "content-type": "application/json" },
       });
     }
-
-    // SECURITY: Never expose sensitive payment/billing fields to public consumers.
-    const { mpAccessToken: _mpToken, plan: _plan, planStatus: _planStatus,
-            planExpiresAt: _planExpiry, mpSubscriptionId: _subId, ...publicStoreData } = store;
 
     return new Response(JSON.stringify({ store: publicStoreData }), {
       status: 200,
@@ -143,6 +160,12 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
       })
       .where(eq(stores.id, storeId))
       .returning();
+
+    // Invalida as duas variantes de chave (por ID e por slug) em background
+    waitUntil(request, deleteKey(
+      `store:${storeId}:config`,
+      `store:slug:${updated?.slug}:config`,
+    ));
 
     return new Response(JSON.stringify({ success: true, store: updated }), {
       status: 200,
@@ -393,6 +416,9 @@ export async function savePaymentConfigHandler(
         updatedAt: new Date(),
       })
       .where(eq(stores.id, storeId));
+
+    // Invalida config cacheada — novas formas de pagamento devem refletir imediatamente
+    waitUntil(request, deleteKey(storeCacheKey(storeId)));
 
     return new Response(
       JSON.stringify({ success: true, paymentConfig: cfg }),

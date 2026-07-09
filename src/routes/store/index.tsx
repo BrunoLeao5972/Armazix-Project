@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
@@ -9,18 +9,21 @@ import {
   Heart,
   Star,
   Loader2,
+  ChevronRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStore } from "../store";
 import { type StoreProduct, type StoreCategory, formatPrice } from "@/lib/store-context";
 import { getEffectivePrice } from "@/lib/promo-engine";
+import { CategoryIcon } from "@/lib/category-icons";
 
 export const Route = createFileRoute("/store/")({
   component: StoreHome,
 });
 
 const PAGE_LIMIT = 20;
+const SECTION_LIMIT = 10; // max products shown per category in "Todos" mode
 
 // Pura — calcula IDs de categoria + todos os descendentes para filtro server-side
 function getDescendantIds(catId: string, cats: StoreCategory[]): string[] {
@@ -49,10 +52,12 @@ function StoreHome() {
     startOffset: number,
     append: boolean,
   ) => {
+    // "Todos" mode: fetch all products at once for client-side grouping
+    const limit = filterIds === null ? 500 : PAGE_LIMIT;
     const params = new URLSearchParams({
       storeId,
       scope:  "public",
-      limit:  String(PAGE_LIMIT),
+      limit:  String(limit),
       offset: String(startOffset),
     });
     if (filterIds?.length) params.set("categoryIds", filterIds.join(","));
@@ -123,6 +128,34 @@ function StoreHome() {
         .filter(c => c.active !== false && c.parentId === activeCategoryId)
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
     : [];
+
+  // Resolve a root-category ID for any product (traces parentId chain up)
+  const getRootCategoryId = useCallback((catId: string | null): string | null => {
+    if (!catId) return null;
+    let current = categories.find(c => c.id === catId);
+    while (current?.parentId) {
+      current = categories.find(c => c.id === current!.parentId);
+    }
+    return current?.id ?? null;
+  }, [categories]);
+
+  // Grouped sections for "Todos" mode — memoized to avoid re-grouping on each render
+  const categorySections = useMemo(() => {
+    if (activeCategoryId !== null) return null;
+    if (loading) return null;
+
+    const productsByRootCat = new Map<string, StoreProduct[]>();
+    for (const p of products) {
+      const rootId = getRootCategoryId(p.categoryId);
+      if (!rootId) continue; // skip uncategorised for now
+      if (!productsByRootCat.has(rootId)) productsByRootCat.set(rootId, []);
+      productsByRootCat.get(rootId)!.push(p);
+    }
+
+    return rootCategories
+      .filter(cat => (productsByRootCat.get(cat.id)?.length ?? 0) > 0)
+      .map(cat => ({ category: cat, products: productsByRootCat.get(cat.id)! }));
+  }, [activeCategoryId, loading, products, rootCategories, getRootCategoryId]);
 
   const handleAdd = useCallback((product: StoreProduct) => {
     const { effectivePrice } = getEffectivePrice(product.price, product.promoConfig, "store");
@@ -195,7 +228,9 @@ function StoreHome() {
                       >
                         {cat.imageUrl
                           ? <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-contain" />
-                          : <span className="text-xl">{cat.emoji || "📦"}</span>}
+                          : cat.icon
+                            ? <CategoryIcon name={cat.icon} className="w-6 h-6" />
+                            : <span className="text-xl">{cat.emoji || "📦"}</span>}
                       </span>
                       <span className="text-[11px] font-medium text-slate-700 max-w-[60px] text-center whitespace-normal leading-tight">{cat.name}</span>
                     </button>
@@ -223,12 +258,15 @@ function StoreHome() {
                   <button
                     key={cat.id}
                     onClick={() => handleCategorySelect(isActive ? null : cat.id)}
-                    className="h-10 px-4 rounded-xl text-sm font-medium border transition-colors hover:bg-slate-50"
+                    className="h-10 px-4 rounded-xl text-sm font-medium border transition-colors hover:bg-slate-50 inline-flex items-center gap-2"
                     style={isActive
                       ? { backgroundColor: configuracaoVitrine.corPrimaria, borderColor: "transparent", color: "white" }
                       : { backgroundColor: "white", borderColor: "rgb(226 232 240)", color: "rgb(51 65 85)" }}
                   >
-                    {cat.emoji && !/^[a-z]/i.test(cat.emoji) ? `${cat.emoji} ` : ""}{cat.name}
+                    {cat.icon
+                      ? <CategoryIcon name={cat.icon} className="w-4 h-4 shrink-0" />
+                      : cat.emoji && !/^[a-z]/i.test(cat.emoji) && <span>{cat.emoji}</span>}
+                    {cat.name}
                   </button>
                 );
               })}
@@ -258,72 +296,181 @@ function StoreHome() {
         )}
       </section>
 
-      {/* Products Grid */}
-      <section id="mais-vendidos" className="mt-5">
-        <div className="px-3 md:px-6 flex items-center justify-between">
-          <h2 className="text-base md:text-lg font-bold">Todos os produtos</h2>
-          {total > 0 && (
-            <span className="text-xs md:text-sm text-slate-500">{total} itens</span>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6 md:p-6">
-            {Array.from({ length: PAGE_LIMIT }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                <Skeleton className="aspect-square" />
-                <div className="p-3 space-y-2">
-                  <Skeleton className="h-4 w-4/5" />
-                  <Skeleton className="h-3 w-2/3" />
-                  <Skeleton className="h-8 w-24" />
-                </div>
+      {/* ── Loading skeleton ─────────────────────────────────────── */}
+      {loading && (
+        <section className="mt-5 space-y-8">
+          {[0, 1].map(s => (
+            <div key={s}>
+              <div className="px-3 md:px-6 flex items-center justify-between mb-3">
+                <Skeleton className="h-6 w-36 rounded-xl" />
+                <Skeleton className="h-4 w-20 rounded-xl" />
               </div>
-            ))}
-          </div>
-        ) : products.length > 0 ? (
-          <>
-            <div className="grid grid-cols-2 gap-3 p-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6 md:p-6">
-              {products.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  onAdd={handleAdd}
-                  isFavorite={favorites.includes(product.id)}
-                  onToggleFavorite={toggleFavorite}
-                  showPrice={configuracaoVitrine.exibirPreco}
-                  highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
-                  primaryColor={configuracaoVitrine.corPrimaria}
-                />
-              ))}
+              <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6 md:px-6">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                    <Skeleton className="aspect-square" />
+                    <div className="p-3 space-y-2">
+                      <Skeleton className="h-4 w-4/5" />
+                      <Skeleton className="h-3 w-2/3" />
+                      <Skeleton className="h-8 w-24" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
+          ))}
+        </section>
+      )}
 
-            {hasMore && (
-              <div className="flex justify-center px-4 pb-2">
-                <button
-                  onClick={handleLoadMore}
-                  disabled={loadingMore}
-                  className="h-11 px-8 rounded-xl text-sm font-semibold border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2 transition-colors"
-                >
-                  {loadingMore ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Carregando...
-                    </>
-                  ) : (
-                    `Carregar mais (${total - products.length} restantes)`
-                  )}
-                </button>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="px-4 py-16 text-center" id="sobre-nos">
+      {/* ── "Todos" mode: grouped sections per category ──────────── */}
+      {!loading && categorySections && (
+        categorySections.length === 0 ? (
+          <div className="px-4 py-16 text-center mt-5" id="sobre-nos">
             <Search className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
             <h2 className="text-lg font-bold">Nenhum produto encontrado</h2>
-            <p className="text-sm text-muted-foreground mt-1">Tente trocar a categoria para ver mais itens.</p>
+            <p className="text-sm text-muted-foreground mt-1">Esta loja ainda não possui produtos cadastrados.</p>
           </div>
-        )}
-      </section>
+        ) : (
+          <div className="mt-5 space-y-7 pb-4">
+            {categorySections.map(({ category, products: catProds }) => (
+              <section key={category.id}>
+                {/* Section header */}
+                <div className="px-3 md:px-6 flex items-center justify-between mb-4">
+                  <h2 className="text-base md:text-lg font-bold flex items-center gap-2">
+                    {category.icon
+                      ? <CategoryIcon name={category.icon} className="w-5 h-5 shrink-0 text-slate-600" />
+                      : category.emoji && !/^[a-z]/i.test(category.emoji) && (
+                          <span className="text-xl leading-none">{category.emoji}</span>
+                        )}
+                    {category.name}
+                  </h2>
+                  {catProds.length > SECTION_LIMIT && (
+                    <button
+                      onClick={() => handleCategorySelect(category.id)}
+                      className="flex items-center gap-0.5 text-xs font-semibold transition-opacity hover:opacity-70"
+                      style={{ color: configuracaoVitrine.corPrimaria }}
+                    >
+                      Ver todos ({catProds.length})
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Mobile: horizontal scroll row */}
+                <div className="md:hidden overflow-x-auto no-scrollbar">
+                  <div className="flex gap-3 px-3 pb-1">
+                    {catProds.slice(0, SECTION_LIMIT).map(p => (
+                      <div key={p.id} className="w-44 shrink-0 flex">
+                        <ProductCard
+                          product={p}
+                          onAdd={handleAdd}
+                          isFavorite={favorites.includes(p.id)}
+                          onToggleFavorite={toggleFavorite}
+                          showPrice={configuracaoVitrine.exibirPreco}
+                          highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                          primaryColor={configuracaoVitrine.corPrimaria}
+                        />
+                      </div>
+                    ))}
+                    {catProds.length > SECTION_LIMIT && (
+                      <div className="w-36 shrink-0 flex items-center justify-center">
+                        <button
+                          onClick={() => handleCategorySelect(category.id)}
+                          className="flex flex-col items-center gap-2 text-xs font-semibold"
+                          style={{ color: configuracaoVitrine.corPrimaria }}
+                        >
+                          <span
+                            className="w-12 h-12 rounded-full flex items-center justify-center border-2"
+                            style={{ borderColor: configuracaoVitrine.corPrimaria }}
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </span>
+                          Ver todos
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Desktop: responsive grid */}
+                <div className="hidden md:grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 px-6">
+                  {catProds.slice(0, SECTION_LIMIT).map(p => (
+                    <ProductCard
+                      key={p.id}
+                      product={p}
+                      onAdd={handleAdd}
+                      isFavorite={favorites.includes(p.id)}
+                      onToggleFavorite={toggleFavorite}
+                      showPrice={configuracaoVitrine.exibirPreco}
+                      highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                      primaryColor={configuracaoVitrine.corPrimaria}
+                    />
+                  ))}
+                </div>
+
+                {/* Divider between sections */}
+                <div className="mt-7 mx-3 md:mx-6 h-px bg-slate-100" />
+              </section>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* ── Filtered mode: single category grid + pagination ─────── */}
+      {!loading && !categorySections && (
+        <section id="mais-vendidos" className="mt-5">
+          <div className="px-3 md:px-6 flex items-center justify-between mb-4">
+            <h2 className="text-base md:text-lg font-bold">
+              {rootCategories.find(c => c.id === (activeSubCategoryId ?? activeCategoryId))?.name
+                ?? "Produtos"}
+            </h2>
+            {total > 0 && (
+              <span className="text-xs md:text-sm text-slate-500">{total} itens</span>
+            )}
+          </div>
+
+          {products.length > 0 ? (
+            <>
+              <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6 md:px-6">
+                {products.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onAdd={handleAdd}
+                    isFavorite={favorites.includes(product.id)}
+                    onToggleFavorite={toggleFavorite}
+                    showPrice={configuracaoVitrine.exibirPreco}
+                    highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                    primaryColor={configuracaoVitrine.corPrimaria}
+                  />
+                ))}
+              </div>
+
+              {hasMore && (
+                <div className="flex justify-center px-4 pt-6 pb-2">
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    className="h-11 px-8 rounded-xl text-sm font-semibold border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2 transition-colors"
+                  >
+                    {loadingMore ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" />Carregando...</>
+                    ) : (
+                      `Carregar mais (${total - products.length} restantes)`
+                    )}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="px-4 py-16 text-center" id="sobre-nos">
+              <Search className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
+              <h2 className="text-lg font-bold">Nenhum produto encontrado</h2>
+              <p className="text-sm text-muted-foreground mt-1">Tente trocar a categoria para ver mais itens.</p>
+            </div>
+          )}
+        </section>
+      )}
 
     </div>
   );
@@ -370,10 +517,10 @@ export function ProductCard({
   };
 
   return (
-    <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group">
-      <div className="relative bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all group-hover:shadow-md">
+    <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group h-full">
+      <div className="relative bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all group-hover:shadow-md h-full flex flex-col">
         {/* Image */}
-        <div className="relative m-2 aspect-square bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden">
+        <div className="relative m-2 aspect-square bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
           {product.imageUrl
             ? <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain" />
             : <span className="text-4xl sm:text-5xl">{product.emoji || "📦"}</span>
@@ -404,48 +551,65 @@ export function ProductCard({
           </button>
         </div>
 
-        {/* Info */}
-        <div className="p-3">
-          <p className="text-sm md:text-base font-medium line-clamp-2 min-h-[2.5rem]">{product.name}</p>
-          <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{product.description || "Produto disponível"}</p>
-
-          {product.rating && Number(product.rating) > 0 && (
-            <div className="flex items-center gap-0.5 mt-1">
-              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-              <span className="text-[11px] text-slate-500">{product.rating} ({product.reviewCount || 0})</span>
+        {/* Info — flex col so price/button are always pinned to bottom */}
+        <div className="p-3 flex flex-col flex-1">
+          {/* Top content */}
+          <div>
+            <p className="text-sm font-medium line-clamp-2 leading-snug min-h-[2.5rem]">{product.name}</p>
+            <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{product.description || "Produto disponível"}</p>
+            {/* Rating — fixed height slot so it never shifts the price row */}
+            <div className="h-4 mt-1 flex items-center">
+              {product.rating && Number(product.rating) > 0 && (
+                <>
+                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  <span className="text-[11px] text-slate-500 ml-0.5">{product.rating} ({product.reviewCount || 0})</span>
+                </>
+              )}
             </div>
-          )}
-
-          <div className="flex items-end gap-2 mt-1.5">
-            {showPrice ? (
-              <>
-                <span className="text-base md:text-lg font-bold" style={{ color: promoResult.promoActive ? "#7c3aed" : primaryColor }}>R$ {formatPrice(price)}</span>
-                {oldPrice !== null && <span className="text-xs text-slate-400 line-through">R$ {formatPrice(oldPrice)}</span>}
-              </>
-            ) : (
-              <span className="text-sm font-semibold text-slate-500">Sob consulta</span>
-            )}
           </div>
 
-          <div className="mt-3 flex items-center justify-between">
-            <span className="text-[11px] text-slate-500">Ver opções</span>
-            <button
-              onClick={handleAdd}
-              className="md:hidden w-8 h-8 rounded-full text-white flex items-center justify-center"
-              style={{ backgroundColor: primaryColor }}
-              aria-label="Adicionar"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <motion.button
-              onClick={handleAdd}
-              animate={added ? { scale: [1, 0.92, 1] } : {}}
-              className="hidden md:flex h-9 px-4 rounded-xl text-xs font-semibold items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity text-white"
-              style={{ backgroundColor: primaryColor }}
-            >
-              <ShoppingBag className="w-3.5 h-3.5" />
-              Adicionar à Sacola
-            </motion.button>
+          {/* Bottom content — pushed to card bottom via mt-auto */}
+          <div className="mt-auto pt-2">
+            <div className="flex items-baseline gap-1.5">
+              {showPrice ? (
+                <>
+                  <span
+                    className="text-sm font-bold whitespace-nowrap"
+                    style={{ color: promoResult.promoActive ? "#7c3aed" : primaryColor }}
+                  >
+                    R$ {formatPrice(price)}
+                  </span>
+                  {oldPrice !== null && (
+                    <span className="text-xs text-slate-400 line-through whitespace-nowrap">
+                      R$ {formatPrice(oldPrice)}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="text-sm font-semibold text-slate-500">Sob consulta</span>
+              )}
+            </div>
+
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">Ver opções</span>
+              <button
+                onClick={handleAdd}
+                className="md:hidden w-8 h-8 rounded-full text-white flex items-center justify-center"
+                style={{ backgroundColor: primaryColor }}
+                aria-label="Adicionar"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <motion.button
+                onClick={handleAdd}
+                animate={added ? { scale: [1, 0.92, 1] } : {}}
+                className="hidden md:flex h-9 px-4 rounded-xl text-xs font-semibold items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity text-white"
+                style={{ backgroundColor: primaryColor }}
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                Adicionar à Sacola
+              </motion.button>
+            </div>
           </div>
         </div>
       </div>
