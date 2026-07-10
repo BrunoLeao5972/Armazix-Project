@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Star, Minus, Plus, Heart, Share2, Truck, Clock, Shield,
-  ChevronLeft, Loader2, CheckCircle2, Package,
+  ChevronLeft, Loader2, CheckCircle2, Package, MapPin, Search,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../store";
 import { type StoreProduct, formatPrice } from "@/lib/store-context";
@@ -27,6 +27,13 @@ function ProductPage() {
   const [qty,        setQty]        = useState(1);
   const [obs,        setObs]        = useState("");
   const [selectedAdditions, setSelectedAdditions] = useState<string[]>([]);
+
+  // ── Calculadora de CEP ──────────────────────────────────────────
+  const [cep,         setCep]         = useState("");
+  const [cepLoading,  setCepLoading]  = useState(false);
+  const [cepResult,   setCepResult]   = useState<{ fee: number | null; bairro: string; free: boolean } | null>(null);
+  const [cepError,    setCepError]    = useState("");
+  const cepInputRef = useRef<HTMLInputElement>(null);
 
   const { store, addToCart, favorites, toggleFavorite } = useStore();
 
@@ -54,6 +61,33 @@ function ProductPage() {
     setSelectedAdditions(prev =>
       prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
     );
+
+  const calcularFrete = async () => {
+    const digits = cep.replace(/\D/g, "");
+    if (digits.length !== 8) { setCepError("CEP inválido. Digite 8 dígitos."); return; }
+    setCepLoading(true); setCepError(""); setCepResult(null);
+    try {
+      const res  = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await res.json();
+      if (data.erro) { setCepError("CEP não encontrado. Verifique e tente novamente."); return; }
+
+      const bairroViaCep = (data.bairro || "").toLowerCase().trim();
+      const baseFee      = parseFloat(store?.deliveryFee || "0");
+      const freeAbove    = store?.freeShippingAbove ? parseFloat(store.freeShippingAbove) : null;
+      const rules        = store?.deliveryRules ?? [];
+
+      // Busca regra correspondente ao bairro
+      const matched = rules.find(r => r.bairro.toLowerCase().trim() === bairroViaCep);
+      const fee     = matched ? matched.taxa : baseFee;
+      const free    = freeAbove !== null ? false : fee === 0; // freeAbove é exibido separado
+
+      setCepResult({ fee, bairro: data.bairro || data.localidade, free });
+    } catch {
+      setCepError("Erro ao consultar o CEP. Tente novamente.");
+    } finally {
+      setCepLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -85,12 +119,12 @@ function ProductPage() {
   const currentImg = allImages[activeImg] ?? null;
 
   // ── Preço (com suporte a promoConfig) ──────────────────────────
-  const { effectivePrice, originalPrice, hasPromo } = getEffectivePrice(
+  const { effectivePrice, originalPrice, promoActive } = getEffectivePrice(
     product.price, product.promoConfig, "store"
   );
   const compareAt     = product.compareAtPrice ? parseFloat(product.compareAtPrice) : null;
-  const displayPrice  = hasPromo ? effectivePrice : parseFloat(product.price);
-  const displayOld    = hasPromo ? originalPrice : compareAt;
+  const displayPrice  = promoActive ? effectivePrice : parseFloat(product.price);
+  const displayOld    = promoActive ? originalPrice : compareAt;
   const discountPct   = displayOld && displayOld > displayPrice
     ? Math.round(((displayOld - displayPrice) / displayOld) * 100) : 0;
 
@@ -326,14 +360,6 @@ function ProductPage() {
 
           {/* ── Badges de apoio ── */}
           <div className="flex flex-wrap gap-2">
-            {store?.deliveryEnabled && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-xs font-medium">
-                <Truck className="w-3 h-3" />
-                {parseFloat(store.deliveryFee || "0") === 0
-                  ? "Frete grátis"
-                  : `Frete R$ ${formatPrice(store.deliveryFee || "0")}`}
-              </span>
-            )}
             {store?.deliveryEstimate && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-xs font-medium">
                 <Clock className="w-3 h-3" /> {store.deliveryEstimate}
@@ -343,6 +369,77 @@ function ProductPage() {
               <Shield className="w-3 h-3" /> Compra segura
             </span>
           </div>
+
+          {/* ── Calculadora de frete ── */}
+          {store?.deliveryEnabled && (
+            <div className="rounded-2xl border border-border/60 bg-secondary/30 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold">Calcular frete</p>
+                  <p className="text-xs text-muted-foreground">
+                    Taxa base: {parseFloat(store.deliveryFee || "0") === 0
+                      ? "Frete grátis"
+                      : `R$ ${formatPrice(store.deliveryFee || "0")}`}
+                    {store.freeShippingAbove && ` · Grátis acima de R$ ${formatPrice(store.freeShippingAbove)}`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <input
+                    ref={cepInputRef}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="00000-000"
+                    value={cep}
+                    maxLength={9}
+                    onChange={e => {
+                      const v = e.target.value.replace(/\D/g, "").slice(0, 8);
+                      setCep(v.length > 5 ? `${v.slice(0, 5)}-${v.slice(5)}` : v);
+                      setCepResult(null); setCepError("");
+                    }}
+                    onKeyDown={e => e.key === "Enter" && calcularFrete()}
+                    className="w-full h-10 pl-9 pr-3 rounded-xl border border-border/60 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <button
+                  onClick={calcularFrete}
+                  disabled={cepLoading}
+                  className="h-10 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold flex items-center gap-1.5 disabled:opacity-60 shrink-0"
+                >
+                  {cepLoading
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Search className="w-3.5 h-3.5" />}
+                  Calcular
+                </button>
+              </div>
+
+              {cepError && (
+                <p className="text-xs text-red-500 flex items-center gap-1">⚠ {cepError}</p>
+              )}
+
+              {cepResult && (
+                <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium ${
+                  cepResult.free || cepResult.fee === 0
+                    ? "bg-emerald-50 border border-emerald-100 text-emerald-700"
+                    : "bg-background border border-border/60 text-foreground"
+                }`}>
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    {cepResult.bairro}
+                  </span>
+                  <span className="font-bold tabular-nums">
+                    {cepResult.fee === 0
+                      ? "Frete grátis"
+                      : `R$ ${formatPrice(cepResult.fee ?? 0)}`}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── Alerta de estoque ── */}
           {outOfStock ? (
@@ -390,7 +487,7 @@ function ProductPage() {
           )}
 
           {/* ── Observação ── */}
-          {product.allowObservation !== false && (
+          {product.allowObservation === true && (
             <div>
               <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">
                 Observação{" "}

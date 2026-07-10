@@ -4,6 +4,7 @@ import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useStore } from "../store";
 import { type StoreProduct, formatPrice } from "@/lib/store-context";
+import { getEffectivePrice } from "@/lib/promo-engine";
 import { ProductCard } from "./index";
 
 export const Route = createFileRoute("/store/search")({
@@ -32,7 +33,8 @@ function SearchPage() {
     : [];
 
   const handleAdd = useCallback((product: StoreProduct) => {
-    addToCart({ id: product.id, name: product.name, price: parseFloat(product.price), image: product.imageUrl || null, emoji: product.emoji || "📦" });
+    const { effectivePrice } = getEffectivePrice(product.price, product.promoConfig, "store");
+    addToCart({ id: product.id, name: product.name, price: effectivePrice, image: product.imageUrl || null, emoji: product.emoji || "📦" });
   }, [addToCart]);
 
   return (

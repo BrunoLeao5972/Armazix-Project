@@ -1,11 +1,48 @@
 import { createDb, schema } from "@/lib/db";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, gt } from "drizzle-orm";
 import { signCustomerJWT, verifyCustomerJWT } from "@/lib/auth";
 import { waitUntil } from "@/lib/execution-context";
 import { storeOtp, consumeOtp } from "@/lib/cache/redis";
 import { sendWppText, normalizePhone } from "@/lib/whatsapp-sender";
 
-const { customers, orders, orderItems } = schema;
+const { customers, orders, orderItems, customerOtps } = schema;
+
+// ── DB OTP helpers (fallback when Redis is not configured) ────────────────────
+async function storeOtpInDb(
+  db: ReturnType<typeof createDb>,
+  storeId: string,
+  phone: string,
+  code: string,
+): Promise<void> {
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  await db.delete(customerOtps).where(
+    and(eq(customerOtps.storeId, storeId), eq(customerOtps.phone, phone)),
+  );
+  await db.insert(customerOtps).values({ storeId, phone, code, expiresAt });
+}
+
+async function consumeOtpFromDb(
+  db: ReturnType<typeof createDb>,
+  storeId: string,
+  phone: string,
+  code: string,
+): Promise<boolean> {
+  const [record] = await db
+    .select({ id: customerOtps.id })
+    .from(customerOtps)
+    .where(
+      and(
+        eq(customerOtps.storeId, storeId),
+        eq(customerOtps.phone, phone),
+        eq(customerOtps.code, code),
+        gt(customerOtps.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  if (!record) return false;
+  await db.delete(customerOtps).where(eq(customerOtps.id, record.id));
+  return true;
+}
 
 // ─── POST /api/customer/login ─────────────────────────────────────────────────
 // Passwordless: lookup by phone+storeId, return a signed customer JWT.
@@ -119,7 +156,14 @@ export async function requestOtpHandler(request: Request): Promise<Response> {
 
   const saved = await storeOtp(storeId, phone, code);
   if (!saved) {
-    return json({ error: "Serviço de autenticação indisponível. Tente novamente." }, 503);
+    // Redis unavailable — persist OTP in the database instead
+    try {
+      const db = createDb(process.env.DATABASE_URL!);
+      await storeOtpInDb(db, storeId, phone, code);
+    } catch (err) {
+      console.error("[customer/request-code] DB OTP fallback error:", err);
+      return json({ error: "Serviço de autenticação indisponível. Tente novamente." }, 503);
+    }
   }
 
   const text = `🔐 *Armazix*: Seu código de verificação é *${code}*.\n\nVálido por 5 minutos. Não compartilhe com ninguém.`;
@@ -144,13 +188,16 @@ export async function verifyOtpHandler(request: Request): Promise<Response> {
   if (!secret) return json({ error: "Configuração inválida" }, 500);
 
   const phone = normalizePhone(rawPhone);
+  const db = createDb(process.env.DATABASE_URL!);
 
-  const valid = await consumeOtp(storeId, phone, code);
+  let valid = await consumeOtp(storeId, phone, code);
+  if (!valid) {
+    // Redis unavailable or code not found — check DB fallback
+    valid = await consumeOtpFromDb(db, storeId, phone, code);
+  }
   if (!valid) {
     return json({ error: "Código inválido ou expirado" }, 401);
   }
-
-  const db = createDb(process.env.DATABASE_URL!);
 
   try {
     // Lookup cliente existente pelo telefone normalizado

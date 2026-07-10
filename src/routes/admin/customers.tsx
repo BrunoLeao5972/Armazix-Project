@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 
 export const Route = createFileRoute("/admin/customers")({
   component: CustomersPage,
-  head: () => ({ meta: [{ title: "Clientes/Fornecedores — ARMAZIX" }] }),
+  head: () => ({ meta: [{ title: "Clientes/Fornecedores/Entregadores — ARMAZIX" }] }),
 });
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -30,6 +30,7 @@ interface Customer {
   phone: string | null;
   cpf: string | null;
   isSupplier?: boolean;
+  isDeliverer?: boolean;
   status?: string;
   ordersCount?: number;
   totalSpent?: string;
@@ -54,6 +55,7 @@ interface CustomerForm {
   state: string;
   notes: string;
   isSupplier: boolean;
+  isDeliverer: boolean;
   status: "ativo" | "inativo" | "suspenso";
 }
 
@@ -63,6 +65,7 @@ const EMPTY: CustomerForm = {
   cep: "", street: "", number: "", complement: "",
   neighborhood: "", city: "", state: "", notes: "",
   isSupplier: false,
+  isDeliverer: false,
   status: "ativo",
 };
 
@@ -124,7 +127,7 @@ function CustomerFormModal({
 
   useEffect(() => {
     if (editing) {
-      setForm({ ...EMPTY, name: editing.name, email: editing.email || "", phone: maskPhone(editing.phone || ""), cpf: editing.cpf ? maskCPF(editing.cpf) : "", isSupplier: editing.isSupplier ?? false, status: (editing.status as CustomerForm["status"]) ?? "ativo" });
+      setForm({ ...EMPTY, name: editing.name, email: editing.email || "", phone: maskPhone(editing.phone || ""), cpf: editing.cpf ? maskCPF(editing.cpf) : "", isSupplier: editing.isSupplier ?? false, isDeliverer: editing.isDeliverer ?? false, status: (editing.status as CustomerForm["status"]) ?? "ativo" });
     } else {
       setForm(EMPTY);
     }
@@ -170,6 +173,7 @@ function CustomerFormModal({
           phone:       form.phone.replace(/\D/g, "") || undefined,
           cpf:         form.cpf.replace(/\D/g, "")   || undefined,
           isSupplier:  form.isSupplier,
+          isDeliverer: form.isDeliverer,
           status:      form.status,
         });
         data = await res.json();
@@ -182,12 +186,13 @@ function CustomerFormModal({
       } else {
         // INSERT — apenas quando não há id (contato novo)
         res = await api.post("/api/customers/create", {
-          name:       form.name,
-          email:      form.email || undefined,
-          phone:      form.phone.replace(/\D/g, "") || undefined,
-          cpf:        form.cpf.replace(/\D/g, "")   || undefined,
-          isSupplier: form.isSupplier,
-          status:     form.status,
+          name:        form.name,
+          email:       form.email || undefined,
+          phone:       form.phone.replace(/\D/g, "") || undefined,
+          cpf:         form.cpf.replace(/\D/g, "")   || undefined,
+          isSupplier:  form.isSupplier,
+          isDeliverer: form.isDeliverer,
+          status:      form.status,
         });
         data = await res.json();
         if (res.ok && data.customer) {
@@ -287,6 +292,21 @@ function CustomerFormModal({
                 </div>
                 <div className={`w-11 h-6 rounded-full relative shrink-0 transition-colors duration-200 ${form.isSupplier ? "bg-primary" : "bg-border"}`}>
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${form.isSupplier ? "translate-x-5" : "translate-x-0"}`} />
+                </div>
+              </button>
+
+              {/* Deliverer toggle */}
+              <button
+                type="button"
+                onClick={() => set("isDeliverer", !form.isDeliverer)}
+                className="w-full flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20 hover:bg-secondary/40 transition-colors text-left"
+              >
+                <div>
+                  <p className="text-sm font-medium">Entregador</p>
+                  <p className="text-xs text-muted-foreground">Responsável por realizar entregas dos pedidos</p>
+                </div>
+                <div className={`w-11 h-6 rounded-full relative shrink-0 transition-colors duration-200 ${form.isDeliverer ? "bg-primary" : "bg-border"}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${form.isDeliverer ? "translate-x-5" : "translate-x-0"}`} />
                 </div>
               </button>
 
@@ -453,7 +473,7 @@ function CustomerFormModal({
 }
 
 // ─── Main Page ────────────────────────────────────────────────────
-type ContactFilter = "all" | "clients" | "suppliers";
+type ContactFilter = "all" | "clients" | "suppliers" | "deliverers";
 
 function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -490,8 +510,9 @@ function CustomersPage() {
   const openEdit   = (c: Customer) => { setEditing(c); setModalOpen(true); };
 
   const filtered = customers.filter(c => {
-    if (contactFilter === "clients" && c.isSupplier) return false;
+    if (contactFilter === "clients" && (c.isSupplier || c.isDeliverer)) return false;
     if (contactFilter === "suppliers" && !c.isSupplier) return false;
+    if (contactFilter === "deliverers" && !c.isDeliverer) return false;
     return (
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       (c.email || "").toLowerCase().includes(search.toLowerCase()) ||
@@ -572,7 +593,7 @@ function CustomersPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Clientes e Fornecedores</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Clientes, Fornecedores e Entregadores</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {customers.length} cadastrado{customers.length !== 1 ? "s" : ""}
           </p>
@@ -595,14 +616,15 @@ function CustomersPage() {
 
       {/* Filter tabs + Search */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-        <div className="flex gap-1 p-1 bg-secondary/40 rounded-xl">
-          {([["all", "Todos"], ["clients", "Clientes"], ["suppliers", "Fornecedores"]] as const).map(([v, label]) => (
+        <div className="flex gap-1 p-1 bg-secondary/40 rounded-xl overflow-x-auto no-scrollbar">
+          {([["all", "Todos"], ["clients", "Clientes"], ["suppliers", "Fornecedores"], ["deliverers", "Entregadores"]] as const).map(([v, label]) => (
             <button key={v} onClick={() => setContactFilter(v)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${contactFilter === v ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
               {label}
               {v === "all" && customers.length > 0 && <span className="ml-1.5 text-[10px] opacity-60">{customers.length}</span>}
-              {v === "clients" && <span className="ml-1.5 text-[10px] opacity-60">{customers.filter(c => !c.isSupplier).length}</span>}
+              {v === "clients" && <span className="ml-1.5 text-[10px] opacity-60">{customers.filter(c => !c.isSupplier && !c.isDeliverer).length}</span>}
               {v === "suppliers" && <span className="ml-1.5 text-[10px] opacity-60">{customers.filter(c => c.isSupplier).length}</span>}
+              {v === "deliverers" && <span className="ml-1.5 text-[10px] opacity-60">{customers.filter(c => c.isDeliverer).length}</span>}
             </button>
           ))}
         </div>
@@ -621,7 +643,7 @@ function CustomersPage() {
           </div>
           <h3 className="font-semibold">{search || contactFilter !== "all" ? "Nenhum resultado" : "Nenhum contato ainda"}</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-xs">
-            {search ? `Não encontramos contatos para "${search}"` : contactFilter === "suppliers" ? "Nenhum fornecedor cadastrado. Crie um contato e marque como fornecedor." : contactFilter === "clients" ? "Nenhum cliente cadastrado." : "Comece cadastrando seu primeiro contato"}
+            {search ? `Não encontramos contatos para "${search}"` : contactFilter === "suppliers" ? "Nenhum fornecedor cadastrado. Crie um contato e marque como fornecedor." : contactFilter === "deliverers" ? "Nenhum entregador cadastrado. Crie um contato e marque como entregador." : contactFilter === "clients" ? "Nenhum cliente cadastrado." : "Comece cadastrando seu primeiro contato"}
           </p>
           {!search && contactFilter === "all" && (
             <Button onClick={openCreate} className="mt-5 h-9 rounded-xl bg-gradient-primary text-primary-foreground gap-2">
@@ -653,6 +675,11 @@ function CustomersPage() {
                         {c.isSupplier && (
                           <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/15 text-amber-700">
                             Fornecedor
+                          </span>
+                        )}
+                        {c.isDeliverer && (
+                          <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/15 text-blue-700">
+                            Entregador
                           </span>
                         )}
                         {c.status === "inativo" && (

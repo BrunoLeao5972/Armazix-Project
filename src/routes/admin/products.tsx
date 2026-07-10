@@ -29,6 +29,8 @@ export const Route = createFileRoute("/admin/products")({
 // ─── Types ───────────────────────────────────────────────────────
 type ProductImage = { id: string; url: string; isPrimary: boolean };
 
+type ProductType = "Produto" | "Insumo e Composição" | "Serviço e Taxa de entrega";
+
 interface Product {
   id: string;
   name: string;
@@ -49,6 +51,8 @@ interface Product {
   allowObservation: boolean | null;
   categoryId: string | null;
   promoConfig: PromoConfig | null;
+  productType: ProductType | null;
+  isWeightScale: boolean | null;
 }
 
 interface Category {
@@ -91,6 +95,8 @@ interface ProductForm {
   allowObservation: boolean;
   variationGroups: VariationGroup[];
   promoConfig: PromoConfig | null;
+  productType: ProductType;
+  isWeightScale: boolean;
 }
 
 const EMPTY_FORM: ProductForm = {
@@ -99,6 +105,7 @@ const EMPTY_FORM: ProductForm = {
   sku: "", barcode: "", unit: "un", images: [],
   badge: "", categoryId: "", trackStock: false, status: "ativo", allowObservation: false,
   variationGroups: [], promoConfig: null,
+  productType: "Produto", isWeightScale: false,
 };
 
 const uid = () => Math.random().toString(36).slice(2);
@@ -423,6 +430,8 @@ function ProductFormModal({
         allowObservation: editing.allowObservation === true,
         variationGroups: [],
         promoConfig: editing.promoConfig || null,
+        productType: (editing.productType as ProductType) || "Produto",
+        isWeightScale: editing.isWeightScale === true,
       });
     } else {
       setForm(EMPTY_FORM);
@@ -499,6 +508,8 @@ function ProductFormModal({
         active: form.status === "suspenso" ? null : form.status === "inativo" ? false : true,
         allowObservation: form.allowObservation,
         promoConfig: form.promoConfig?.enabled ? form.promoConfig : null,
+        productType: form.productType,
+        isWeightScale: form.isWeightScale,
       };
       let res: Response;
       if (editing) {
@@ -697,6 +708,29 @@ function ProductFormModal({
                 </Field>
               </div>
 
+              <Field label="Tipo do produto">
+                <div className="relative">
+                  <LayoutGrid className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <select
+                    value={form.productType}
+                    onChange={e => set("productType", e.target.value as ProductType)}
+                    className="w-full h-10 pl-8 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring transition"
+                  >
+                    <option value="Produto">Produto — item de venda padrão</option>
+                    <option value="Insumo e Composição">Insumo e Composição — ingrediente / matéria-prima</option>
+                    <option value="Serviço e Taxa de entrega">Serviço e Taxa de entrega — cobrança adicional</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                </div>
+                {form.productType !== "Produto" && (
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {form.productType === "Insumo e Composição"
+                      ? "Usado no controle de estoque de ingredientes e cozinha. Não aparece na vitrine pública."
+                      : "Taxas e cobranças adicionais. Não desconta estoque ao vender."}
+                  </p>
+                )}
+              </Field>
+
               <div className="grid grid-cols-2 gap-4">
                 <Field label="SKU">
                   <div className="relative">
@@ -784,7 +818,7 @@ function ProductFormModal({
                 </div>
               </Field>
 
-              <Field label="Preço de custo">
+              <Field label="Preço de Custo (R$)" hint="Não exibido na vitrine">
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                   <Input placeholder="0,00" value={form.costPrice}
@@ -846,6 +880,39 @@ function ProductFormModal({
                       onChange={e => set("lowStockThreshold", e.target.value)} className="h-10 rounded-xl pl-8" />
                   </div>
                 </Field>
+              )}
+
+              {/* Toggle balança */}
+              <div className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20">
+                <div>
+                  <p className="text-sm font-medium">Vendido por peso (Balança)</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Ativa venda fracionada em kg — estoque e PDV aceitam decimais (ex: 1,250 kg)
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.isWeightScale}
+                  onClick={() => {
+                    const next = !form.isWeightScale;
+                    setForm(f => ({ ...f, isWeightScale: next, unit: next ? "kg" : (f.unit === "kg" ? "un" : f.unit) }));
+                  }}
+                  className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                    form.isWeightScale ? "bg-primary" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                    form.isWeightScale ? "translate-x-5" : "translate-x-0"
+                  }`} />
+                </button>
+              </div>
+
+              {form.isWeightScale && (
+                <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-700">
+                  <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+                  Unidade definida automaticamente para <strong>kg</strong>. O PDV exibirá campo de peso fracionado.
+                </div>
               )}
 
               <div className="rounded-xl border border-border/50 bg-secondary/10 p-4 flex items-start gap-3">

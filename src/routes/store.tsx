@@ -11,6 +11,16 @@ import {
   MessageCircle,
   ClipboardList,
   Phone,
+  MapPin,
+  Mail,
+  Clock,
+  QrCode,
+  Banknote,
+  CreditCard,
+  Truck,
+  Package,
+  ExternalLink,
+  Wallet,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -429,6 +439,327 @@ function CustomerOrdersSheet({
   );
 }
 
+// ── StoreFooter helpers ───────────────────────────────────────────────────────
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex.trim());
+  return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null;
+}
+
+function withAlpha(hex: string, alpha: number): string {
+  const rgb = hexToRgb(hex);
+  return rgb ? `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})` : hex;
+}
+
+// ── StoreFooter ───────────────────────────────────────────────────────────────
+function StoreFooter({ store }: { store: StorePublicData }) {
+  // ── Paleta derivada do tema da loja ──────────────────────────────────────
+  //   footerBg  → mesma cor de fundo configurada pelo lojista (ou navy escuro como padrão)
+  //   textMain  → cor de texto configurada (ou branco para o fundo escuro padrão)
+  //   accent    → cor primária da marca, usada em ícones, badges e labels
+  const footerBg = store.backgroundColor || "#0f172a";
+  const textMain = store.textColor       || "#f8fafc";
+  const accent   = store.primaryColor    || "#22c55e";
+
+  // Todos os tokens derivam de textMain (opacidade) + accent (acentos)
+  const C = {
+    main:        textMain,
+    body:        withAlpha(textMain, 0.72),
+    muted:       withAlpha(textMain, 0.42),
+    border:      withAlpha(textMain, 0.10),
+    subtleBg:    withAlpha(textMain, 0.05),
+    badgeBg:     withAlpha(accent,   0.10),
+    badgeBorder: withAlpha(accent,   0.25),
+    iconFg:      accent,
+    link:        accent,
+  } as const;
+
+  // ── Formas de pagamento ──────────────────────────────────────────────────
+  // Cada método só aparece se o grupo ao qual pertence estiver ativo.
+  const payCfg   = store.paymentConfig;
+  const onlineOn = payCfg?.online?.enabled   === true;
+  const delivOn  = payCfg?.delivery?.enabled === true;
+
+  type PayMethod = { key: string; label: string; icon: React.ElementType; accent?: string };
+  const payMethods: PayMethod[] = [];
+
+  // Mercado Pago — gateway do grupo online
+  if (onlineOn && store.mpPublicKey)
+    payMethods.push({ key: "mp",     label: "Mercado Pago",      icon: Wallet,     accent: "#009ee3" });
+
+  // PIX — via entrega (chave configurada) ou via MP online
+  const pixOnline   = onlineOn  && payCfg!.online.methods.pix;
+  const pixDelivery = delivOn   && payCfg!.delivery.pix.enabled && !!payCfg!.delivery.pix.pixKey;
+  if (pixOnline || pixDelivery)
+    payMethods.push({ key: "pix",    label: "PIX",               icon: QrCode });
+
+  // Cartão de crédito — via entrega (maquininha) ou via MP
+  const creditOnline   = onlineOn && payCfg!.online.methods.creditCard;
+  const creditDelivery = delivOn  && payCfg!.delivery.creditCard.enabled;
+  if (creditOnline || creditDelivery)
+    payMethods.push({ key: "credit", label: "Cartão de Crédito", icon: CreditCard });
+
+  // Cartão de débito — via entrega ou via MP
+  const debitOnline   = onlineOn && payCfg!.online.methods.debitCard;
+  const debitDelivery = delivOn  && payCfg!.delivery.debitCard.enabled;
+  if (debitOnline || debitDelivery)
+    payMethods.push({ key: "debit",  label: "Cartão de Débito",  icon: CreditCard });
+
+  // Dinheiro — exclusivo entrega
+  if (delivOn && payCfg!.delivery.cash.enabled)
+    payMethods.push({ key: "cash",   label: "Dinheiro",          icon: Banknote });
+
+  // Fallback: config legada (deprecated) se v2 não estiver preenchida
+  if (!payCfg && store.paymentMethodsConfig) {
+    const legacyMap: Record<string, PayMethod> = {
+      pix:         { key: "pix",    label: "PIX",               icon: QrCode },
+      card:        { key: "credit", label: "Cartão de Crédito", icon: CreditCard },
+      debit:       { key: "debit",  label: "Cartão de Débito",  icon: CreditCard },
+      cash:        { key: "cash",   label: "Dinheiro",          icon: Banknote },
+      mercadopago: { key: "mp",     label: "Mercado Pago",      icon: Wallet,    accent: "#009ee3" },
+    };
+    store.paymentMethodsConfig
+      .filter(m => m.enabled)
+      .forEach(m => { const mapped = legacyMap[m.key]; if (mapped) payMethods.push(mapped); });
+  }
+
+  // ── Links e endereço ─────────────────────────────────────────────────────
+  const waRaw   = (store.whatsappPhone || store.phone || "").replace(/\D/g, "");
+  const waPhone = waRaw.startsWith("55") ? waRaw : `55${waRaw}`;
+  const waUrl   = waRaw ? `https://wa.me/${waPhone}` : null;
+  const addr    = store.address;
+  const mapsUrl = addr
+    ? `https://maps.google.com/?q=${encodeURIComponent(`${addr.street}, ${addr.number}, ${addr.city}, ${addr.state}`)}`
+    : null;
+  const freeAbove = store.freeShippingAbove ? parseFloat(store.freeShippingAbove) : null;
+  const baseFee   = store.deliveryFee ? parseFloat(store.deliveryFee) : 0;
+
+  return (
+    <footer style={{ backgroundColor: footerBg, color: C.body, borderTop: `3px solid ${withAlpha(accent, 0.55)}` }}>
+      <div className="max-w-7xl mx-auto px-6 pt-12 pb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-10 gap-y-10">
+
+          {/* ── Col 1: Sobre & Horários ─────────────────────────────────── */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2.5">
+              {store.logoUrl ? (
+                <img
+                  src={store.logoUrl}
+                  alt={store.name}
+                  className="w-10 h-10 rounded-xl object-contain p-1 shrink-0"
+                  style={{ background: C.subtleBg }}
+                />
+              ) : (
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
+                  style={{ background: C.subtleBg, color: C.main }}
+                >
+                  {store.name.slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <p className="text-base font-bold leading-tight" style={{ color: C.main }}>{store.name}</p>
+            </div>
+
+            {store.description && (
+              <p className="text-sm leading-relaxed line-clamp-3" style={{ color: C.body }}>
+                {store.description}
+              </p>
+            )}
+
+            {store.businessHours && store.businessHours.length > 0 && (
+              <div className="space-y-2.5">
+                <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+                  <Clock className="w-3.5 h-3.5" /> Horários
+                </p>
+                <ul className="space-y-1.5">
+                  {store.businessHours.map((h) => (
+                    <li key={h.day} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="shrink-0 w-20" style={{ color: C.body }}>{h.day}</span>
+                      <span
+                        className={h.closed ? "italic" : "font-medium tabular-nums"}
+                        style={{ color: h.closed ? C.muted : C.main }}
+                      >
+                        {h.closed ? "Fechado" : `${h.open} – ${h.close}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* ── Col 2: Endereço & Entrega ───────────────────────────────── */}
+          <div className="space-y-4">
+            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+              Endereço &amp; Entrega
+            </p>
+
+            {addr ? (
+              <div className="space-y-2">
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: C.iconFg }} />
+                  <div className="text-sm space-y-0.5 leading-relaxed" style={{ color: C.body }}>
+                    <p>
+                      {addr.street?.slice(0, 50)}, {addr.number?.slice(0, 5)}
+                      {addr.complement ? `, ${addr.complement.slice(0, 100)}` : ""}
+                    </p>
+                    <p>{addr.neighborhood?.slice(0, 50)}</p>
+                    <p>{addr.city?.slice(0, 50)} — {addr.state?.slice(0, 2).toUpperCase()} · CEP {addr.zip}</p>
+                  </div>
+                </div>
+                {mapsUrl && (
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs transition-opacity hover:opacity-80"
+                    style={{ color: C.link }}
+                  >
+                    Ver no Maps <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm italic" style={{ color: C.muted }}>Endereço não informado</p>
+            )}
+
+            <div className="pt-3 space-y-2" style={{ borderTop: `1px solid ${C.border}` }}>
+              {store.deliveryEnabled && (
+                <div className="flex items-center gap-2 text-xs" style={{ color: C.body }}>
+                  <Truck className="w-3.5 h-3.5 shrink-0" style={{ color: C.iconFg }} />
+                  <span>
+                    {freeAbove !== null
+                      ? `Frete grátis acima de R$ ${formatPrice(freeAbove)}`
+                      : baseFee === 0
+                      ? "Frete grátis"
+                      : `Taxa de entrega: R$ ${formatPrice(baseFee)}`}
+                  </span>
+                </div>
+              )}
+              {store.pickupEnabled && (
+                <div className="flex items-center gap-2 text-xs" style={{ color: C.body }}>
+                  <Package className="w-3.5 h-3.5 shrink-0" style={{ color: C.iconFg }} />
+                  <span>Retirada no local disponível</span>
+                </div>
+              )}
+              {store.deliveryEstimate && (
+                <div className="flex items-center gap-2 text-xs" style={{ color: C.muted }}>
+                  <Clock className="w-3.5 h-3.5 shrink-0" style={{ color: C.iconFg }} />
+                  <span>Prazo estimado: {store.deliveryEstimate}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Col 3: Formas de Pagamento ──────────────────────────────── */}
+          <div className="space-y-4">
+            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+              Pagamentos
+            </p>
+            {payMethods.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {payMethods.map(({ key, label, icon: Icon, accent }) => (
+                  <span
+                    key={key}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium"
+                    style={{
+                      background: accent ? withAlpha(accent, 0.10) : C.badgeBg,
+                      border:     `1px solid ${accent ? withAlpha(accent, 0.25) : C.badgeBorder}`,
+                      color:      C.main,
+                    }}
+                  >
+                    <Icon className="w-3.5 h-3.5" style={{ color: accent ?? C.iconFg }} />
+                    {label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm italic leading-relaxed" style={{ color: C.muted }}>
+                Consulte as formas de pagamento na finalização do pedido.
+              </p>
+            )}
+          </div>
+
+          {/* ── Col 4: Atendimento ──────────────────────────────────────── */}
+          <div className="space-y-4">
+            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+              Atendimento
+            </p>
+            <ul className="space-y-3">
+              {waUrl && (
+                <li>
+                  <a
+                    href={waUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2.5 text-sm transition-opacity hover:opacity-80"
+                    style={{ color: C.body }}
+                  >
+                    <span
+                      className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                      style={{ background: "rgba(37,211,102,0.15)" }}
+                    >
+                      <MessageCircle className="w-4 h-4" style={{ color: "#25D366" }} />
+                    </span>
+                    WhatsApp
+                  </a>
+                </li>
+              )}
+              {store.phone && (
+                <li>
+                  <a
+                    href={`tel:${store.phone.replace(/\D/g, "")}`}
+                    className="flex items-center gap-2.5 text-sm transition-opacity hover:opacity-80"
+                    style={{ color: C.body }}
+                  >
+                    <span
+                      className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                      style={{ background: C.subtleBg }}
+                    >
+                      <Phone className="w-4 h-4" style={{ color: C.iconFg }} />
+                    </span>
+                    {store.phone}
+                  </a>
+                </li>
+              )}
+              {store.email && (
+                <li>
+                  <a
+                    href={`mailto:${store.email}`}
+                    className="flex items-center gap-2.5 text-sm transition-opacity hover:opacity-80"
+                    style={{ color: C.body }}
+                  >
+                    <span
+                      className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                      style={{ background: C.subtleBg }}
+                    >
+                      <Mail className="w-4 h-4" style={{ color: C.iconFg }} />
+                    </span>
+                    {store.email}
+                  </a>
+                </li>
+              )}
+            </ul>
+          </div>
+
+        </div>
+
+        {/* Bottom bar */}
+        <div
+          className="mt-10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3"
+          style={{ borderTop: `1px solid ${C.border}` }}
+        >
+          <p className="text-xs" style={{ color: C.muted }}>
+            © {new Date().getFullYear()} {store.name} · Todos os direitos reservados
+          </p>
+          <p className="text-xs" style={{ color: C.muted }}>
+            Desenvolvido com <span style={{ color: C.body }}>Armazix</span>
+          </p>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 const BOTTOM_ITEMS = [
   { href: "/store", label: "Início", icon: Home },
   { href: "/store/categories", label: "Categorias", icon: LayoutGrid },
@@ -625,6 +956,22 @@ function StoreLayout() {
     ? store.name.split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase()
     : "...";
 
+  // Open/closed status based on today's businessHours
+  const isOpen = useMemo<boolean | null>(() => {
+    const hours = store?.businessHours;
+    if (!hours || hours.length === 0) return null;
+    const now = new Date();
+    const dayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+    const todayName = dayNames[now.getDay()];
+    const todayH = hours.find(h => h.day.toLowerCase().slice(0, 3) === todayName.toLowerCase().slice(0, 3));
+    if (!todayH) return null;
+    if (todayH.closed) return false;
+    const [oh, om] = todayH.open.split(":").map(Number);
+    const [ch, cm] = todayH.close.split(":").map(Number);
+    const m = now.getHours() * 60 + now.getMinutes();
+    return m >= oh * 60 + om && m < ch * 60 + cm;
+  }, [store?.businessHours]);
+
   return (
     <StoreContext.Provider value={{ store, configuracaoVitrine, storeLoading, cart, addToCart, removeFromCart, updateQty, clearCart, cartCount, cartTotal, favorites, toggleFavorite, activeCustomer, setActiveCustomer }}>
       <div style={themeStyle} className="min-h-screen bg-[var(--cor-fundo)] text-[var(--cor-texto)] flex flex-col">
@@ -643,24 +990,27 @@ function StoreLayout() {
                 )}
               </Link>
               <div className="min-w-0">
-                <p className="text-sm font-bold truncate leading-tight">
-                  {storeLoading ? "Carregando..." : store?.name || "Loja"}
-                </p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="text-sm font-bold truncate leading-tight">
+                    {storeLoading ? "Carregando..." : store?.name || "Loja"}
+                  </p>
+                  {isOpen !== null && (
+                    <span className={`shrink-0 inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none ${isOpen ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? "bg-green-500" : "bg-red-500"}`} />
+                      {isOpen ? "Aberto" : "Fechado"}
+                    </span>
+                  )}
+                </div>
                 {store?.deliveryEstimate && (
                   <p className="text-[10px] text-muted-foreground leading-tight">{store.deliveryEstimate} · {deliveryFee === 0 ? "Frete grátis" : `R$ ${formatPrice(deliveryFee)}`}</p>
                 )}
               </div>
             </div>
 
-            {/* Desktop Nav + Search */}
-            <div className="hidden md:flex items-center gap-3 flex-1 max-w-3xl">
-              <nav className="hidden lg:flex items-center gap-4 text-sm font-medium text-slate-600">
-                <Link to="/store" className="hover:text-slate-900 transition-colors">Início</Link>
-                <a href="#mais-vendidos" className="hover:text-slate-900 transition-colors">Mais Vendidos</a>
-                <a href="#sobre-nos" className="hover:text-slate-900 transition-colors">Sobre Nós</a>
-              </nav>
+            {/* Desktop Search — expanded, sem links de navegação */}
+            <div className="hidden md:flex items-center flex-1 mx-4">
               <form
-                className="flex-1"
+                className="w-full"
                 onSubmit={(e) => {
                   e.preventDefault();
                   const q = desktopSearch.trim();
@@ -668,12 +1018,12 @@ function StoreLayout() {
                 }}
               >
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <Input
                     value={desktopSearch}
                     onChange={(e) => setDesktopSearch(e.target.value)}
-                    placeholder="Buscar produtos"
-                    className="h-10 rounded-xl border-0 bg-[#F1F3F5] pl-9 focus-visible:ring-2 focus-visible:ring-[var(--cor-primaria)]/30"
+                    placeholder="Buscar produtos, categorias..."
+                    className="h-10 rounded-2xl border-0 bg-[#F1F3F5] pl-9 focus-visible:ring-2 focus-visible:ring-[var(--cor-primaria)]/30 w-full"
                   />
                 </div>
               </form>
@@ -825,6 +1175,9 @@ function StoreLayout() {
             )}
           </div>
         </main>
+
+        {/* Footer */}
+        {store && <StoreFooter store={store} />}
 
         {/* Bottom Navigation - Mobile */}
         {store && (

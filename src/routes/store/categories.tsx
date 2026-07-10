@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useStore } from "../store";
 import { type StoreProduct, type StoreCategory, formatPrice } from "@/lib/store-context";
+import { getEffectivePrice } from "@/lib/promo-engine";
 import { ProductCard } from "./index";
 
 export const Route = createFileRoute("/store/categories")({
@@ -31,7 +32,8 @@ function CategoriesPage() {
     : activeProducts;
 
   const handleAdd = useCallback((product: StoreProduct) => {
-    addToCart({ id: product.id, name: product.name, price: parseFloat(product.price), image: product.imageUrl || null, emoji: product.emoji || "📦" });
+    const { effectivePrice } = getEffectivePrice(product.price, product.promoConfig, "store");
+    addToCart({ id: product.id, name: product.name, price: effectivePrice, image: product.imageUrl || null, emoji: product.emoji || "📦" });
   }, [addToCart]);
 
   return (

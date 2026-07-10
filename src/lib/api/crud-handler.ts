@@ -3,7 +3,7 @@ import type { PromoConfig } from "@/lib/promo-engine";
 import { schema } from "@/lib/db";
 import { eq, desc, sql, and, ne, isNotNull, inArray } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
-import { notifyOwnerNewOrder, notifyCustomerStatus } from "@/lib/whatsapp-sender";
+import { notifyOwnerNewOrder, notifyCustomerStatus, normalizePhone, DEFAULT_WPP_CONFIG } from "@/lib/whatsapp-sender";
 import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey, customersCacheKey, deleteKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
 
@@ -42,6 +42,8 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     active?: boolean | null;
     allowObservation?: boolean;
     promoConfig?: PromoConfig | null;
+    productType?: string;
+    isWeightScale?: boolean;
   };
 
   if (!body.name || !body.price) {
@@ -78,6 +80,8 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
       active: body.active !== undefined ? body.active : true,
       allowObservation: body.allowObservation ?? false,
       promoConfig: body.promoConfig ?? null,
+      productType: body.productType || "Produto",
+      isWeightScale: body.isWeightScale ?? false,
     }).returning();
 
     // Invalida cache da vitrine — novo produto deve aparecer imediatamente
@@ -151,17 +155,20 @@ export async function listProductsHandler(request: Request): Promise<Response> {
               .select({
                 id:                products.id,
                 name:              products.name,
+                description:       products.description,
                 price:             products.price,
                 compareAtPrice:    products.compareAtPrice,
                 categoryId:        products.categoryId,
                 imageUrl:          products.imageUrl,
+                images:            products.images,
                 emoji:             products.emoji,
+                badge:             products.badge,
                 promoConfig:       products.promoConfig,
                 stock:             products.stock,
                 lowStockThreshold: products.lowStockThreshold,
                 rating:            products.rating,
                 reviewCount:       products.reviewCount,
-                description: sql<string | null>`LEFT(${products.description}, 120)`,
+                allowObservation:  products.allowObservation,
               })
               .from(products)
               .where(where)
@@ -236,6 +243,8 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     active?: boolean | null;
     allowObservation?: boolean;
     promoConfig?: PromoConfig | null;
+    productType?: string;
+    isWeightScale?: boolean;
   };
 
   if (!body.productId) {
@@ -280,6 +289,8 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     if (body.active      !== undefined) updates.active      = body.active;
     if (body.allowObservation !== undefined) updates.allowObservation = body.allowObservation;
     if (body.promoConfig     !== undefined) updates.promoConfig      = body.promoConfig;
+    if (body.productType     !== undefined) updates.productType      = body.productType;
+    if (body.isWeightScale   !== undefined) updates.isWeightScale    = body.isWeightScale;
 
     const [updated] = await db.update(products)
       .set(updates)
@@ -637,7 +648,7 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       storeId:           body.storeId,
       customerId:        body.customerId || null,
       number:            nextNumber,
-      status:            "pending",
+      status:            "received",
       type:              body.type || "delivery",
       paymentMethod:     body.paymentMethod || null,
       installments:      body.installments && body.installments > 1 ? body.installments : 1,
@@ -670,8 +681,8 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       }))),
       db.insert(schema.orderTimeline).values({
         orderId: order.id,
-        status:  "pending",
-        note:    "Pedido recebido — aguardando confirmação",
+        status:  "received",
+        note:    "Pedido recebido e confirmado",
       }),
     ]);
 
@@ -786,7 +797,18 @@ export async function createOrderHandler(request: Request): Promise<Response> {
             : Promise.resolve(null),
         ]);
 
-        if (!storeRow?.wppConfig) return;
+        if (!storeRow) return;
+
+        // Fallback to defaults so stores that never saved config still get notifications
+        const cfg = storeRow.wppConfig ?? DEFAULT_WPP_CONFIG;
+
+        // Phone: prefer CRM record (already E.164), fall back to checkout form digits
+        const customerPhone = custRow?.phone
+          ? normalizePhone(custRow.phone)
+          : rawPhone
+          ? normalizePhone(rawPhone)
+          : null;
+        const customerName = custRow?.name ?? body.cliente?.nome ?? "Cliente";
 
         const itemsOwner = body.items.map(i => `• ${i.productName} ×${i.quantity}`).join("\n");
         const itemsCustomer = body.items.slice(0, 3).map(i => `• ${i.productName} ×${i.quantity}`).join("\n");
@@ -809,28 +831,28 @@ export async function createOrderHandler(request: Request): Promise<Response> {
             storeId:       body.storeId,
             storeName:     storeRow.name,
             orderNumber:   nextNumber,
-            customerName:  custRow?.name ?? "Cliente",
-            customerPhone: custRow?.phone ?? null,
+            customerName,
+            customerPhone,
             total:         body.total,
             subtotal:      body.subtotal,
             deliveryFee:   body.deliveryFee ?? null,
             paymentMethod: body.paymentMethod ?? null,
             entrega:       entregaText,
             items:         itemsOwner,
-            status:        "pending",
-            wppConfig:     storeRow.wppConfig,
+            status:        "received",
+            wppConfig:     cfg,
           }),
           notifyCustomerStatus({
             storeId:       body.storeId,
             storeName:     storeRow.name,
             orderNumber:   nextNumber,
-            customerName:  custRow?.name ?? "Cliente",
-            customerPhone: custRow?.phone ?? null,
+            customerName,
+            customerPhone,
             total:         body.total,
             paymentMethod: body.paymentMethod ?? null,
             items:         itemsCustomer,
-            status:        "pending",
-            wppConfig:     storeRow.wppConfig,
+            status:        "received",
+            wppConfig:     cfg,
           }),
         ]);
       } catch (err) {
@@ -1113,6 +1135,7 @@ export async function listCustomersHandler(request: Request, auth?: AuthContext)
             phone: maskPhone(c.phone),
             cpf: maskCPF(c.cpf),
             isSupplier: c.isSupplier ?? false,
+            isDeliverer: c.isDeliverer ?? false,
             status: c.status ?? "ativo",
             ordersCount: customerOrders.length,
             totalSpent: `R$ ${totalSpent.toFixed(2).replace(".", ",")}`,
@@ -1176,7 +1199,7 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
     });
   }
 
-  const body = await request.json() as { name: string; email?: string; phone?: string; cpf?: string; isSupplier?: boolean; status?: string };
+  const body = await request.json() as { name: string; email?: string; phone?: string; cpf?: string; isSupplier?: boolean; isDeliverer?: boolean; status?: string };
   if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -1190,6 +1213,7 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
       phone: body.phone || null,
       cpf: body.cpf || null,
       isSupplier: body.isSupplier ?? false,
+      isDeliverer: body.isDeliverer ?? false,
       status: body.status ?? "ativo",
       active: (body.status ?? "ativo") === "ativo",
     }).returning();
@@ -1226,6 +1250,7 @@ export async function updateCustomerHandler(request: Request, auth?: AuthContext
     phone?: string;
     cpf?: string;
     isSupplier?: boolean;
+    isDeliverer?: boolean;
     status?: string;
   };
 
@@ -1254,7 +1279,8 @@ export async function updateCustomerHandler(request: Request, auth?: AuthContext
         email:      body.email      !== undefined ? (body.email || null)  : existing.email,
         phone:      body.phone      !== undefined ? (body.phone || null)  : existing.phone,
         cpf:        body.cpf        !== undefined ? (body.cpf   || null)  : existing.cpf,
-        isSupplier: body.isSupplier !== undefined ? body.isSupplier       : existing.isSupplier,
+        isSupplier:  body.isSupplier  !== undefined ? body.isSupplier  : existing.isSupplier,
+        isDeliverer: body.isDeliverer !== undefined ? body.isDeliverer : existing.isDeliverer,
         status:     newStatus,
         active:     newStatus === "ativo",
         updatedAt:  new Date(),

@@ -158,6 +158,8 @@ export const products = pgTable("products", {
   lowStockThreshold: integer("low_stock_threshold").default(5),
   unit: varchar("unit", { length: 20 }).default("un"),
   badge: varchar("badge", { length: 30 }),
+  productType: varchar("product_type", { length: 50 }).default("Produto").notNull(),
+  isWeightScale: boolean("is_weight_scale").default(false).notNull(),
   trackStock: boolean("track_stock").default(false),
   featured: boolean("featured").default(false),
   active: boolean("active").default(true),
@@ -231,6 +233,7 @@ export const customers = pgTable("customers", {
   avatarUrl: text("avatar_url"),
   active: boolean("active").default(true),
   isSupplier: boolean("is_supplier").default(false),
+  isDeliverer: boolean("is_deliverer").default(false),
   status: varchar("status", { length: 20 }).default("ativo"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -246,6 +249,18 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   favorites: many(favorites),
   reviews: many(reviews),
 }));
+
+// ─── CUSTOMER OTPS (DB fallback when Redis unavailable) ─────────
+export const customerOtps = pgTable("customer_otps", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  phone: varchar("phone", { length: 20 }).notNull(),
+  code: varchar("code", { length: 6 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("customer_otps_lookup_idx").on(t.storeId, t.phone),
+]);
 
 // ─── ADDRESSES ──────────────────────────────────────────────────
 export const addresses = pgTable("addresses", {
@@ -696,6 +711,27 @@ export const financeiroLancamentosRelations = relations(financeiroLancamentos, (
   store:  one(stores,       { fields: [financeiroLancamentos.storeId],  references: [stores.id] }),
   order:  one(orders,       { fields: [financeiroLancamentos.orderId],  references: [orders.id] }),
   sessao: one(caixaSessoes, { fields: [financeiroLancamentos.sessaoId], references: [caixaSessoes.id] }),
+}));
+
+// ─── PRINTERS (Impressoras) ─────────────────────────────────────
+export const printers = pgTable("printers", {
+  id:        uuid("id").defaultRandom().primaryKey(),
+  storeId:   uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  code:      varchar("code", { length: 20 }).notNull(),
+  name:      varchar("name", { length: 120 }).notNull(),
+  type:      varchar("type", { length: 30 }).notNull().default("Produção"),
+  driver:    varchar("driver", { length: 30 }).notNull().default("Nenhum"),
+  path:      varchar("path", { length: 255 }),
+  columns:   integer("columns").default(48),
+  active:    boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("printers_store_idx").on(t.storeId),
+]);
+
+export const printersRelations = relations(printers, ({ one }) => ({
+  store: one(stores, { fields: [printers.storeId], references: [stores.id] }),
 }));
 
 // ─── ROLE PROFILES (Perfis de Acesso RBAC) ──────────────────────

@@ -371,29 +371,82 @@ function CheckoutPage() {
   };
 
   // ── WhatsApp ──────────────────────────────────────────────────────────────
-  const sendOrderViaWhatsApp = () => {
+  const sendOrderViaWhatsApp = async () => {
     const phone = configuracaoVitrine?.telefoneWhatsapp;
-    if (!phone) return;
-    const showPrice = configuracaoVitrine?.exibirPreco !== false;
-    const itens = cart.map(item => {
-      const sub = item.price * item.qty;
-      const addText = item.additions?.length ? `\n   ↳ ${item.additions.map((a: { name: string }) => a.name).join(", ")}` : "";
-      const obsText = item.obs ? `\n   📝 ${item.obs}` : "";
-      return showPrice ? `• ${item.qty}× ${item.name} — R$ ${formatPrice(sub)}${addText}${obsText}` : `• ${item.qty}× ${item.name}${addText}${obsText}`;
-    }).join("\n");
-    const entregaSection = deliveryType === "delivery"
-      ? [`🚚 *Entrega:*`, `${address.street}, ${address.number}${address.complement ? ` — ${address.complement}` : ""}`, `${address.neighborhood}, ${address.city}${address.state ? ` — ${address.state}` : ""}`, address.zip ? `CEP: ${address.zip}` : ""].filter(Boolean).join("\n")
-      : `📍 *Retirada no local*`;
-    const pagamento = PAYMENT_LABELS[paymentMethod ?? ""] || paymentMethod || "A combinar";
-    const parcelasText = paymentMethod === "delivery_credit" && installments > 1 ? ` (${installments}×)` : "";
-    const trocoText = paymentMethod === "delivery_cash" && needsChange ? `\n💵 Troco para: R$ ${formatPrice(parseFloat(changeAmount) || 0)}` : "";
-    const financeiro = showPrice
-      ? [``, `*Resumo:*`, `Subtotal: R$ ${formatPrice(cartTotal)}`, couponDiscount > 0 ? `Cupom (${couponApplied}): −R$ ${formatPrice(couponDiscount)}` : "", `Entrega: ${feeResult.isGratis ? feeResult.label : `R$ ${formatPrice(feeResult.taxa)}`}`, `*Total: R$ ${formatPrice(orderTotal)}*`].filter(Boolean).join("\n")
-      : "";
-    const msg = [`🛍️ *Pedido — ${store?.name || "Loja"}*`, ``, `👤 *${nome.trim()}*  📱 ${telefone}`, ``, `*Itens:*`, itens, ``, entregaSection, ``, `💳 *Pagamento:* ${pagamento}${parcelasText}${trocoText}`, financeiro].join("\n");
-    clearCart();
-    window.open(`https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
-    setConfirmed(true);
+    if (!phone || submitting || !paymentMethod) return;
+    setSubmitting(true); setOrderError("");
+    try {
+      const storeId = store?.id || localStorage.getItem("storeId");
+      if (!storeId) { setOrderError("Loja não encontrada"); return; }
+      const items = cart.map(item => ({
+        productId: item.id, productName: item.name, productEmoji: item.emoji || item.image || "📦",
+        quantity: item.qty, unitPrice: item.price.toFixed(2),
+        additionsTotal: item.additions ? item.additions.reduce((s: number, a: { price: number }) => s + a.price, 0).toFixed(2) : "0",
+        total: (item.price * item.qty).toFixed(2), additionsSnapshot: item.additions || [], notes: item.obs || undefined,
+      }));
+      const addressSnapshot = deliveryType === "delivery" ? {
+        street: address.street, number: address.number, neighborhood: address.neighborhood,
+        city: address.city, state: address.state || "SP", zip: address.zip.replace(/\D/g, ""),
+        complement: address.complement || undefined,
+      } : undefined;
+      const cliente = { nome: nome.trim(), telefone: telefone.replace(/\D/g, "") };
+      const estimatedDelivery = new Date(Date.now() + (deliveryType === "delivery" ? 40 : 20) * 60_000).toISOString();
+      const basePayload = {
+        storeId, type: deliveryType, cliente, items,
+        subtotal: cartTotal.toFixed(2), deliveryFee: feeResult.taxa.toFixed(2),
+        discount: couponDiscount.toFixed(2), total: orderTotal.toFixed(2),
+        addressSnapshot, couponCode: couponApplied || undefined, estimatedDelivery,
+      };
+
+      // MP payments: redirect to payment page (WhatsApp step is skipped)
+      if (paymentMethod.startsWith("mp_")) {
+        const res = await api.post("/api/payments/mp-checkout", { ...basePayload, mpMethod: MP_METHOD_KEY[paymentMethod] }, { skipCsrf: true });
+        const data = await res.json() as { init_point?: string; error?: string };
+        if (res.ok && data.init_point) { clearCart(); window.location.href = data.init_point; return; }
+        setOrderError(data.error || "Erro ao iniciar pagamento no Mercado Pago"); return;
+      }
+
+      const changeInfo = paymentMethod === "delivery_cash"
+        ? { needed: needsChange === true, amount: needsChange && changeAmount ? parseFloat(changeAmount) : null }
+        : undefined;
+      const res = await api.post("/api/orders/create", {
+        ...basePayload,
+        paymentMethod: DELIVERY_PM_KEY[paymentMethod] ?? paymentMethod,
+        installments: paymentMethod === "delivery_credit" && installments > 1 ? installments : undefined,
+        change: changeInfo,
+      }, { skipCsrf: true });
+      const data = await res.json() as { success?: boolean; order?: { number: number; customerId?: string | null }; error?: string };
+      if (!res.ok || !data.success) { setOrderError(data.error || "Erro ao criar pedido"); return; }
+
+      const num = data.order?.number ?? null;
+      setOrderNumber(num);
+      setActiveCustomer({ id: data.order?.customerId ?? undefined, name: nome.trim(), phone: telefone.replace(/\D/g, "") });
+
+      // Build WhatsApp message with order number
+      const showPrice = configuracaoVitrine?.exibirPreco !== false;
+      const itens = cart.map(item => {
+        const sub = item.price * item.qty;
+        const addText = item.additions?.length ? `\n   ↳ ${item.additions.map((a: { name: string }) => a.name).join(", ")}` : "";
+        const obsText = item.obs ? `\n   📝 ${item.obs}` : "";
+        return showPrice ? `• ${item.qty}× ${item.name} — R$ ${formatPrice(sub)}${addText}${obsText}` : `• ${item.qty}× ${item.name}${addText}${obsText}`;
+      }).join("\n");
+      const entregaSection = deliveryType === "delivery"
+        ? [`🚚 *Entrega:*`, `${address.street}, ${address.number}${address.complement ? ` — ${address.complement}` : ""}`, `${address.neighborhood}, ${address.city}${address.state ? ` — ${address.state}` : ""}`, address.zip ? `CEP: ${address.zip}` : ""].filter(Boolean).join("\n")
+        : `📍 *Retirada no local*`;
+      const pagamento = PAYMENT_LABELS[paymentMethod ?? ""] || paymentMethod || "A combinar";
+      const parcelasText = paymentMethod === "delivery_credit" && installments > 1 ? ` (${installments}×)` : "";
+      const trocoText = paymentMethod === "delivery_cash" && needsChange ? `\n💵 Troco para: R$ ${formatPrice(parseFloat(changeAmount) || 0)}` : "";
+      const financeiro = showPrice
+        ? [``, `*Resumo:*`, `Subtotal: R$ ${formatPrice(cartTotal)}`, couponDiscount > 0 ? `Cupom (${couponApplied}): −R$ ${formatPrice(couponDiscount)}` : "", `Entrega: ${feeResult.isGratis ? feeResult.label : `R$ ${formatPrice(feeResult.taxa)}`}`, `*Total: R$ ${formatPrice(orderTotal)}*`].filter(Boolean).join("\n")
+        : "";
+      const orderTag = num ? ` #${num}` : "";
+      const msg = [`🛍️ *Pedido${orderTag} — ${store?.name || "Loja"}*`, ``, `👤 *${nome.trim()}*  📱 ${telefone}`, ``, `*Itens:*`, itens, ``, entregaSection, ``, `💳 *Pagamento:* ${pagamento}${parcelasText}${trocoText}`, financeiro].join("\n");
+
+      clearCart();
+      window.open(`https://wa.me/${phone.replace(/\D/g, "")}?text=${encodeURIComponent(msg)}`, "_blank", "noopener,noreferrer");
+      setConfirmed(true);
+    } catch { setOrderError("Erro de conexão"); }
+    finally { setSubmitting(false); }
   };
 
   // ── Carrinho vazio ────────────────────────────────────────────────────────
@@ -1008,10 +1061,14 @@ function CheckoutPage() {
         ) : configuracaoVitrine?.pedidoWhatsapp && configuracaoVitrine?.telefoneWhatsapp ? (
           <Button
             onClick={sendOrderViaWhatsApp}
+            disabled={submitting}
             className="flex-1 h-11 rounded-2xl text-white font-semibold hover:opacity-90 active:scale-[0.99] transition-all shadow-lg gap-2"
             style={{ backgroundColor: "#25D366" }}
           >
-            <MessageCircle className="w-4 h-4" /> Enviar Pedido via WhatsApp
+            {submitting
+              ? <Loader2 className="w-5 h-5 animate-spin" />
+              : <><MessageCircle className="w-4 h-4" /> Enviar via WhatsApp</>
+            }
           </Button>
         ) : (
           <Button

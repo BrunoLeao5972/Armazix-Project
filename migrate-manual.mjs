@@ -213,6 +213,28 @@ const migrations = [
   { name: "0021_delivery_rules_free_shipping", query: `ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "delivery_rules" jsonb, ADD COLUMN IF NOT EXISTS "free_shipping_above" numeric(10,2)` },
   // Modelo v2 de configuração de pagamento (dois grupos: online + entrega)
   { name: "0022_payment_config_v2", query: `ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "payment_config" jsonb` },
+  // Flag de entregador em clientes/fornecedores
+  { name: "0023_deliverer_flag", query: `ALTER TABLE "customers" ADD COLUMN IF NOT EXISTS "is_deliverer" boolean DEFAULT false` },
+  // Tabela de impressoras
+  {
+    name: "0024_printers",
+    query: `CREATE TABLE IF NOT EXISTS "printers" (
+      "id"         uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+      "store_id"   uuid REFERENCES "stores"("id") ON DELETE CASCADE NOT NULL,
+      "code"       varchar(20) NOT NULL,
+      "name"       varchar(120) NOT NULL,
+      "type"       varchar(30) NOT NULL DEFAULT 'Produção',
+      "driver"     varchar(30) NOT NULL DEFAULT 'Nenhum',
+      "path"       varchar(255),
+      "columns"    integer DEFAULT 48,
+      "active"     boolean NOT NULL DEFAULT true,
+      "created_at" timestamp NOT NULL DEFAULT now(),
+      "updated_at" timestamp NOT NULL DEFAULT now()
+    )`,
+  },
+  { name: "0024b_printers_idx", query: `CREATE INDEX IF NOT EXISTS "printers_store_idx" ON "printers"("store_id")` },
+  // Tipo de produto e compatibilidade com balança
+  { name: "0025_product_type_weight", query: `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "product_type" varchar(50) NOT NULL DEFAULT 'Produto', ADD COLUMN IF NOT EXISTS "is_weight_scale" boolean NOT NULL DEFAULT false` },
 ];
 
 for (const m of migrations) {

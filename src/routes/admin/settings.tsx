@@ -111,6 +111,18 @@ interface StoreData {
   };
 }
 
+const NAV_ITEMS = [
+  { value: "geral",          label: "Geral",           icon: Store },
+  { value: "horarios",       label: "Horários",        icon: Clock },
+  { value: "personalizacao", label: "Personalização",  icon: Palette },
+  { value: "pagamentos",     label: "Pagamentos",      icon: CreditCard },
+  { value: "entrega",        label: "Entrega",         icon: Truck },
+  { value: "permissoes",     label: "Permissões",      icon: Shield },
+  { value: "perfil",         label: "Perfil",          icon: User },
+  { value: "planos",         label: "Planos",          icon: TrendingUp },
+  { value: "auditoria",      label: "Auditoria",       icon: ShieldAlert },
+] as const;
+
 function SettingsPage() {
   const { tab: tabParam } = Route.useSearch();
   const [activeTab, setActiveTab] = useState(tabParam || "geral");
@@ -572,30 +584,56 @@ function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl animate-in fade-in duration-300">
-      <div>
+    <div className="w-full animate-in fade-in duration-300">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
         <p className="text-sm text-muted-foreground mt-1">Gerencie sua loja, plano e preferências</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        {/* Scrollable tab bar: fills full width on desktop, scrolls on mobile */}
-        <div className="w-full overflow-x-auto rounded-2xl [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
-          <TabsList className="flex w-full min-w-max h-auto justify-start items-center gap-1 p-1.5 rounded-2xl">
-            <TabsTrigger value="geral"          className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Geral</TabsTrigger>
-            <TabsTrigger value="horarios"       className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Horários</TabsTrigger>
-            <TabsTrigger value="personalizacao" className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Personalização</TabsTrigger>
+        <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-6 items-start">
 
-            <TabsTrigger value="pagamentos"     className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Pagamentos</TabsTrigger>
-            <TabsTrigger value="entrega"        className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Entrega</TabsTrigger>
-            <TabsTrigger value="permissoes"     className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Permissões</TabsTrigger>
-            <TabsTrigger value="perfil"         className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Perfil</TabsTrigger>
-            <TabsTrigger value="planos"         className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Planos</TabsTrigger>
-            <TabsTrigger value="auditoria"      className="flex-1 shrink-0 rounded-xl px-4 py-2.5 text-xs font-medium text-center whitespace-nowrap">Auditoria</TabsTrigger>
-          </TabsList>
-        </div>
+          {/* Desktop sidebar nav */}
+          <aside className="hidden md:flex flex-col sticky top-20">
+            <TabsList className="flex flex-col w-full h-auto gap-0.5 p-1.5 rounded-2xl bg-secondary/80">
+              {NAV_ITEMS.map(({ value, label, icon: Icon }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="w-full justify-start gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground
+                    data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm
+                    hover:bg-background/60 hover:text-foreground transition-all"
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </aside>
 
-        <TabsContent value="geral" className="mt-6 space-y-6">
+          {/* Content column */}
+          <div className="min-w-0">
+            {/* Mobile horizontal tab scroll */}
+            <div className="md:hidden w-full overflow-x-auto [&::-webkit-scrollbar]:hidden mb-4" style={{ scrollbarWidth: "none" }}>
+              <div className="flex gap-1 p-1.5 bg-secondary/80 rounded-2xl w-max">
+                {NAV_ITEMS.map(({ value, label, icon: Icon }) => (
+                  <button
+                    key={value}
+                    onClick={() => setActiveTab(value)}
+                    className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium whitespace-nowrap transition-all ${
+                      activeTab === value
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <TabsContent value="geral" className="mt-0 space-y-6">
           {/* Store Info */}
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-3">
@@ -661,11 +699,17 @@ function SettingsPage() {
                 </p>
               </div>
               <div className="space-y-2">
-                <Label>Descrição</Label>
-                <Input 
-                  value={description} 
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="h-11 rounded-xl" 
+                <div className="flex items-center justify-between">
+                  <Label>Descrição</Label>
+                  <span className={`text-[11px] tabular-nums ${description.length >= 250 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                    {description.length}/250
+                  </span>
+                </div>
+                <Input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value.slice(0, 250))}
+                  maxLength={250}
+                  className="h-11 rounded-xl"
                 />
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -775,32 +819,50 @@ function SettingsPage() {
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Rua</Label>
-                  <Input value={addressStreet} onChange={(e) => setAddressStreet(e.target.value)} className="h-11 rounded-xl" />
+                  <div className="flex items-center justify-between">
+                    <Label>Rua</Label>
+                    <span className={`text-[11px] tabular-nums ${addressStreet.length >= 50 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{addressStreet.length}/50</span>
+                  </div>
+                  <Input value={addressStreet} onChange={(e) => setAddressStreet(e.target.value.slice(0, 50))} maxLength={50} className="h-11 rounded-xl" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Número</Label>
-                  <Input value={addressNumber} onChange={(e) => setAddressNumber(e.target.value)} className="h-11 rounded-xl" />
-                </div>
-              </div>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Bairro</Label>
-                  <Input value={addressNeighborhood} onChange={(e) => setAddressNeighborhood(e.target.value)} className="h-11 rounded-xl" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Complemento</Label>
-                  <Input value={addressComplement} onChange={(e) => setAddressComplement(e.target.value)} className="h-11 rounded-xl" />
+                  <div className="flex items-center justify-between">
+                    <Label>Número</Label>
+                    <span className={`text-[11px] tabular-nums ${addressNumber.length >= 5 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{addressNumber.length}/5</span>
+                  </div>
+                  <Input value={addressNumber} onChange={(e) => setAddressNumber(e.target.value.slice(0, 5))} maxLength={5} className="h-11 rounded-xl" />
                 </div>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Cidade</Label>
-                  <Input value={addressCity} onChange={(e) => setAddressCity(e.target.value)} className="h-11 rounded-xl" />
+                  <div className="flex items-center justify-between">
+                    <Label>Bairro</Label>
+                    <span className={`text-[11px] tabular-nums ${addressNeighborhood.length >= 50 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{addressNeighborhood.length}/50</span>
+                  </div>
+                  <Input value={addressNeighborhood} onChange={(e) => setAddressNeighborhood(e.target.value.slice(0, 50))} maxLength={50} className="h-11 rounded-xl" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Estado</Label>
-                  <Input value={addressState} onChange={(e) => setAddressState(e.target.value)} className="h-11 rounded-xl" maxLength={2} />
+                  <div className="flex items-center justify-between">
+                    <Label>Complemento</Label>
+                    <span className={`text-[11px] tabular-nums ${addressComplement.length >= 100 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{addressComplement.length}/100</span>
+                  </div>
+                  <Input value={addressComplement} onChange={(e) => setAddressComplement(e.target.value.slice(0, 100))} maxLength={100} className="h-11 rounded-xl" />
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Cidade</Label>
+                    <span className={`text-[11px] tabular-nums ${addressCity.length >= 50 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{addressCity.length}/50</span>
+                  </div>
+                  <Input value={addressCity} onChange={(e) => setAddressCity(e.target.value.slice(0, 50))} maxLength={50} className="h-11 rounded-xl" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Estado</Label>
+                    <span className={`text-[11px] tabular-nums ${addressState.length >= 2 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{addressState.length}/2</span>
+                  </div>
+                  <Input value={addressState} onChange={(e) => setAddressState(e.target.value.slice(0, 2).toUpperCase())} maxLength={2} className="h-11 rounded-xl" />
                 </div>
               </div>
               {addressSuccess && (
@@ -820,7 +882,7 @@ function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="horarios" className="mt-6 space-y-6">
+        <TabsContent value="horarios" className="mt-0 space-y-6">
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -910,7 +972,7 @@ function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="personalizacao" className="mt-6 space-y-6">
+        <TabsContent value="personalizacao" className="mt-0 space-y-6">
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -1087,7 +1149,7 @@ function SettingsPage() {
         </TabsContent>
 
         {/* ── Formas de Pagamento ────────────────────────────────────── */}
-        <TabsContent value="pagamentos" className="mt-6 space-y-6">
+        <TabsContent value="pagamentos" className="mt-0 space-y-6">
 
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-3">
@@ -1115,7 +1177,7 @@ function SettingsPage() {
         </TabsContent>
 
         {/* ── Entrega ──────────────────────────────────────────────────── */}
-        <TabsContent value="entrega" className="mt-6 space-y-6">
+        <TabsContent value="entrega" className="mt-0 space-y-6">
 
           {/* Seção 1: Tipo de Entrega */}
           <Card className="rounded-2xl border-border/50 shadow-soft">
@@ -1282,7 +1344,7 @@ function SettingsPage() {
           </Button>
         </TabsContent>
 
-        <TabsContent value="perfil" className="mt-6 space-y-6">
+        <TabsContent value="perfil" className="mt-0 space-y-6">
           {/* User Profile */}
           <Card className="rounded-2xl border-border/50 shadow-soft">
             <CardHeader className="pb-3">
@@ -1466,19 +1528,20 @@ function SettingsPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="planos" className="mt-6">
+        <TabsContent value="planos" className="mt-0">
           <PlansSection />
         </TabsContent>
 
-        <TabsContent value="auditoria" className="mt-6">
+        <TabsContent value="auditoria" className="mt-0">
           <AuditoriaSection />
         </TabsContent>
 
-        <TabsContent value="permissoes" className="mt-6">
+        <TabsContent value="permissoes" className="mt-0">
           <PermissionsTab />
         </TabsContent>
 
-
+          </div>{/* /content column */}
+        </div>{/* /grid */}
       </Tabs>
 
       {/* Email Change Modal */}
@@ -1881,10 +1944,10 @@ interface SubStatus {
 
 const PLANS_DEF: PlanDef[] = [
   {
-    id: "free", name: "Free", price: 0, pixPrice: 0,
-    description: "Ideal para testar",
+    id: "free", name: "Teste Grátis", price: 0, pixPrice: 0,
+    description: "14 dias sem compromisso",
     features: [
-      { text: "Até 5 produtos", included: true },
+      { text: "Acesso completo por 14 dias", included: true },
       { text: "Pedidos online", included: true },
       { text: "Relatórios básicos", included: true },
       { text: "1 usuário", included: true },
@@ -1893,11 +1956,11 @@ const PLANS_DEF: PlanDef[] = [
     color: "border-border", badge: null,
   },
   {
-    id: "start", name: "Start", price: 19.90, pixPrice: 24.90,
-    description: "Perfeito para começar",
+    id: "start", name: "Start", price: 79.90, pixPrice: 84.90,
+    description: "O essencial para crescer",
     features: [
-      { text: "Até 30 produtos", included: true },
-      { text: "Pedidos online", included: true },
+      { text: "Até 20 produtos", included: true },
+      { text: "Pedidos online + Delivery", included: true },
       { text: "Relatórios básicos", included: true },
       { text: "1 usuário", included: true },
       { text: "Suporte por email", included: true },
@@ -1905,33 +1968,32 @@ const PLANS_DEF: PlanDef[] = [
     color: "border-blue-400", badge: null,
   },
   {
-    id: "pro", name: "Pro", price: 39.90, pixPrice: 44.90,
-    description: "Para lojas em crescimento",
+    id: "pro", name: "Pro", price: 149.90, pixPrice: 154.90,
+    description: "Controle total do negócio",
     features: [
       { text: "Até 70 produtos", included: true },
       { text: "Pedidos online + Delivery", included: true },
       { text: "Relatórios avançados", included: true },
       { text: "Até 3 usuários", included: true },
+      { text: "Ponto de Venda (PDV) incluso", included: true },
       { text: "Suporte prioritário", included: true },
     ],
     color: "border-primary shadow-glow", badge: "Mais escolhido",
   },
   {
-    id: "full", name: "Full", price: 99.90, pixPrice: 104.90,
-    description: "Produtos ilimitados",
+    id: "full", name: "Full", price: 249.90, pixPrice: 254.90,
+    description: "Liberdade e escala total",
     features: [
       { text: "Produtos ilimitados", included: true },
       { text: "Pedidos online + Delivery", included: true },
       { text: "Relatórios avançados", included: true },
       { text: "Usuários ilimitados", included: true },
-      { text: "Ponto de Venda incluso", included: true },
-      { text: "Suporte prioritário", included: true },
+      { text: "Ponto de Venda (PDV) incluso", included: true },
+      { text: "Suporte prioritário VIP", included: true },
     ],
     color: "border-amber-500", badge: "Premium",
   },
 ];
-
-const PDV_PRICE_CONST = 50;
 const fmtPrice = (v: number) => v.toFixed(2).replace(".", ",");
 
 const DELIVERY_MODELS = [
@@ -1951,7 +2013,6 @@ function PlansSection() {
     mpPaymentId: null, amountPaid: null, paymentStatus: null,
   });
   const [statusLoading, setStatusLoading] = useState(true);
-  const [pdvToggles, setPdvToggles] = useState<Record<string, boolean>>({});
   const [subError, setSubError] = useState("");
   const [paymentModalPlan, setPaymentModalPlan] = useState<PlanDef | null>(null);
   const [pixData, setPixData] = useState<PixPaymentData | null>(null);
@@ -2126,9 +2187,6 @@ function PlansSection() {
       {/* Plan Cards */}
       <div className="grid gap-4">
         {PLANS_DEF.map((plan) => {
-          const pdvOn = pdvToggles[plan.id] ?? false;
-          const cardTotal = plan.price + (pdvOn ? PDV_PRICE_CONST : 0);
-          const pixTotal = plan.pixPrice + (pdvOn ? PDV_PRICE_CONST : 0);
           const isCurrent = status.plan === plan.id;
           return (
             <Card key={plan.id} className={`rounded-2xl border-2 shadow-soft transition-all ${isCurrent ? plan.color : "border-border hover:border-border/80"}`}>
@@ -2148,10 +2206,10 @@ function PlansSection() {
                       <div className="text-xl font-bold">Gratuito</div>
                     ) : (
                       <>
-                        <div className="text-xl font-bold">R$ {fmtPrice(cardTotal)}</div>
+                        <div className="text-xl font-bold">R$ {fmtPrice(plan.price)}</div>
                         <div className="text-xs text-muted-foreground">/mês no cartão</div>
                         <div className="text-xs text-primary font-semibold mt-0.5">
-                          R$ {fmtPrice(pixTotal)} via PIX
+                          R$ {fmtPrice(plan.pixPrice)} via PIX
                         </div>
                       </>
                     )}
@@ -2168,24 +2226,6 @@ function PlansSection() {
                     </div>
                   ))}
                 </div>
-                {/* PDV Toggle */}
-                {plan.price > 0 && plan.id !== "full" && (
-                  <div className={`flex items-center justify-between py-3 px-4 rounded-xl mb-4 border transition-colors ${pdvOn ? "bg-primary/8 border-primary/30" : "bg-secondary/50 border-transparent"}`}>
-                    <div className="flex items-center gap-2.5">
-                      <Building2 className={`w-4 h-4 shrink-0 ${pdvOn ? "text-primary" : "text-muted-foreground"}`} />
-                      <div>
-                        <div className="text-sm font-semibold">PDV — Ponto de Venda</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">Terminal para loja física</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`text-sm font-bold tabular-nums ${pdvOn ? "text-primary" : "text-foreground/60"}`}>
-                        + R$ {fmtPrice(PDV_PRICE_CONST)}<span className="text-xs font-normal">/mês</span>
-                      </span>
-                      <Switch checked={pdvOn} onCheckedChange={(c) => setPdvToggles(prev => ({ ...prev, [plan.id]: c }))} />
-                    </div>
-                  </div>
-                )}
                 {/* CTA */}
                 {isCurrent ? (
                   <Button disabled className="w-full h-10 rounded-xl">Plano atual</Button>
@@ -2194,6 +2234,7 @@ function PlansSection() {
                 ) : (
                   <Button
                     onClick={() => { setSubError(""); setPaymentModalPlan(plan); }}
+
                     variant={plan.id === "pro" ? "default" : "outline"}
                     className={`w-full h-10 rounded-xl font-medium ${plan.id === "pro" ? "bg-gradient-primary shadow-glow" : ""}`}
                   >
@@ -2210,14 +2251,14 @@ function PlansSection() {
 
       <p className="text-xs text-muted-foreground text-center">
         Cartão recorrente: renovação automática mensal. PIX mensal: validade de 30 dias, renovação manual.
-        PDV é adicional de R$ {fmtPrice(PDV_PRICE_CONST)}/mês.
+        PDV incluso nos planos Pro e Full sem custo adicional.
       </p>
 
       {/* Payment Method Modal */}
       {paymentModalPlan && createPortal(
         <PaymentModal
           plan={paymentModalPlan}
-          withPdv={pdvToggles[paymentModalPlan.id] ?? false}
+          withPdv={false}
           onClose={() => setPaymentModalPlan(null)}
           onCard={handleCardPayment}
           onPix={handlePixPayment}
@@ -2288,8 +2329,8 @@ function PaymentModal({
   const [selected, setSelected] = useState<"card" | "pix" | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const cardTotal = plan.price + (withPdv ? PDV_PRICE_CONST : 0);
-  const pixTotal = plan.pixPrice + (withPdv ? PDV_PRICE_CONST : 0);
+  const cardTotal = plan.price;
+  const pixTotal  = plan.pixPrice;
 
   const handleConfirm = async () => {
     if (!selected) return;
@@ -2386,12 +2427,6 @@ function PaymentModal({
                 <span>Plano {plan.name}</span>
                 <span>R$ {fmtPrice(selected === "card" ? plan.price : plan.pixPrice)}</span>
               </div>
-              {withPdv && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>PDV</span>
-                  <span>R$ {fmtPrice(PDV_PRICE_CONST)}</span>
-                </div>
-              )}
               {selected === "pix" && (
                 <div className="flex justify-between text-muted-foreground">
                   <span>Taxa PIX</span>

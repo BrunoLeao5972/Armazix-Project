@@ -98,6 +98,14 @@ import {
   listFinanceiroLancamentosHandler,
 } from "./api/pdv-handler";
 import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler, createPixPaymentHandler, pixWebhookHandler } from "./api/subscription-handler";
+import {
+  listPrintersHandler,
+  createPrinterHandler,
+  updatePrinterHandler,
+  deletePrinterHandler,
+  detectPrintersHandler,
+} from "./api/printers";
+import { printTestHandler, printOrderHandler } from "./api/print-handler";
 import { requireAuth, AuthContext } from "./middleware/auth";
 import { rateLimit, createRateLimitResponse } from "./middleware/rate-limit";
 import { withSecurityHeaders } from "./middleware/security-headers";
@@ -186,6 +194,11 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/role-profiles/save":          saveRoleProfileHandler,
   "/api/role-profiles/create":        createRoleProfileHandler,
   "/api/role-profiles/delete":        deleteRoleProfileHandler,
+  "/api/printers/create":             createPrinterHandler,
+  "/api/printers/update":             updatePrinterHandler,
+  "/api/printers/delete":             deletePrinterHandler,
+  "/api/printers/print-test":         printTestHandler,
+  "/api/printers/print-order":        printOrderHandler,
 };
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
@@ -214,6 +227,8 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/pdv/financeiro":         listFinanceiroLancamentosHandler,
   "/api/store-users/list":       listStoreUsersHandler,
   "/api/role-profiles/list":     listRoleProfilesHandler,
+  "/api/printers/list":          listPrintersHandler,
+  "/api/printers/detect":        detectPrintersHandler,
 };
 
 // Mapeamento de rotas para configurações de rate limit

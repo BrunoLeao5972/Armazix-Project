@@ -33,6 +33,7 @@ import { Route as AdminReportsPreviewRouteImport } from './routes/admin/reports-
 import { Route as AdminReportsDashboardRouteImport } from './routes/admin/reports-dashboard'
 import { Route as AdminReportsRouteImport } from './routes/admin/reports'
 import { Route as AdminProductsRouteImport } from './routes/admin/products'
+import { Route as AdminPrintersRouteImport } from './routes/admin/printers'
 import { Route as AdminPdvRouteImport } from './routes/admin/pdv'
 import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
 import { Route as AdminFinancialRouteImport } from './routes/admin/financial'
@@ -164,6 +165,11 @@ const AdminProductsRoute = AdminProductsRouteImport.update({
   path: '/products',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPrintersRoute = AdminPrintersRouteImport.update({
+  id: '/printers',
+  path: '/printers',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminPdvRoute = AdminPdvRouteImport.update({
   id: '/pdv',
   path: '/pdv',
@@ -232,6 +238,7 @@ export interface FileRoutesByFullPath {
   '/admin/financial': typeof AdminFinancialRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/pdv': typeof AdminPdvRoute
+  '/admin/printers': typeof AdminPrintersRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/reports-dashboard': typeof AdminReportsDashboardRoute
@@ -266,6 +273,7 @@ export interface FileRoutesByTo {
   '/admin/financial': typeof AdminFinancialRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/pdv': typeof AdminPdvRoute
+  '/admin/printers': typeof AdminPrintersRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/reports-dashboard': typeof AdminReportsDashboardRoute
@@ -303,6 +311,7 @@ export interface FileRoutesById {
   '/admin/financial': typeof AdminFinancialRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/pdv': typeof AdminPdvRoute
+  '/admin/printers': typeof AdminPrintersRoute
   '/admin/products': typeof AdminProductsRoute
   '/admin/reports': typeof AdminReportsRoute
   '/admin/reports-dashboard': typeof AdminReportsDashboardRoute
@@ -341,6 +350,7 @@ export interface FileRouteTypes {
     | '/admin/financial'
     | '/admin/orders'
     | '/admin/pdv'
+    | '/admin/printers'
     | '/admin/products'
     | '/admin/reports'
     | '/admin/reports-dashboard'
@@ -375,6 +385,7 @@ export interface FileRouteTypes {
     | '/admin/financial'
     | '/admin/orders'
     | '/admin/pdv'
+    | '/admin/printers'
     | '/admin/products'
     | '/admin/reports'
     | '/admin/reports-dashboard'
@@ -411,6 +422,7 @@ export interface FileRouteTypes {
     | '/admin/financial'
     | '/admin/orders'
     | '/admin/pdv'
+    | '/admin/printers'
     | '/admin/products'
     | '/admin/reports'
     | '/admin/reports-dashboard'
@@ -613,6 +625,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminProductsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/printers': {
+      id: '/admin/printers'
+      path: '/printers'
+      fullPath: '/admin/printers'
+      preLoaderRoute: typeof AdminPrintersRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/pdv': {
       id: '/admin/pdv'
       path: '/pdv'
@@ -695,6 +714,7 @@ interface AdminRouteChildren {
   AdminFinancialRoute: typeof AdminFinancialRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPdvRoute: typeof AdminPdvRoute
+  AdminPrintersRoute: typeof AdminPrintersRoute
   AdminProductsRoute: typeof AdminProductsRoute
   AdminReportsRoute: typeof AdminReportsRoute
   AdminReportsDashboardRoute: typeof AdminReportsDashboardRoute
@@ -714,6 +734,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminFinancialRoute: AdminFinancialRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminPdvRoute: AdminPdvRoute,
+  AdminPrintersRoute: AdminPrintersRoute,
   AdminProductsRoute: AdminProductsRoute,
   AdminReportsRoute: AdminReportsRoute,
   AdminReportsDashboardRoute: AdminReportsDashboardRoute,

@@ -1,0 +1,14 @@
+CREATE TABLE IF NOT EXISTS printers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+  code VARCHAR(20) NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  type VARCHAR(30) NOT NULL DEFAULT 'Produção',
+  driver VARCHAR(30) NOT NULL DEFAULT 'Nenhum',
+  path VARCHAR(255),
+  columns INTEGER DEFAULT 48,
+  active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS printers_store_idx ON printers(store_id);
