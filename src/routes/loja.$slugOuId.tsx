@@ -120,7 +120,7 @@ function PublicStorefrontPage() {
       try {
         const [productsRes, categoriesRes] = await Promise.all([
           fetch(`/api/products/list?storeId=${encodeURIComponent(currentStoreId)}&scope=public`),
-          fetch(`/api/categories/list?storeId=${encodeURIComponent(currentStoreId)}`),
+          fetch(`/api/categories/list?storeId=${encodeURIComponent(currentStoreId)}&scope=public`),
         ]);
         const productsData = (await productsRes.json()) as { products?: StoreProduct[]; error?: string };
         const categoriesData = (await categoriesRes.json()) as { categories?: StoreCategory[]; error?: string };
@@ -182,7 +182,7 @@ function PublicStorefrontPage() {
   const analyticCategories = useMemo(
     () =>
       categories
-        .filter((c) => c.active !== false && c.analytic === true)
+        .filter((c) => !c.parentId)
         .sort((a, b) => (a.position ?? 0) - (b.position ?? 0)),
     [categories]
   );
@@ -473,6 +473,7 @@ function PublicStorefrontPage() {
                 : []
           }
           storeName={store?.name}
+          slideIntervalMs={store?.bannerIntervalMs ?? 5000}
         />
 
         {/* Layout flex: sidebar + conteúdo */}

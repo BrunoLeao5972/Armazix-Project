@@ -141,6 +141,7 @@ function SettingsPage() {
   const [primaryColor, setPrimaryColor] = useState("#00C853");
   const [logoUrl, setLogoUrl] = useState("");
   const [bannerImages, setBannerImages] = useState<string[]>([]);
+  const [bannerIntervalMs, setBannerIntervalMs] = useState(5000);
   const [backgroundColor, setBackgroundColor] = useState("#ffffff");
   const [textColor, setTextColor] = useState("#0f172a");
   const [showPrice, setShowPrice] = useState(true);
@@ -299,6 +300,7 @@ function SettingsPage() {
         setEmail(data.store.email || "");
         setPrimaryColor(data.store.primaryColor || "#00C853");
         setLogoUrl(data.store.logoUrl || "");
+        setBannerIntervalMs(data.store.bannerIntervalMs ?? 5000);
         // Sempre atualiza bannerImages do DB (mesmo array vazio limpa o estado)
         setBannerImages(
           (data.store.banners ?? [])
@@ -433,6 +435,7 @@ function SettingsPage() {
           whatsappOrderEnabled,
           whatsappPhone: whatsappOrderEnabled ? whatsappPhone : null,
           highlightLowStock,
+          bannerIntervalMs,
         }),
         api.post("/api/banners/save", {
           imageUrls: bannerImages.filter(Boolean),
@@ -1043,6 +1046,25 @@ function SettingsPage() {
                     >
                       + Adicionar banner
                     </button>
+                  )}
+
+                  {bannerImages.filter(Boolean).length > 1 && (
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-muted-foreground whitespace-nowrap">
+                        Trocar a cada
+                      </label>
+                      <select
+                        value={bannerIntervalMs}
+                        onChange={(e) => setBannerIntervalMs(Number(e.target.value))}
+                        className="text-sm rounded-md border border-input bg-background px-2 py-1"
+                      >
+                        <option value={3000}>3 segundos</option>
+                        <option value={5000}>5 segundos</option>
+                        <option value={7000}>7 segundos</option>
+                        <option value={10000}>10 segundos</option>
+                        <option value={15000}>15 segundos</option>
+                      </select>
+                    </div>
                   )}
 
                   <p className="text-xs text-muted-foreground">

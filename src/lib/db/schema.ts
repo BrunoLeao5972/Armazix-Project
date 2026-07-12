@@ -23,6 +23,7 @@ export const stores = pgTable("stores", {
   logoUrl: text("logo_url"),
   bannerUrl: text("banner_url"),
   bannerMobileUrl: text("banner_mobile_url"),
+  bannerIntervalMs: integer("banner_interval_ms").default(5000),
   primaryColor: varchar("primary_color", { length: 7 }).default("#00C853"),
   backgroundColor: varchar("background_color", { length: 7 }),
   textColor: varchar("text_color", { length: 7 }),

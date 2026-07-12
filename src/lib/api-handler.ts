@@ -48,7 +48,7 @@ import {
   validatePublicCouponHandler,
   checkCustomerByPhoneHandler,
 } from "./api/crud-handler";
-import { loginPasswordlessHandler, getCustomerOrdersHandler, requestOtpHandler, verifyOtpHandler } from "./api/customer-handler";
+import { loginPasswordlessHandler, getCustomerOrdersHandler, requestOtpHandler, verifyOtpHandler, patchCustomerProfileHandler } from "./api/customer-handler";
 import { saveBannersHandler } from "./api/banners-handler";
 import {
   listStoreUsersHandler,
@@ -105,7 +105,7 @@ import {
   deletePrinterHandler,
   detectPrintersHandler,
 } from "./api/printers";
-import { printTestHandler, printOrderHandler } from "./api/print-handler";
+import { printTestHandler, printOrderHandler, printRawTestHandler } from "./api/print-handler";
 import { requireAuth, AuthContext } from "./middleware/auth";
 import { rateLimit, createRateLimitResponse } from "./middleware/rate-limit";
 import { withSecurityHeaders } from "./middleware/security-headers";
@@ -142,6 +142,7 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/coupons/validate": validatePublicCouponHandler, // Público para vitrine
   "/api/customer/check": checkCustomerByPhoneHandler,  // Pré-preenchimento checkout
   "/api/customer/orders": getCustomerOrdersHandler,     // Central do cliente (auth própria via Bearer)
+  "/api/customer/profile": patchCustomerProfileHandler, // Auto-atualização de perfil (auth via Bearer)
 };
 
 // Rotas protegidas (requerem autenticação)
@@ -197,6 +198,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/printers/create":             createPrinterHandler,
   "/api/printers/update":             updatePrinterHandler,
   "/api/printers/delete":             deletePrinterHandler,
+  "/api/printers/test-raw":            printRawTestHandler,
   "/api/printers/print-test":         printTestHandler,
   "/api/printers/print-order":        printOrderHandler,
 };

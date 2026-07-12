@@ -53,10 +53,10 @@ export function StorefrontHeader({
           </span>
         </div>
 
-        {/* Right: Search + Cart */}
+        {/* Right: Search + Cart — hidden on mobile (bottom nav handles these) */}
         <div className="flex items-center gap-2 ml-auto">
-          {/* Search (Hidden on mobile, visible on md+) */}
-          <div className="hidden sm:relative sm:block flex-1 max-w-xs">
+          {/* Search — hidden on mobile, visible md+ */}
+          <div className="hidden md:flex relative items-center flex-1 max-w-xs">
             <input
               type="text"
               placeholder="Buscar..."
@@ -66,10 +66,10 @@ export function StorefrontHeader({
             <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           </div>
 
-          {/* Cart Icon */}
+          {/* Cart Icon — hidden on mobile, visible md+ */}
           <Sheet>
             <SheetTrigger asChild>
-              <button className="relative w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors flex items-center justify-center">
+              <button className="hidden md:flex relative w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors items-center justify-center">
                 <ShoppingBag className="w-5 h-5 text-slate-600" />
                 {cartCount > 0 && (
                   <span

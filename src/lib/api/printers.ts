@@ -216,28 +216,49 @@ export async function detectPrintersHandler(_request: Request, auth?: AuthContex
     });
   }
 
+  // If server is not Windows, PowerShell is unavailable — report OS so frontend can show guidance
+  if (process.platform !== "win32") {
+    return new Response(JSON.stringify({ printers: [], serverOs: process.platform }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  }
+
   try {
     // Dynamic import so this handler doesn't break in non-Node environments
     const { exec } = await import("child_process");
     const { promisify } = await import("util");
     const execAsync = promisify(exec);
-    const { stdout } = await execAsync(
-      `powershell -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name | ConvertTo-Json -Compress"`,
-      { timeout: 5000 }
-    );
-    const raw = stdout.trim();
+
     let names: string[] = [];
-    if (raw.startsWith("[")) {
-      names = JSON.parse(raw) as string[];
-    } else if (raw.startsWith('"')) {
-      names = [JSON.parse(raw) as string];
+    try {
+      const { stdout } = await execAsync(
+        `powershell -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name | ConvertTo-Json -Compress"`,
+        { timeout: 5000 }
+      );
+      const raw = stdout.trim();
+      if (raw.startsWith("[")) {
+        names = JSON.parse(raw) as string[];
+      } else if (raw.startsWith('"')) {
+        names = [JSON.parse(raw) as string];
+      }
+    } catch {
+      // Fallback: wmic (older Windows without PowerShell)
+      try {
+        const { stdout: wmicOut } = await execAsync(
+          `wmic printer get name /format:list`,
+          { timeout: 5000 }
+        );
+        names = wmicOut.split(/\r?\n/)
+          .map(l => l.replace(/^Name=/, "").trim())
+          .filter(Boolean);
+      } catch { /* no printers found */ }
     }
-    return new Response(JSON.stringify({ printers: names }), {
+
+    return new Response(JSON.stringify({ printers: names, serverOs: "win32" }), {
       status: 200, headers: { "content-type": "application/json" },
     });
   } catch {
-    // Non-Windows, PowerShell unavailable, or no Node child_process — return empty gracefully
-    return new Response(JSON.stringify({ printers: [] }), {
+    return new Response(JSON.stringify({ printers: [], serverOs: "win32" }), {
       status: 200, headers: { "content-type": "application/json" },
     });
   }

@@ -50,6 +50,11 @@ type StoreContextType = {
   /** Cliente identificado na sessão de checkout atual */
   activeCustomer: ActiveCustomer | null;
   setActiveCustomer: (c: ActiveCustomer | null) => void;
+  /** Sessão do cliente autenticado por telefone/OTP */
+  customerToken: string | null;
+  customerName: string;
+  loginCustomer: (token: string, name: string) => void;
+  logoutCustomer: () => void;
 };
 
 export const StoreContext = createContext<StoreContextType>({
@@ -79,6 +84,10 @@ export const StoreContext = createContext<StoreContextType>({
   toggleFavorite: () => {},
   activeCustomer: null,
   setActiveCustomer: () => {},
+  customerToken: null,
+  customerName: "",
+  loginCustomer: () => {},
+  logoutCustomer: () => {},
 });
 
 export const useStore = () => useContext(StoreContext);
@@ -973,7 +982,7 @@ function StoreLayout() {
   }, [store?.businessHours]);
 
   return (
-    <StoreContext.Provider value={{ store, configuracaoVitrine, storeLoading, cart, addToCart, removeFromCart, updateQty, clearCart, cartCount, cartTotal, favorites, toggleFavorite, activeCustomer, setActiveCustomer }}>
+    <StoreContext.Provider value={{ store, configuracaoVitrine, storeLoading, cart, addToCart, removeFromCart, updateQty, clearCart, cartCount, cartTotal, favorites, toggleFavorite, activeCustomer, setActiveCustomer, customerToken, customerName, loginCustomer: handleCustomerLogin, logoutCustomer: handleCustomerLogout }}>
       <div style={themeStyle} className="min-h-screen bg-[var(--cor-fundo)] text-[var(--cor-texto)] flex flex-col">
         {/* Header */}
         <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80">

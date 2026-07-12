@@ -66,14 +66,14 @@ export function CategoriesSection({
   onChildChange,
   primaryColor,
 }: CategoriesSectionProps) {
-  // Nível 1: apenas categorias analíticas (agrupadores)
+  // Nível 1: categorias raiz (sem pai)
   const analyticCategories = categories
-    .filter((c) => c.active !== false && c.analytic === true)
+    .filter((c) => !c.parentId)
     .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  // Nível 2: filhos da analítica selecionada
+  // Nível 2: filhos da categoria raiz selecionada
   const subcategories = selectedAnalyticId
-    ? categories.filter((c) => c.active !== false && c.parentId === selectedAnalyticId)
+    ? categories.filter((c) => c.parentId === selectedAnalyticId)
     : [];
 
   if (analyticCategories.length === 0) return null;

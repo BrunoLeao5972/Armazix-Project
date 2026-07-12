@@ -5,7 +5,7 @@ import { waitUntil } from "@/lib/execution-context";
 import { storeOtp, consumeOtp } from "@/lib/cache/redis";
 import { sendWppText, normalizePhone } from "@/lib/whatsapp-sender";
 
-const { customers, orders, orderItems, customerOtps } = schema;
+const { customers, orders, orderItems, customerOtps, addresses } = schema;
 
 // ── DB OTP helpers (fallback when Redis is not configured) ────────────────────
 async function storeOtpInDb(
@@ -230,9 +230,62 @@ export async function verifyOtpHandler(request: Request): Promise<Response> {
     }
 
     const token = await signCustomerJWT({ customerId, storeId }, secret);
-    return json({ token, customer: { id: customerId, name: customerName } }, 200);
+    return json({ token, customer: { id: customerId, name: customerName, isNew: !existing } }, 200);
   } catch (err) {
     console.error("[customer/verify-code]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── PATCH /api/customer/profile ─────────────────────────────────────────────
+// Atualiza nome e salva endereço do cliente autenticado.
+// Auth: Bearer <customerJWT>
+// Body: { name: string; address?: string }
+export async function patchCustomerProfileHandler(request: Request): Promise<Response> {
+  const raw = request.headers.get("Authorization");
+  const token = raw?.startsWith("Bearer ") ? raw.slice(7) : null;
+  if (!token) return json({ error: "Não autorizado" }, 401);
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return json({ error: "Configuração inválida" }, 500);
+
+  const auth = await verifyCustomerJWT(token, secret);
+  if (!auth) return json({ error: "Token inválido ou expirado" }, 401);
+
+  const body = await request.json() as { name?: string; address?: string };
+  const name = body.name?.trim();
+  const addressText = body.address?.trim();
+
+  if (!name) return json({ error: "Nome obrigatório" }, 400);
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const [updated] = await db
+      .update(customers)
+      .set({ name, updatedAt: new Date() })
+      .where(and(eq(customers.id, auth.customerId), eq(customers.storeId, auth.storeId)))
+      .returning({ id: customers.id, name: customers.name });
+
+    if (!updated) return json({ error: "Cliente não encontrado" }, 404);
+
+    if (addressText) {
+      await db.insert(addresses).values({
+        customerId: auth.customerId,
+        label: "Principal",
+        street: addressText.slice(0, 200),
+        number: "S/N",
+        neighborhood: "-",
+        city: "-",
+        state: "XX",
+        zip: "00000000",
+        isDefault: true,
+      });
+    }
+
+    return json({ customer: { id: updated.id, name: updated.name } }, 200);
+  } catch (err) {
+    console.error("[customer/profile]", err);
     return json({ error: "Internal server error" }, 500);
   }
 }

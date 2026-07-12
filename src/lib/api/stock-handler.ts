@@ -1,6 +1,6 @@
 import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq, and, gte, desc, sql } from "drizzle-orm";
+import { eq, and, gte, ne, desc, sql } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 import { generateCleanSlug } from "@/lib/slug";
 
@@ -24,58 +24,50 @@ export async function getStockStatsHandler(request: Request, auth?: AuthContext)
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    const productsData = await db.select().from(products).where(eq(products.storeId, storeId));
-    const totalStock = productsData.reduce((sum, p) => sum + (p.stock || 0), 0);
-
-    const lowStockItems = productsData
-      .filter(p => p.stock !== null && p.lowStockThreshold !== null && p.stock < (p.lowStockThreshold || 5))
-      .map(p => ({
-        id: p.id,
-        name: p.name,
-        stock: p.stock || 0,
-        minStock: p.lowStockThreshold || 5,
-      }));
-
-    // Weekly movements from orders (stock out)
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-    const weekOrders = await db
-      .select()
-      .from(orders)
-      .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, oneWeekAgo)));
+    const [productStats, lowStockItems, weeklyMovements] = await Promise.all([
+      db.select({
+        totalStock:    sql<number>`coalesce(sum(${products.stock}), 0)`,
+        lowStockCount: sql<number>`cast(count(*) filter (where coalesce(${products.stock}, 0) < coalesce(${products.lowStockThreshold}, 5)) as int)`,
+      }).from(products).where(eq(products.storeId, storeId))
+        .then(r => r[0] ?? { totalStock: 0, lowStockCount: 0 }),
 
-    const weekOrderIds = weekOrders.map(o => o.id);
-    let weeklyOut = 0;
-    const movementMap: Record<string, { product: string; type: string; qty: number; date: string }> = {};
+      db.select({ id: products.id, name: products.name, stock: products.stock, lowStockThreshold: products.lowStockThreshold })
+        .from(products)
+        .where(and(
+          eq(products.storeId, storeId),
+          sql`coalesce(${products.stock}, 0) < coalesce(${products.lowStockThreshold}, 5)`,
+        ))
+        .limit(5),
 
-    if (weekOrderIds.length > 0) {
-      const items = await db
-        .select()
-        .from(orderItems)
-        .where(sql`${orderItems.orderId} IN ${weekOrderIds}`);
+      db.select({
+        productName: orderItems.productName,
+        qty:         sql<number>`cast(sum(${orderItems.quantity}) as int)`,
+      }).from(orderItems)
+        .innerJoin(orders, eq(orderItems.orderId, orders.id))
+        .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, oneWeekAgo)))
+        .groupBy(orderItems.productName)
+        .orderBy(desc(sql`sum(${orderItems.quantity})`))
+        .limit(6),
+    ]);
 
-      for (const item of items) {
-        weeklyOut += item.quantity;
-        const key = item.productName;
-        if (!movementMap[key]) {
-          movementMap[key] = {
-            product: item.productName,
-            type: "saida",
-            qty: 0,
-            date: new Date().toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }),
-          };
-        }
-        movementMap[key].qty += item.quantity;
-      }
-    }
-
-    const movements = Object.values(movementMap).slice(0, 6);
+    const { totalStock, lowStockCount } = productStats;
+    const weeklyOut = weeklyMovements.reduce((s, m) => s + m.qty, 0);
+    const now = new Date();
+    const movements = weeklyMovements.map(m => ({
+      product: m.productName,
+      type: "saida",
+      qty: m.qty,
+      date: now.toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }),
+    }));
+    const lowStock = lowStockItems.map(p => ({ id: p.id, name: p.name, stock: p.stock || 0, minStock: p.lowStockThreshold || 5 }));
 
     return new Response(JSON.stringify({
-      stats: { totalStock, weeklyIn: 0, weeklyOut, lowStockCount: lowStockItems.length },
+      stats: { totalStock, weeklyIn: 0, weeklyOut, lowStockCount },
       movements,
-      lowStock: lowStockItems.slice(0, 5),
+      lowStock,
     }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("Stock stats error:", error);
@@ -103,54 +95,50 @@ export async function getReportsStatsHandler(request: Request, auth?: AuthContex
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    const ordersData = await db.select().from(orders).where(eq(orders.storeId, storeId));
+    const now = new Date();
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
-    const completedOrders = ordersData.filter(o => o.status !== "cancelled");
-    const totalRevenue = completedOrders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-    const totalOrders = completedOrders.length;
+    const [globalStats, recentOrders, topProducts] = await Promise.all([
+      db.select({
+        totalRevenue:    sql<number>`coalesce(sum(case when ${orders.status} != 'cancelled' then cast(${orders.total} as numeric) else 0 end), 0)`,
+        totalOrders:     sql<number>`cast(count(*) filter (where ${orders.status} != 'cancelled') as int)`,
+        totalCustomers:  sql<number>`cast(count(distinct ${orders.customerId}) as int)`,
+      }).from(orders).where(eq(orders.storeId, storeId))
+        .then(r => r[0] ?? { totalRevenue: 0, totalOrders: 0, totalCustomers: 0 }),
 
-    const uniqueCustomers = new Set(ordersData.map(o => o.customerId).filter(Boolean));
+      db.select({ createdAt: orders.createdAt, total: orders.total })
+        .from(orders)
+        .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, sixMonthsAgo), ne(orders.status, "cancelled"))),
+
+      db.select({
+        name:    orderItems.productName,
+        qty:     sql<number>`cast(sum(${orderItems.quantity}) as int)`,
+        revenue: sql<number>`sum(cast(${orderItems.total} as numeric))`,
+      }).from(orderItems)
+        .innerJoin(orders, eq(orderItems.orderId, orders.id))
+        .where(and(eq(orders.storeId, storeId), ne(orders.status, "cancelled")))
+        .groupBy(orderItems.productName)
+        .orderBy(desc(sql`sum(${orderItems.quantity})`))
+        .limit(5),
+    ]);
+
+    const { totalRevenue, totalOrders, totalCustomers } = globalStats;
     const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-    // Monthly data (last 6 months)
+    const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     const monthlyData: { name: string; vendas: number; pedidos: number }[] = [];
     for (let i = 5; i >= 0; i--) {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const month = d.toLocaleString("pt-BR", { month: "short" });
-      const monthOrders = completedOrders.filter(o => {
-        const od = new Date(o.createdAt);
-        return od.getMonth() === d.getMonth() && od.getFullYear() === d.getFullYear();
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mOrders = recentOrders.filter(o => {
+        const cd = new Date(o.createdAt);
+        return cd.getMonth() === d.getMonth() && cd.getFullYear() === d.getFullYear();
       });
-      const vendas = monthOrders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-      monthlyData.push({ name: month.charAt(0).toUpperCase() + month.slice(1), vendas, pedidos: monthOrders.length });
+      const vendas = mOrders.reduce((s, o) => s + parseFloat(o.total || "0"), 0);
+      monthlyData.push({ name: monthNames[d.getMonth()], vendas, pedidos: mOrders.length });
     }
-
-    // Top products
-    const completedOrderIds = completedOrders.map(o => o.id);
-    const topProductsMap: Record<string, { name: string; qty: number; revenue: number }> = {};
-
-    if (completedOrderIds.length > 0) {
-      const items = await db
-        .select()
-        .from(orderItems)
-        .where(sql`${orderItems.orderId} IN ${completedOrderIds}`);
-
-      for (const item of items) {
-        if (!topProductsMap[item.productName]) {
-          topProductsMap[item.productName] = { name: item.productName, qty: 0, revenue: 0 };
-        }
-        topProductsMap[item.productName].qty += item.quantity;
-        topProductsMap[item.productName].revenue += parseFloat(item.total || "0");
-      }
-    }
-
-    const topProducts = Object.values(topProductsMap)
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 5);
 
     return new Response(JSON.stringify({
-      stats: { totalRevenue, totalOrders, totalCustomers: uniqueCustomers.size, averageTicket },
+      stats: { totalRevenue, totalOrders, totalCustomers, averageTicket },
       monthlyData,
       topProducts,
     }), { status: 200, headers: { "content-type": "application/json" } });
@@ -613,61 +601,75 @@ export async function getFinancialStatsHandler(request: Request, auth?: AuthCont
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    const storeOrders = await db.select().from(orders).where(eq(orders.storeId, storeId));
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
-    const monthOrders = storeOrders.filter(o => new Date(o.createdAt) >= monthStart && o.status !== "cancelled");
-    const revenue = monthOrders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
+    const [monthRevenue, cashFlowRows, paymentRows, recentTx] = await Promise.all([
+      db.select({
+        revenue: sql<number>`coalesce(sum(cast(${orders.total} as numeric)), 0)`,
+      }).from(orders)
+        .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, monthStart), ne(orders.status, "cancelled")))
+        .then(r => r[0]?.revenue ?? 0),
 
-    // Cash flow: last 6 months
-    const cashFlow: { name: string; receita: number; despesa: number }[] = [];
+      db.select({ createdAt: orders.createdAt, total: orders.total })
+        .from(orders)
+        .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, sixMonthsAgo), ne(orders.status, "cancelled"))),
+
+      db.select({
+        paymentMethod: orders.paymentMethod,
+        count: sql<number>`cast(count(*) as int)`,
+      }).from(orders)
+        .where(and(eq(orders.storeId, storeId), ne(orders.status, "cancelled")))
+        .groupBy(orders.paymentMethod),
+
+      db.select({ id: orders.id, number: orders.number, status: orders.status, total: orders.total, createdAt: orders.createdAt })
+        .from(orders)
+        .where(eq(orders.storeId, storeId))
+        .orderBy(desc(orders.createdAt))
+        .limit(10),
+    ]);
+
+    const revenue = monthRevenue;
+
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const cashFlow: { name: string; receita: number; despesa: number }[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-      const mOrders = storeOrders.filter(o => {
+      const mOrders = cashFlowRows.filter(o => {
         const cd = new Date(o.createdAt);
-        return cd >= d && cd <= mEnd && o.status !== "cancelled";
+        return cd.getMonth() === d.getMonth() && cd.getFullYear() === d.getFullYear();
       });
-      const mRevenue = mOrders.reduce((sum, o) => sum + parseFloat(o.total || "0"), 0);
-      cashFlow.push({ name: monthNames[d.getMonth()], receita: mRevenue, despesa: 0 });
+      cashFlow.push({ name: monthNames[d.getMonth()], receita: mOrders.reduce((s, o) => s + parseFloat(o.total || "0"), 0), despesa: 0 });
     }
 
-    // Payment methods
-    const methodCounts: Record<string, number> = {};
-    storeOrders.filter(o => o.status !== "cancelled" && o.paymentMethod).forEach(o => {
-      methodCounts[o.paymentMethod!] = (methodCounts[o.paymentMethod!] || 0) + 1;
-    });
-    const totalMethods = Object.values(methodCounts).reduce((a, b) => a + b, 0) || 1;
+    const totalMethods = paymentRows.reduce((s, r) => s + r.count, 0) || 1;
     const methodColors: Record<string, string> = { pix: "#00C853", card: "#3b82f6", cash: "#f59e0b", boleto: "#8b5cf6" };
     const methodLabels: Record<string, string> = { pix: "PIX", card: "Cartão", cash: "Dinheiro", boleto: "Boleto" };
-    const paymentMethods = Object.entries(methodCounts).map(([method, count]) => ({
-      name: methodLabels[method] || method,
-      value: Math.round((count / totalMethods) * 100),
-      color: methodColors[method] || "#94a3b8",
-    }));
-
-    // Recent transactions from orders
-    const recentOrders = storeOrders
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 10)
-      .map(o => ({
-        id: o.id,
-        desc: `Pedido #${o.number}`,
-        type: o.status === "cancelled" ? "despesa" : "receita",
-        value: `R$ ${parseFloat(o.total || "0").toFixed(2).replace(".", ",")}`,
-        date: new Date(o.createdAt).toLocaleDateString("pt-BR"),
+    const paymentMethods = paymentRows
+      .filter(r => r.paymentMethod)
+      .map(r => ({
+        name: methodLabels[r.paymentMethod!] || r.paymentMethod!,
+        value: Math.round((r.count / totalMethods) * 100),
+        color: methodColors[r.paymentMethod!] || "#94a3b8",
       }));
 
+    const recentTransactions = recentTx.map(o => ({
+      id: o.id,
+      desc: `Pedido #${o.number}`,
+      type: o.status === "cancelled" ? "despesa" : "receita",
+      value: `R$ ${parseFloat(o.total || "0").toFixed(2).replace(".", ",")}`,
+      date: new Date(o.createdAt).toLocaleDateString("pt-BR"),
+    }));
+
     const profit = revenue;
-    const margin = revenue > 0 ? ((profit / revenue) * 100).toFixed(0) : "0";
+    const margin = revenue > 0 ? "100" : "0";
 
     return new Response(JSON.stringify({
       stats: { revenue, expenses: 0, profit, margin: `${margin}%` },
       cashFlow,
       paymentMethods,
-      recentTransactions: recentOrders,
+      recentTransactions,
       accountsPayable: [],
       accountsReceivable: [],
     }), { status: 200, headers: { "content-type": "application/json" } });
@@ -813,20 +815,26 @@ export async function getDashboardChartDataHandler(request: Request, auth?: Auth
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    const storeOrders = await db.select().from(orders).where(eq(orders.storeId, storeId));
-
-    // Weekly revenue/orders by day
-    const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     const now = new Date();
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - now.getDay());
     weekStart.setHours(0, 0, 0, 0);
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
-    const weekOrders = storeOrders.filter(o => new Date(o.createdAt) >= weekStart && o.status !== "cancelled");
+    const [weekOrders, monthlyOrders] = await Promise.all([
+      db.select({ createdAt: orders.createdAt, total: orders.total })
+        .from(orders)
+        .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, weekStart), ne(orders.status, "cancelled"))),
 
+      db.select({ createdAt: orders.createdAt, total: orders.total })
+        .from(orders)
+        .where(and(eq(orders.storeId, storeId), gte(orders.createdAt, sixMonthsAgo), ne(orders.status, "cancelled"))),
+    ]);
+
+    const dayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     const revenueByDay: Record<number, number> = {};
     const ordersByDay: Record<number, number> = {};
-    for (let i = 0; i < 7; i++) revenueByDay[i] = 0, ordersByDay[i] = 0;
+    for (let i = 0; i < 7; i++) { revenueByDay[i] = 0; ordersByDay[i] = 0; }
 
     weekOrders.forEach(o => {
       const day = new Date(o.createdAt).getDay();
@@ -835,22 +843,19 @@ export async function getDashboardChartDataHandler(request: Request, auth?: Auth
     });
 
     const revenueData = dayNames.map((name, i) => ({ name, valor: revenueByDay[i] }));
-    const ordersData = dayNames.map((name, i) => ({ name, pedidos: ordersByDay[i] }));
+    const ordersData  = dayNames.map((name, i) => ({ name, pedidos: ordersByDay[i] }));
 
-    // Monthly sales for last 6 months
     const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     const monthlySales: { name: string; vendas: number }[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-      const mOrders = storeOrders.filter(o => {
+      const mOrders = monthlyOrders.filter(o => {
         const cd = new Date(o.createdAt);
-        return cd >= d && cd <= mEnd && o.status !== "cancelled";
+        return cd.getMonth() === d.getMonth() && cd.getFullYear() === d.getFullYear();
       });
       monthlySales.push({ name: monthNames[d.getMonth()], vendas: mOrders.reduce((s, o) => s + parseFloat(o.total || "0"), 0) });
     }
 
-    // Stock movement (weekly in/out based on orders)
     const stockMovement = dayNames.map((name, i) => ({ name, entrada: 0, saida: ordersByDay[i] }));
 
     return new Response(JSON.stringify({ revenueData, ordersData, monthlySales, stockMovement }), {

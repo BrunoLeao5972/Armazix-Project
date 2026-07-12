@@ -84,10 +84,13 @@ function DashboardPage() {
   const fetchDashboardData = async (storeId: string) => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/dashboard/stats?storeId=${storeId}`);
-      const data = await res.json();
-      
-      if (!res.ok) {
+      const [statsRes, chartRes] = await Promise.all([
+        fetch(`/api/dashboard/stats?storeId=${storeId}`),
+        fetch(`/api/dashboard/charts?storeId=${storeId}`),
+      ]);
+      const [data, chartDataResp] = await Promise.all([statsRes.json(), chartRes.json()]);
+
+      if (!statsRes.ok) {
         setError(data.error || "Erro ao carregar dados");
         return;
       }
@@ -95,25 +98,20 @@ function DashboardPage() {
       setStats(data.stats);
       setRecentOrders(data.recentOrders?.map((o: any) => ({
         id: `#${o.number || o.id.slice(-4)}`,
-        customer: o.customer?.name || "Cliente",
+        customer: o.customerName || "Cliente",
         total: `R$ ${parseFloat(o.total).toFixed(2).replace(".", ",")}`,
         status: o.status,
         time: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
       })) || []);
 
-      // Fetch chart data
-      try {
-        const chartRes = await fetch(`/api/dashboard/charts?storeId=${storeId}`);
-        const chartDataResp = await chartRes.json();
-        if (chartRes.ok) {
-          setChartData({
-            revenueData: chartDataResp.revenueData || [],
-            ordersData: chartDataResp.ordersData || [],
-            monthlySales: chartDataResp.monthlySales || [],
-            stockMovement: chartDataResp.stockMovement || [],
-          });
-        }
-      } catch {}
+      if (chartRes.ok) {
+        setChartData({
+          revenueData: chartDataResp.revenueData || [],
+          ordersData: chartDataResp.ordersData || [],
+          monthlySales: chartDataResp.monthlySales || [],
+          stockMovement: chartDataResp.stockMovement || [],
+        });
+      }
     } catch (err) {
       setError("Erro de conexão");
     } finally {

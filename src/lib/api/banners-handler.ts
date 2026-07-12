@@ -2,8 +2,9 @@ import { createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { requireStoreAccess, AuthContext } from "@/lib/auth/require-store-access";
+import { deleteKey, storeCacheKey } from "@/lib/cache/redis";
 
-const { banners } = schema;
+const { banners, stores } = schema;
 
 const MAX_BANNERS = 5;
 
@@ -50,6 +51,22 @@ export async function saveBannersHandler(request: Request, auth?: AuthContext): 
         }))
       );
     }
+
+    // Limpa o campo legado bannerUrl para evitar que o fallback da vitrine
+    // exiba imagens antigas quando todos os banners são removidos
+    await db.update(stores)
+      .set({ bannerUrl: null })
+      .where(eq(stores.id, storeId));
+
+    // Invalida cache imediatamente (await garante que o próximo fetch já vê dados frescos)
+    const storeRow = await db.query.stores.findFirst({
+      where: eq(stores.id, storeId),
+      columns: { slug: true },
+    });
+    await deleteKey(
+      storeCacheKey(storeId),
+      ...(storeRow?.slug ? [`store:slug:${storeRow.slug}:config`] : []),
+    );
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

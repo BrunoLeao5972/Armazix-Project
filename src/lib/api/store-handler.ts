@@ -1,6 +1,6 @@
 import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq, and, desc, sql, ne } from "drizzle-orm";
+import { eq, and, desc, gte, sql, ne } from "drizzle-orm";
 import { requireStoreAccess, requireStoreOwner, AuthContext } from "@/lib/auth/require-store-access";
 import { generateCleanSlug } from "@/lib/slug";
 import { getCached, deleteKey, storeCacheKey } from "@/lib/cache/redis";
@@ -99,6 +99,7 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
     whatsappOrderEnabled?: boolean;
     whatsappPhone?: string;
     highlightLowStock?: boolean;
+    bannerIntervalMs?: number;
     address?: {
       street: string;
       number: string;
@@ -153,6 +154,7 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
         whatsappOrderEnabled: body.whatsappOrderEnabled,
         whatsappPhone: body.whatsappPhone,
         highlightLowStock: body.highlightLowStock,
+        ...(body.bannerIntervalMs !== undefined ? { bannerIntervalMs: body.bannerIntervalMs } : {}),
         address: body.address,
         ...(body.deliveryConfig !== undefined ? { deliveryConfig: body.deliveryConfig } : {}),
         ...(body.freeShippingAbove !== undefined ? { freeShippingAbove: body.freeShippingAbove } : {}),
@@ -216,63 +218,50 @@ export async function getDashboardStatsHandler(
   const db = await createTenantDb(dbUrl, storeId);
 
   try {
-    // Explicit column selection avoids pulling unmigrated columns (e.g. card_fee_amount)
-    // and lets the query succeed even if the DB is one migration behind.
-    const [storeOrders, productsData, customersCount] = await Promise.all([
+    const [orderStats, productStats, customersCount, recentOrders, topProducts] = await Promise.all([
       db.select({
-        id:            orders.id,
-        number:        orders.number,
-        status:        orders.status,
-        total:         orders.total,
-        customerId:    orders.customerId,
-        paymentMethod: orders.paymentMethod,
-        createdAt:     orders.createdAt,
-      }).from(orders).where(eq(orders.storeId, storeId)),
+        totalOrders:     sql<number>`cast(count(*) as int)`,
+        pendingOrders:   sql<number>`cast(count(*) filter (where ${orders.status} in ('received','preparing','ready','delivering')) as int)`,
+        completedOrders: sql<number>`cast(count(*) filter (where ${orders.status} = 'delivered') as int)`,
+        cancelledOrders: sql<number>`cast(count(*) filter (where ${orders.status} = 'cancelled') as int)`,
+        revenue:         sql<number>`coalesce(sum(case when ${orders.status} != 'cancelled' then cast(${orders.total} as numeric) else 0 end), 0)`,
+      }).from(orders).where(eq(orders.storeId, storeId))
+        .then(r => r[0] ?? { totalOrders: 0, pendingOrders: 0, completedOrders: 0, cancelledOrders: 0, revenue: 0 }),
 
       db.select({
-        stock:             products.stock,
-        lowStockThreshold: products.lowStockThreshold,
-      }).from(products).where(eq(products.storeId, storeId)),
+        productsCount:    sql<number>`cast(count(*) as int)`,
+        lowStockProducts: sql<number>`cast(count(*) filter (where coalesce(${products.stock}, 0) <= coalesce(${products.lowStockThreshold}, 5)) as int)`,
+      }).from(products).where(eq(products.storeId, storeId))
+        .then(r => r[0] ?? { productsCount: 0, lowStockProducts: 0 }),
 
       db.select({ count: sql<number>`cast(count(*) as int)` })
         .from(customers).where(eq(customers.storeId, storeId))
         .then(r => r[0]?.count ?? 0),
+
+      db.select({
+        id: orders.id, number: orders.number, status: orders.status,
+        total: orders.total, createdAt: orders.createdAt, customerName: customers.name,
+      }).from(orders)
+        .leftJoin(customers, eq(orders.customerId, customers.id))
+        .where(eq(orders.storeId, storeId))
+        .orderBy(desc(orders.createdAt))
+        .limit(5),
+
+      db.select({
+        productId:   orderItems.productId,
+        productName: orderItems.productName,
+        sold:        sql<number>`cast(sum(${orderItems.quantity}) as int)`,
+        revenue:     sql<number>`sum(cast(${orderItems.total} as numeric))`,
+      }).from(orderItems)
+        .innerJoin(orders, eq(orderItems.orderId, orders.id))
+        .where(and(eq(orders.storeId, storeId), ne(orders.status, "cancelled")))
+        .groupBy(orderItems.productId, orderItems.productName)
+        .orderBy(desc(sql`sum(${orderItems.quantity})`))
+        .limit(5),
     ]);
 
-    const totalOrders     = storeOrders.length;
-    const pendingOrders   = storeOrders.filter(o => ["received","preparing","ready","delivering"].includes(o.status)).length;
-    const completedOrders = storeOrders.filter(o => o.status === "delivered").length;
-    const cancelledOrders = storeOrders.filter(o => o.status === "cancelled").length;
-    const revenue         = storeOrders.filter(o => o.status !== "cancelled").reduce((s, o) => s + parseFloat(o.total || "0"), 0);
-    const productsCount   = productsData.length;
-    const lowStockProducts = productsData.filter(p => (p.stock ?? 0) <= (p.lowStockThreshold || 5)).length;
-
-    // Recent orders with customer name via LEFT JOIN (no findMany → no card_fee_amount)
-    const recentOrders = await db.select({
-      id:           orders.id,
-      number:       orders.number,
-      status:       orders.status,
-      total:        orders.total,
-      createdAt:    orders.createdAt,
-      customerName: customers.name,
-    }).from(orders)
-      .leftJoin(customers, eq(orders.customerId, customers.id))
-      .where(eq(orders.storeId, storeId))
-      .orderBy(desc(orders.createdAt))
-      .limit(5);
-
-    // Top products — filtered to this store via JOIN on orders (no cross-tenant leak)
-    const topProducts = await db.select({
-      productId:   orderItems.productId,
-      productName: orderItems.productName,
-      sold:        sql<number>`cast(sum(${orderItems.quantity}) as int)`,
-      revenue:     sql<number>`sum(cast(${orderItems.total} as numeric))`,
-    }).from(orderItems)
-      .innerJoin(orders, eq(orderItems.orderId, orders.id))
-      .where(and(eq(orders.storeId, storeId), ne(orders.status, "cancelled")))
-      .groupBy(orderItems.productId, orderItems.productName)
-      .orderBy(desc(sql`sum(${orderItems.quantity})`))
-      .limit(5);
+    const { totalOrders, pendingOrders, completedOrders, cancelledOrders, revenue } = orderStats;
+    const { productsCount, lowStockProducts } = productStats;
 
     return new Response(JSON.stringify({
       stats: {

@@ -162,6 +162,7 @@ export interface StorePublicData {
   /** Modelo v2 estruturado — substitui paymentMethodsConfig + deliveryPaymentEnabled */
   paymentConfig: PaymentConfig | null;
   banners: StoreBanner[];
+  bannerIntervalMs: number | null;
   // endereço físico da loja (campo jsonb já existente no DB)
   address: {
     street: string; number: string; neighborhood: string;

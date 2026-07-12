@@ -4,7 +4,7 @@ import { api } from "@/lib/api-client";
 import {
   Printer, Settings2, Plus, Loader2, Check, X, RefreshCw,
   Trash2, Edit, ChevronDown, Search, Cpu, MoreHorizontal,
-  Eye, Download, Send, Zap,
+  Download, Send, Zap,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   buildProductionTicket, buildCaixaCoupon, buildDeliveryTicket, buildFichaEntrega,
-  linesToText, type ThermalLine,
+  linesToEscPos, type ThermalLine,
   SAMPLE_STORE, SAMPLE_ORDER,
 } from "@/lib/thermal/layouts";
 
@@ -69,6 +69,42 @@ function typeToDefaultLayout(type: string): PrintLayout {
   if (type === "Caixa")    return "caixa";
   if (type === "Delivery") return "delivery";
   return "production";
+}
+
+// ─── Agent helpers ───────────────────────────────────────────────
+const AGENT_URL = "http://localhost:3989";
+
+// True only for real network addresses (IP or hostname.with.dot).
+// Windows printer names like "IMP-TERMICA" or "HP LaserJet Pro" return false.
+function isNetworkPath(path: string): boolean {
+  const t = path.trim();
+  if (!t || t.startsWith("\\\\")) return false;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?$/.test(t)) return true;   // IPv4
+  if (/^[\w-]+(?:\.[\w-]+)+(?::\d+)?$/.test(t))       return true;   // hostname.dot
+  return false;
+}
+
+// Converts a binary ESC/POS string to base64 (browser-safe, no Buffer needed).
+function escposToBase64(binary: string): string {
+  return btoa(Array.from(binary, c => String.fromCharCode(c.charCodeAt(0) & 0xff)).join(""));
+}
+
+// Sends ESC/POS bytes directly to the local Armazix Print Agent.
+async function sendViaAgent(printerName: string, escposB64: string): Promise<void> {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20_000);
+  try {
+    const res = await fetch(`${AGENT_URL}/print`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ printer_name: printerName, escpos_b64: escposB64 }),
+      signal:  ctrl.signal,
+    });
+    const data = await res.json() as { success?: boolean; error?: string };
+    if (!data.success) throw new Error(data.error ?? "Impressora não respondeu");
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ─── Toast ────────────────────────────────────────────────────────
@@ -190,47 +226,14 @@ function PrintPreviewModal({
 
   const buildLines = useCallback((): ThermalLine[] => {
     switch (activeLayout) {
-      case "production": return buildProductionTicket(SAMPLE_ORDER, cols);
+      case "production": return buildProductionTicket(SAMPLE_STORE, SAMPLE_ORDER, cols);
       case "caixa":      return buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, cols);
-      case "delivery":   return buildDeliveryTicket(SAMPLE_ORDER, cols);
+      case "delivery":   return buildDeliveryTicket(SAMPLE_STORE, SAMPLE_ORDER, cols);
       case "ficha":      return buildFichaEntrega(SAMPLE_STORE, SAMPLE_ORDER, cols);
     }
   }, [activeLayout, cols]);
 
   const lines = buildLines();
-
-  const handleDownload = () => {
-    const text = linesToText(lines, cols);
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = `teste-impressao-${printer?.code ?? "IMP"}-${activeLayout}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handlePrint = () => {
-    const text = linesToText(lines, cols);
-    const win  = window.open("", "_blank", "width=400,height=700");
-    if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
-      <title>Impressão — ${printer?.name}</title>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.4;
-               width: ${cols}ch; padding: 8px; background: white; color: black; }
-        pre { white-space: pre; }
-        @media print {
-          @page { margin: 4mm; size: ${cols <= 34 ? "58mm" : "80mm"} auto; }
-          body { width: 100%; }
-        }
-      </style></head><body>
-      <pre>${text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</pre>
-      <script>window.onload = () => { window.print(); }</script>
-    </body></html>`);
-    win.document.close();
-  };
 
   const handleSendToDevice = async () => {
     if (!printer) return;
@@ -238,16 +241,29 @@ function PrintPreviewModal({
     setSent(false);
     setSendError(null);
     try {
-      const res  = await api.post("/api/printers/print-test", {
-        printerId: printer.id,
-        layout:    activeLayout,
-        send:      true,
-      });
-      const data = await res.json() as { sent?: boolean; error?: string };
-      if (data.sent) { setSent(true); }
-      else { setSendError(data.error ?? "Impressão falhou"); }
-    } catch {
-      setSendError("Erro de conexão ao enviar para a impressora");
+      if (isNetworkPath(printer.path ?? "")) {
+        // ── IP / hostname real → servidor faz TCP ───────────────
+        const res  = await api.post("/api/printers/print-test", {
+          printerId: printer.id,
+          layout:    activeLayout,
+          send:      true,
+        });
+        const data = await res.json() as { sent?: boolean; error?: string };
+        if (data.sent) setSent(true);
+        else setSendError(data.error ?? "Impressão falhou");
+      } else {
+        // ── Nome de impressora Windows → agente local ───────────
+        const escpos = linesToEscPos(lines, cols);
+        const b64    = escposToBase64(escpos);
+        await sendViaAgent(printer.path!, b64);
+        setSent(true);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro de conexão";
+      const offline = msg.includes("fetch") || msg.includes("Failed") || msg.includes("abort");
+      setSendError(offline
+        ? "Agente não encontrado. Verifique se o Armazix Print Agent está ativo na bandeja."
+        : msg);
     } finally {
       setSending(false);
     }
@@ -317,14 +333,6 @@ function PrintPreviewModal({
               Fechar
             </button>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleDownload}
-                className="h-9 rounded-xl gap-1.5 text-xs">
-                <Download className="w-3.5 h-3.5" /> Baixar .txt
-              </Button>
-              <Button variant="outline" size="sm" onClick={handlePrint}
-                className="h-9 rounded-xl gap-1.5 text-xs">
-                <Eye className="w-3.5 h-3.5" /> Visualizar / Print
-              </Button>
               {printer.path && (
                 <Button
                   size="sm"
@@ -348,6 +356,259 @@ function PrintPreviewModal({
   );
 }
 
+// URL do instalador — coloque ArmazixPrinter-Setup.exe em public/downloads/
+// ou configure VITE_AGENT_DOWNLOAD_URL no .env
+const AGENT_DOWNLOAD_URL: string =
+  (import.meta as { env?: Record<string, string> }).env?.VITE_AGENT_DOWNLOAD_URL
+  ?? "/downloads/ArmazixPrinter-Setup.exe";
+
+// ─── Agent Status Banner ──────────────────────────────────────────
+function AgentBanner() {
+  const [status, setStatus] = useState<"checking" | "online" | "offline">("checking");
+
+  const check = useCallback(async () => {
+    setStatus("checking");
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3000);
+      const res   = await fetch("http://localhost:3989/health", { signal: ctrl.signal });
+      clearTimeout(timer);
+      setStatus(res.ok ? "online" : "offline");
+    } catch {
+      setStatus("offline");
+    }
+  }, []);
+
+  useEffect(() => { check(); }, [check]);
+
+  return (
+    <div className="flex items-center gap-4 px-4 py-3.5 rounded-2xl border border-border/50 bg-secondary/20">
+      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+        <Cpu className="w-5 h-5 text-primary" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-semibold">Armazix Print Agent</p>
+          {status === "checking" && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-muted-foreground text-[11px]">
+              <Loader2 className="w-2.5 h-2.5 animate-spin" /> Verificando...
+            </span>
+          )}
+          {status === "online" && (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
+              Ativo · porta 3989
+            </span>
+          )}
+          {status === "offline" && (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+              Não detectado
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {status === "online"
+            ? "Agente rodando — clique no ícone 🔍 no formulário de impressora para selecionar impressoras do PC."
+            : "Instale o agente para imprimir direto nas impressoras do computador sem precisar do IP de rede."}
+        </p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        {status !== "checking" && (
+          <button onClick={check} title="Verificar status"
+            className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <a href={AGENT_DOWNLOAD_URL} download="ArmazixPrinter-Setup.exe"
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-xl border border-border/70 bg-background text-xs font-medium hover:bg-secondary/60 transition-colors whitespace-nowrap">
+          <Download className="w-3.5 h-3.5" /> Baixar Agente
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ─── Agent Printers Dialog ────────────────────────────────────────
+type AgentStatus = "idle" | "loading" | "ok" | "not-found" | "error";
+
+function AgentPrintersDialog({
+  open, onClose, onSelect,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSelect: (name: string) => void;
+}) {
+  const [status, setStatus] = useState<AgentStatus>("idle");
+  const [printers, setPrinters] = useState<string[]>([]);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const fetchFromAgent = useCallback(async () => {
+    setStatus("loading");
+    setPrinters([]);
+    setErrorMsg("");
+    try {
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 5000);
+      const res   = await fetch(`${AGENT_URL}/printers`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as { printers?: string[] };
+      setPrinters(data.printers ?? []);
+      setStatus("ok");
+    } catch (err: unknown) {
+      const isNetwork =
+        err instanceof TypeError ||
+        (err instanceof DOMException && err.name === "AbortError");
+      if (isNetwork) {
+        setStatus("not-found");
+      } else {
+        setStatus("error");
+        setErrorMsg(err instanceof Error ? err.message : "Erro desconhecido");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) fetchFromAgent();
+  }, [open, fetchFromAgent]);
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="rounded-2xl max-w-md p-0 overflow-hidden">
+
+        <DialogHeader className="px-6 pt-5 pb-4 border-b border-border/50">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-muted-foreground" />
+                Impressoras do PC
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Detectadas pelo Armazix Print Agent
+              </p>
+            </div>
+            {status === "loading" && (
+              <span className="mt-0.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-secondary text-muted-foreground text-[11px] font-medium shrink-0">
+                <Loader2 className="w-3 h-3 animate-spin" /> Conectando...
+              </span>
+            )}
+            {status === "ok" && (
+              <span className="mt-0.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-700 text-[11px] font-medium shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> Agente ativo
+              </span>
+            )}
+            {(status === "not-found" || status === "error") && (
+              <span className="mt-0.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-destructive/10 text-destructive text-[11px] font-medium shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-destructive inline-block" /> Offline
+              </span>
+            )}
+          </div>
+        </DialogHeader>
+
+        <div className="px-6 py-5 min-h-[200px] flex flex-col">
+
+          {/* Carregando */}
+          {status === "loading" && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+              <Loader2 className="w-8 h-8 animate-spin opacity-30" />
+              <p className="text-sm">Consultando impressoras instaladas...</p>
+            </div>
+          )}
+
+          {/* Agente não encontrado */}
+          {status === "not-found" && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center py-2">
+              <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center">
+                <Printer className="w-7 h-7 text-muted-foreground opacity-40" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Agente não encontrado</p>
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed max-w-xs mx-auto">
+                  O <strong>Armazix Print Agent</strong> não está rodando neste computador.
+                  Abra a pasta do agente e execute o <strong>start.bat</strong>, depois clique em tentar novamente.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={fetchFromAgent}
+                className="h-8 rounded-xl gap-1.5 text-xs">
+                <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+              </Button>
+            </div>
+          )}
+
+          {/* Erro genérico */}
+          {status === "error" && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
+              <p className="text-sm font-semibold text-destructive">Erro ao conectar</p>
+              <p className="text-xs text-muted-foreground">{errorMsg}</p>
+              <Button variant="outline" size="sm" onClick={fetchFromAgent}
+                className="h-8 rounded-xl gap-1.5 text-xs">
+                <RefreshCw className="w-3.5 h-3.5" /> Tentar novamente
+              </Button>
+            </div>
+          )}
+
+          {/* Agente ativo, sem impressoras */}
+          {status === "ok" && printers.length === 0 && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-2">
+              <p className="text-sm font-semibold">Nenhuma impressora instalada</p>
+              <p className="text-xs text-muted-foreground leading-relaxed max-w-xs mx-auto">
+                O agente está ativo, mas nenhuma impressora foi encontrada no Windows.
+                Verifique em <em>Painel de Controle → Dispositivos e Impressoras</em>.
+              </p>
+              <Button variant="outline" size="sm" onClick={fetchFromAgent}
+                className="h-8 rounded-xl gap-1.5 text-xs mt-1">
+                <RefreshCw className="w-3.5 h-3.5" /> Atualizar lista
+              </Button>
+            </div>
+          )}
+
+          {/* Lista de impressoras */}
+          {status === "ok" && printers.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                {printers.length} impressora{printers.length !== 1 ? "s" : ""} encontrada{printers.length !== 1 ? "s" : ""} — clique para selecionar:
+              </p>
+              <ul className="space-y-1.5 max-h-64 overflow-y-auto -mr-1 pr-1">
+                {printers.map(name => (
+                  <li key={name}>
+                    <button
+                      type="button"
+                      onClick={() => { onSelect(name); onClose(); }}
+                      className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border border-border/60 bg-background hover:bg-secondary/60 hover:border-primary/40 transition-all text-left group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
+                        <Printer className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                      </div>
+                      <span className="text-sm font-medium truncate flex-1">{name}</span>
+                      <Check className="w-3.5 h-3.5 text-muted-foreground/20 group-hover:text-primary ml-auto shrink-0 transition-colors" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex justify-end pt-0.5">
+                <button type="button" onClick={fetchFromAgent}
+                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors">
+                  <RefreshCw className="w-3 h-3" /> Atualizar
+                </button>
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        <div className="px-6 py-3 border-t border-border/50 flex justify-end">
+          <button type="button" onClick={onClose}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Fechar
+          </button>
+        </div>
+
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Printer Form Modal ───────────────────────────────────────────
 function PrinterFormModal({
   open, onClose, onSaved, editing,
@@ -361,9 +622,9 @@ function PrinterFormModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Partial<Record<keyof PrinterForm, string>>>({});
-  const [detecting, setDetecting] = useState(false);
-  const [detected, setDetected] = useState<string[]>([]);
-  const [showDetected, setShowDetected] = useState(false);
+  const [agentDialogOpen, setAgentDialogOpen] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testFeedback, setTestFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const isNew = !editing;
   const set = (k: keyof PrinterForm, v: string) => {
@@ -378,10 +639,61 @@ function PrinterFormModal({
         : EMPTY);
       setSaveError(null);
       setErrors({});
-      setDetected([]);
-      setShowDetected(false);
+      setTestFeedback(null);
     }
   }, [open, editing]);
+
+  const handleTestPrint = async () => {
+    if (!form.path.trim()) {
+      setTestFeedback({ ok: false, msg: "Informe o Caminho / IP antes de testar." });
+      return;
+    }
+    setTesting(true);
+    setTestFeedback(null);
+    try {
+      if (isNetworkPath(form.path)) {
+        // ── IP / hostname real → servidor faz TCP ────────────────
+        const res  = await api.post("/api/printers/test-raw", {
+          path:    form.path.trim(),
+          columns: parseInt(form.columns, 10) || 48,
+          type:    form.type,
+        });
+        const data = await res.json() as { preview?: string; sent?: boolean; error?: string };
+        if (data.sent) {
+          setTestFeedback({ ok: true, msg: "Página de teste enviada com sucesso!" });
+        } else {
+          setTestFeedback({ ok: false, msg: data.error ?? "Impressora não respondeu. Verifique o endereço." });
+        }
+      } else {
+        // ── Nome de impressora Windows → agente local ────────────
+        const cols   = parseInt(form.columns, 10) || 48;
+        const layout = typeToDefaultLayout(form.type);
+        const linesMap = {
+          production: () => buildProductionTicket(SAMPLE_STORE, SAMPLE_ORDER, cols),
+          caixa:      () => buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, cols),
+          delivery:   () => buildDeliveryTicket(SAMPLE_STORE, SAMPLE_ORDER, cols),
+          ficha:      () => buildFichaEntrega(SAMPLE_STORE, SAMPLE_ORDER, cols),
+        };
+        const lines  = linesMap[layout]();
+        const escpos = linesToEscPos(lines, cols);
+        const b64    = escposToBase64(escpos);
+        await sendViaAgent(form.path.trim(), b64);
+        setTestFeedback({ ok: true, msg: "Página de teste enviada com sucesso!" });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro desconhecido";
+      const offline = msg.includes("fetch") || msg.includes("Failed") || msg.includes("abort");
+      setTestFeedback({
+        ok: false,
+        msg: offline
+          ? "Agente Armazix Print não encontrado. Verifique se está ativo na bandeja do sistema."
+          : msg,
+      });
+    } finally {
+      setTesting(false);
+      setTimeout(() => setTestFeedback(null), 6000);
+    }
+  };
 
   const validate = () => {
     const e: typeof errors = {};
@@ -406,19 +718,8 @@ function PrinterFormModal({
     finally   { setSaving(false); }
   };
 
-  const detectPrinters = async () => {
-    setDetecting(true);
-    setShowDetected(false);
-    try {
-      const res  = await fetch("/api/printers/detect");
-      const data = await res.json() as { printers?: string[] };
-      setDetected(data.printers ?? []);
-      setShowDetected(true);
-    } catch { setDetected([]); setShowDetected(true); }
-    finally   { setDetecting(false); }
-  };
 
-  return (
+  return (<>
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="rounded-2xl max-w-xl p-0 overflow-hidden max-h-[90vh] flex flex-col">
 
@@ -474,39 +775,20 @@ function PrinterFormModal({
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Caminho / IP" required>
+              <Field label="Caminho" required>
                 <div className="space-y-1.5">
                   <div className="flex gap-2">
                     <Input placeholder='\\SERVIDOR\Impressora ou 192.168.1.10'
                       value={form.path} onChange={e => set("path", e.target.value)}
                       className={`h-10 rounded-xl flex-1 ${errors.path ? "border-destructive ring-1 ring-destructive" : ""}`} />
-                    <Button type="button" variant="outline" size="sm" onClick={detectPrinters}
-                      disabled={detecting} title="Detectar impressoras Windows" className="h-10 px-3 rounded-xl shrink-0">
-                      {detecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                    <Button type="button" variant="outline" size="sm"
+                      onClick={() => setAgentDialogOpen(true)}
+                      title="Ver impressoras instaladas neste PC"
+                      className="h-10 px-3 rounded-xl shrink-0">
+                      <Search className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                   {errors.path && <p className="text-xs text-destructive">{errors.path}</p>}
-                  {showDetected && (
-                    <div className="rounded-xl border border-border bg-background shadow-lg overflow-hidden">
-                      {detected.length === 0
-                        ? <p className="px-3 py-2.5 text-xs text-muted-foreground">Nenhuma impressora detectada no servidor</p>
-                        : <ul className="max-h-40 overflow-y-auto divide-y divide-border/50">
-                            {detected.map(name => (
-                              <li key={name}>
-                                <button type="button" onClick={() => { set("path", name); setShowDetected(false); }}
-                                  className="w-full text-left px-3 py-2 text-xs hover:bg-secondary/50 transition-colors flex items-center gap-2">
-                                  <Printer className="w-3 h-3 text-muted-foreground shrink-0" /> {name}
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                      }
-                      <button type="button" onClick={() => setShowDetected(false)}
-                        className="w-full px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground border-t border-border/50 transition-colors">
-                        Fechar
-                      </button>
-                    </div>
-                  )}
                 </div>
               </Field>
               <Field label="Colunas">
@@ -518,6 +800,33 @@ function PrinterFormModal({
                 </p>
               </Field>
             </div>
+
+            {/* ── Botão de teste rápido ─────────────────────────────── */}
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={handleTestPrint}
+                disabled={testing}
+                className="inline-flex items-center gap-2 px-4 h-9 rounded-xl border border-border/70 bg-secondary/40 text-sm text-muted-foreground font-medium hover:bg-secondary/70 hover:border-border hover:text-foreground transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {testing
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  : <Zap className="w-3.5 h-3.5 shrink-0" />
+                }
+                {testing ? "Enviando teste…" : "Imprimir página de teste"}
+              </button>
+
+              {testFeedback && (
+                <p className={`text-xs flex items-center gap-1.5 ${testFeedback.ok ? "text-emerald-600" : "text-destructive"}`}>
+                  {testFeedback.ok
+                    ? <Check className="w-3.5 h-3.5 shrink-0" />
+                    : <X className="w-3.5 h-3.5 shrink-0" />
+                  }
+                  {testFeedback.msg}
+                </p>
+              )}
+            </div>
+
           </div>
         </div>
 
@@ -538,6 +847,13 @@ function PrinterFormModal({
 
       </DialogContent>
     </Dialog>
+
+    <AgentPrintersDialog
+      open={agentDialogOpen}
+      onClose={() => setAgentDialogOpen(false)}
+      onSelect={name => set("path", name)}
+    />
+  </>
   );
 }
 
@@ -609,6 +925,9 @@ function PrintersPage() {
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
 
+      {/* Armazix Print Agent — status e download */}
+      <AgentBanner />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -649,7 +968,7 @@ function PrintersPage() {
 
           {/* Column labels — desktop */}
           <div className="hidden sm:grid grid-cols-[80px_1fr_100px_120px_1fr_80px_44px] gap-4 px-4 py-2">
-            {["Código", "Nome", "Tipo", "Driver", "Caminho / IP", "Colunas", ""].map((h, i) => (
+            {["Código", "Nome", "Tipo", "Driver", "Caminho", "Colunas", ""].map((h, i) => (
               <span key={i} className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{h}</span>
             ))}
           </div>
