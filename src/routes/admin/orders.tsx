@@ -4,7 +4,7 @@ import { api } from "@/lib/api-client";
 import {
   Search, Filter, Clock, ChefHat, Truck, CheckCircle2, XCircle,
   Loader2, Package, ShoppingBag, QrCode, Banknote, CreditCard,
-  MapPin, User, Printer, Send, Eye, Check,
+  MapPin, User, Printer, Send, Eye, Check, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -527,6 +527,31 @@ function OrdersPage() {
   const [printOrderId, setPrintOrderId] = useState<string | null>(null);
   const storeIdRef = useRef<string | null>(null);
 
+  // ── Auto-aceite ─────────────────────────────────────────────────────────────
+  const [autoAccept, setAutoAccept] = useState(() =>
+    typeof window !== "undefined" && localStorage.getItem("armazix:autoAccept") === "true"
+  );
+  const autoAcceptRef = useRef(autoAccept);
+  useEffect(() => { autoAcceptRef.current = autoAccept; }, [autoAccept]);
+
+  const seenOrderIds = useRef(new Set<string>());
+
+  const toggleAutoAccept = () => {
+    setAutoAccept(prev => {
+      const next = !prev;
+      localStorage.setItem("armazix:autoAccept", String(next));
+      return next;
+    });
+  };
+
+  const advanceToPreparingQuiet = useCallback(async (orderId: string) => {
+    try {
+      const res = await api.post("/api/orders/update-status", { orderId, status: "preparing" });
+      if (res.ok) setOrders(prev => prev.map(o => o.orderId === orderId ? { ...o, status: "preparing" } : o));
+    } catch { /* silent */ }
+  }, []);
+
+  // ── Normalização ─────────────────────────────────────────────────────────────
   const normalize = useCallback((o: RawOrder): Order => ({
     orderId: o.id,
     number: o.number,
@@ -547,10 +572,23 @@ function OrdersPage() {
     try {
       const res = await fetch(`/api/orders/list?storeId=${storeId}`);
       const data = await res.json() as { orders?: RawOrder[] };
-      if (res.ok) setOrders((data.orders || []).map(normalize));
+      if (res.ok) {
+        const mapped = (data.orders || []).map(normalize);
+
+        // Auto-aceite: avança novos pedidos pending/received para preparando
+        if (silent && autoAcceptRef.current) {
+          for (const order of mapped) {
+            if (!seenOrderIds.current.has(order.orderId) && ["pending", "received"].includes(order.status)) {
+              advanceToPreparingQuiet(order.orderId);
+            }
+          }
+        }
+        mapped.forEach(o => seenOrderIds.current.add(o.orderId));
+        setOrders(mapped);
+      }
     } catch { /* silent */ }
     finally { if (!silent) setLoading(false); }
-  }, [normalize]);
+  }, [normalize, advanceToPreparingQuiet]);
 
   useEffect(() => {
     const storeId = localStorage.getItem("storeId");
@@ -632,6 +670,21 @@ function OrdersPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Auto-aceite toggle */}
+          <button
+            onClick={toggleAutoAccept}
+            title={autoAccept ? "Aceite automático ativado — clique para desativar" : "Ativar aceite automático"}
+            className={[
+              "flex items-center gap-1.5 h-10 px-3 rounded-xl border text-xs font-semibold transition-all",
+              autoAccept
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 shadow-[0_0_0_2px_rgba(16,185,129,0.15)]"
+                : "border-border/60 bg-secondary/30 text-muted-foreground hover:border-border",
+            ].join(" ")}
+          >
+            <Zap className={`w-3.5 h-3.5 ${autoAccept ? "fill-emerald-500" : ""}`} />
+            <span className="hidden sm:inline">Auto-aceite</span>
+          </button>
+
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />

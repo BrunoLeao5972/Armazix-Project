@@ -1002,6 +1002,10 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
       if (!wppCfg?.notifyCustomer) return;
       if (!orderWithCustomer?.customer?.phone) return;
 
+      // "ready" = cozinha terminou — para entrega, o cliente é notificado em "delivering";
+      // para retirada, "ready" significa "venha buscar", então notificamos.
+      if (body.status === "ready" && orderWithCustomer.type !== "pickup") return;
+
       const itemsSummary = (orderWithCustomer.items ?? [])
         .slice(0, 3)
         .map(i => `• ${i.productName} ×${i.quantity}`)
