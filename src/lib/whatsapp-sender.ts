@@ -45,6 +45,41 @@ export const DEFAULT_WPP_CONFIG: WppConfig = {
   customerTemplates: DEFAULT_CUSTOMER_TEMPLATES,
 };
 
+// Templates legados — substituídos automaticamente ao usar o config para envio
+const LEGACY_OWNER_TEMPLATE =
+  "🛒 *Novo pedido #{{numero}}*\n\n👤 {{nome}}\n💰 Total: R$ {{total}}\n📦 {{itens}}\n\nAcesse o painel para confirmar.";
+
+const LEGACY_CUSTOMER_TEMPLATES: WppConfig["customerTemplates"] = {
+  received:
+    "Olá, {{nome}}! 🎉 Seu pedido *#{{numero}}* foi recebido!\n\n💰 Total: R$ {{total}}\n\nEm instantes começaremos a preparar. Obrigado por escolher a *{{loja}}*!",
+  preparing:
+    "👨‍🍳 Seu pedido *#{{numero}}* está sendo preparado!\n\nAguarde um pouquinho, logo estará pronto. 😊",
+  ready:
+    "✅ Pedido *#{{numero}}* pronto para retirada!\n\nVenha buscar quando quiser. Te esperamos! 🏃",
+  delivering:
+    "🚀 Seu pedido *#{{numero}}* saiu para entrega!\n\nNosso entregador está a caminho. Fique de olho! 📍",
+  delivered:
+    "✅ Pedido *#{{numero}}* entregue! Esperamos que tenha curtido! ❤️\n\nObrigado por comprar na *{{loja}}*. Volte sempre!",
+  cancelled:
+    "😔 Infelizmente seu pedido *#{{numero}}* foi cancelado.\n\nQualquer dúvida, entre em contato. Pedimos desculpas pelo transtorno.",
+};
+
+/** Migra templates legados para os padrões atuais. Chame antes de usar o config para envio. */
+export function migrateWppConfig(cfg: WppConfig): WppConfig {
+  const customerTemplates = { ...cfg.customerTemplates };
+  for (const key of Object.keys(customerTemplates) as (keyof typeof customerTemplates)[]) {
+    if (customerTemplates[key] === LEGACY_CUSTOMER_TEMPLATES[key]) {
+      customerTemplates[key] = DEFAULT_CUSTOMER_TEMPLATES[key];
+    }
+  }
+  return {
+    ...cfg,
+    ownerTemplate:
+      cfg.ownerTemplate === LEGACY_OWNER_TEMPLATE ? DEFAULT_OWNER_TEMPLATE : cfg.ownerTemplate,
+    customerTemplates,
+  };
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Normaliza número para formato E.164 sem '+': 5511999999999 */

@@ -3,7 +3,7 @@ import type { PromoConfig } from "@/lib/promo-engine";
 import { schema } from "@/lib/db";
 import { eq, desc, sql, and, ne, isNotNull, inArray } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
-import { notifyOwnerNewOrder, notifyCustomerStatus, normalizePhone, DEFAULT_WPP_CONFIG } from "@/lib/whatsapp-sender";
+import { notifyOwnerNewOrder, notifyCustomerStatus, normalizePhone, DEFAULT_WPP_CONFIG, migrateWppConfig } from "@/lib/whatsapp-sender";
 import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey, customersCacheKey, deleteKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
 
@@ -803,8 +803,9 @@ export async function createOrderHandler(request: Request): Promise<Response> {
 
         if (!storeRow) return;
 
-        // Fallback to defaults so stores that never saved config still get notifications
-        const cfg = storeRow.wppConfig ?? DEFAULT_WPP_CONFIG;
+        // Fallback to defaults so stores that never saved config still get notifications.
+        // migrateWppConfig upgrades legacy templates to current defaults automatically.
+        const cfg = migrateWppConfig(storeRow.wppConfig ?? DEFAULT_WPP_CONFIG);
 
         // Phone: prefer CRM record (already E.164), fall back to checkout form digits
         const customerPhone = custRow?.phone
@@ -997,7 +998,8 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
         }),
       ]);
 
-      if (!storeRow?.wppConfig?.notifyCustomer) return;
+      const wppCfg = storeRow?.wppConfig ? migrateWppConfig(storeRow.wppConfig) : null;
+      if (!wppCfg?.notifyCustomer) return;
       if (!orderWithCustomer?.customer?.phone) return;
 
       const itemsSummary = (orderWithCustomer.items ?? [])
@@ -1016,7 +1018,7 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
         storeAddress:  storeRow.address ?? null,
         items:         itemsSummary,
         status:        body.status,
-        wppConfig:     storeRow.wppConfig,
+        wppConfig:     wppCfg,
       });
     })());
     // ─────────────────────────────────────────────────────────────────────────
