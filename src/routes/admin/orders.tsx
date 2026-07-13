@@ -40,11 +40,22 @@ interface Order {
 }
 
 // ── Kanban columns ────────────────────────────────────────────────────────────
-const COLUMNS = [
+interface ColumnConfig {
+  id: string;
+  label: string;
+  statuses: string[];
+  accent: string;
+  bg: string;
+  border: string;
+  dot: string;
+  headerBg: string;
+}
+
+const COLUMNS: ColumnConfig[] = [
   {
     id: "analise",
     label: "Em análise",
-    statuses: ["pending", "received"] as string[],
+    statuses: ["pending", "received"],
     accent: "text-amber-600",
     bg: "bg-amber-500/8 dark:bg-amber-500/10",
     border: "border-amber-500/20",
@@ -54,7 +65,7 @@ const COLUMNS = [
   {
     id: "preparando",
     label: "Preparando",
-    statuses: ["preparing"] as string[],
+    statuses: ["preparing"],
     accent: "text-orange-600",
     bg: "bg-orange-500/8 dark:bg-orange-500/10",
     border: "border-orange-500/20",
@@ -64,14 +75,36 @@ const COLUMNS = [
   {
     id: "entrega",
     label: "Entrega",
-    statuses: ["ready", "delivering"] as string[],
+    statuses: ["ready", "delivering"],
     accent: "text-purple-600",
     bg: "bg-purple-500/8 dark:bg-purple-500/10",
     border: "border-purple-500/20",
     dot: "bg-purple-500",
     headerBg: "bg-purple-500/10",
   },
-] as const;
+];
+
+const COLUMN_DELIVERED: ColumnConfig = {
+  id: "concluidos",
+  label: "Concluídos",
+  statuses: ["delivered"],
+  accent: "text-green-600",
+  bg: "bg-green-500/8 dark:bg-green-500/10",
+  border: "border-green-500/20",
+  dot: "bg-green-500",
+  headerBg: "bg-green-500/10",
+};
+
+const COLUMN_CANCELLED: ColumnConfig = {
+  id: "cancelados",
+  label: "Cancelados",
+  statuses: ["cancelled"],
+  accent: "text-destructive",
+  bg: "bg-destructive/5 dark:bg-destructive/8",
+  border: "border-destructive/20",
+  dot: "bg-destructive",
+  headerBg: "bg-destructive/8",
+};
 
 // ── Status display ────────────────────────────────────────────────────────────
 const STATUS_CFG: Record<string, { label: string; color: string }> = {
@@ -465,7 +498,7 @@ function OrderCard({
 function KanbanColumn({
   column, orders, onAdvance, onCancel, onPrint, advancing,
 }: {
-  column: typeof COLUMNS[number];
+  column: ColumnConfig;
   orders: Order[];
   onAdvance: (id: string, next: string) => void;
   onCancel: (id: string) => void;
@@ -831,17 +864,22 @@ function OrdersPage() {
       </div>
 
       {/* ── Kanban ──────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {COLUMNS.map(col => (
-          <KanbanColumn
-            key={col.id}
-            column={col}
-            orders={colOrders(col.statuses)}
-            onAdvance={handleAdvance}
-            onCancel={handleCancel}
-            onPrint={id => setPrintOrderId(id)}
-            advancing={advancing}
-          />
+      <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1">
+        {[
+          ...COLUMNS,
+          ...(filters.showDelivered ? [COLUMN_DELIVERED] : []),
+          ...(filters.showCancelled ? [COLUMN_CANCELLED] : []),
+        ].map(col => (
+          <div key={col.id} className="flex-none w-[300px] lg:flex-1 lg:w-auto lg:min-w-[240px]">
+            <KanbanColumn
+              column={col}
+              orders={colOrders(col.statuses)}
+              onAdvance={handleAdvance}
+              onCancel={handleCancel}
+              onPrint={id => setPrintOrderId(id)}
+              advancing={advancing}
+            />
+          </div>
         ))}
       </div>
 
