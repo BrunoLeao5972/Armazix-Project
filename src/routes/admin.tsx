@@ -8,6 +8,7 @@ import {
   ShoppingBag,
   LayoutDashboard,
   ShoppingCart,
+  Loader2,
   Package,
   Tags,
   Users,
@@ -148,6 +149,18 @@ function AdminLayout() {
     localStorage.removeItem("storeId");
     navigate({ to: "/login" });
   };
+
+  // Admin pages don't need SSR (authenticated, no SEO value).
+  // Server renders a neutral spinner; client renders the full layout after hydration.
+  // This prevents any SSR-incompatible library (Recharts, react-international-phone,
+  // Radix portals) from running in the Cloudflare Worker environment.
+  if (!mounted) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -376,12 +389,10 @@ function AdminLayout() {
         </main>
       </div>
 
-      {/* WhatsApp Modal — lazy loaded, client-only (react-international-phone usa APIs de browser) */}
-      {mounted && (
-        <Suspense fallback={null}>
-          <WhatsAppModal open={wppModalOpen} onClose={() => setWppModalOpen(false)} />
-        </Suspense>
-      )}
+      {/* WhatsApp Modal — lazy loaded */}
+      <Suspense fallback={null}>
+        <WhatsAppModal open={wppModalOpen} onClose={() => setWppModalOpen(false)} />
+      </Suspense>
     </div>
   );
 }
