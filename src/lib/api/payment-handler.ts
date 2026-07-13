@@ -1,6 +1,6 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { encrypt, decrypt } from "@/lib/crypto";
 import { validateWebhookApiKey } from "@/lib/webhook-validator";
 import { requireStoreOwner, type AuthContext } from "@/lib/auth/require-store-access";
@@ -77,6 +77,33 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
     return json({ error: "Erro ao descriptografar token de pagamento" }, 500);
   }
 
+  // Fetch current prices from DB to prevent stale-price and price-manipulation bugs
+  const productIds = body.items.map((i) => i.productId).filter(Boolean) as string[];
+  const dbProducts = productIds.length > 0
+    ? await db
+        .select({ id: products.id, price: products.price, name: products.name })
+        .from(products)
+        .where(inArray(products.id, productIds))
+    : [];
+
+  const priceMap = new Map(dbProducts.map((p) => [p.id, p.price]));
+
+  for (const item of body.items) {
+    if (item.productId && !priceMap.has(item.productId)) {
+      return json({ error: `Produto não encontrado: ${item.productId}` }, 400);
+    }
+  }
+
+  const verifiedItems = body.items.map((item) => {
+    if (!item.productId) return item;
+    const dbPrice = priceMap.get(item.productId)!;
+    return { ...item, unitPrice: dbPrice, total: (parseFloat(dbPrice) * item.quantity).toFixed(2) };
+  });
+
+  const deliveryFee = parseFloat(body.deliveryFee || "0");
+  const subtotal = verifiedItems.reduce((sum, i) => sum + parseFloat(i.total), 0);
+  const total = (subtotal + deliveryFee).toFixed(2);
+
   // Create the order with status awaiting_payment
   const [maxOrder] = await db
     .select({ max: sql<number>`COALESCE(MAX(${orders.number}), 0)` })
@@ -92,16 +119,16 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
     type: body.type || "delivery",
     paymentMethod: "mercadopago",
     paymentStatus: "pending",
-    subtotal: body.subtotal,
-    deliveryFee: body.deliveryFee || "0",
+    subtotal: subtotal.toFixed(2),
+    deliveryFee: deliveryFee.toFixed(2),
     discount: "0",
-    total: body.total,
+    total,
     addressSnapshot: body.addressSnapshot || null,
     estimatedDelivery: body.estimatedDelivery ? new Date(body.estimatedDelivery) : null,
   }).returning();
 
   // Insert order items
-  const itemsValues = body.items.map((item) => ({
+  const itemsValues = verifiedItems.map((item) => ({
     orderId: order.id,
     productId: item.productId || null,
     productName: item.productName,
@@ -133,8 +160,8 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
   // Build the origin URL for back_urls and notification_url
   const origin = new URL(request.url).origin;
 
-  // Build MP preference items
-  const mpItems = body.items.map((item) => ({
+  // Build MP preference items from DB-verified prices
+  const mpItems = verifiedItems.map((item) => ({
     id: item.productId,
     title: item.productName,
     quantity: item.quantity,
