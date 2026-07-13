@@ -69,6 +69,7 @@ function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [wppModalOpen, setWppModalOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
 
@@ -78,6 +79,7 @@ function AdminLayout() {
   const [userPlan, setUserPlan] = useState("Free");
 
   useEffect(() => {
+    setMounted(true);
     api
       .get("/api/user/get")
       .then(async (res) => {
@@ -374,10 +376,12 @@ function AdminLayout() {
         </main>
       </div>
 
-      {/* WhatsApp Modal — lazy loaded */}
-      <Suspense fallback={null}>
-        <WhatsAppModal open={wppModalOpen} onClose={() => setWppModalOpen(false)} />
-      </Suspense>
+      {/* WhatsApp Modal — lazy loaded, client-only (react-international-phone usa APIs de browser) */}
+      {mounted && (
+        <Suspense fallback={null}>
+          <WhatsAppModal open={wppModalOpen} onClose={() => setWppModalOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 }
