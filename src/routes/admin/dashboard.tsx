@@ -146,8 +146,9 @@ function DashboardPage() {
     }
   };
 
-  const formatCurrency = (value: number) => {
-    return `R$ ${value.toFixed(2).replace(".", ",")}`;
+  const formatCurrency = (value: number | string) => {
+    const num = parseFloat(String(value));
+    return `R$ ${(isNaN(num) ? 0 : num).toFixed(2).replace(".", ",")}`;
   };
 
   if (loading) {
