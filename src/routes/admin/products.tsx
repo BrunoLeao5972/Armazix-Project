@@ -53,6 +53,7 @@ interface Product {
   promoConfig: PromoConfig | null;
   productType: ProductType | null;
   isWeightScale: boolean | null;
+  variationGroups: VariationGroup[] | null;
 }
 
 interface Category {
@@ -428,7 +429,7 @@ function ProductFormModal({
         trackStock: editing.trackStock === true,
         status: editing.active === null ? "suspenso" : editing.active === false ? "inativo" : "ativo",
         allowObservation: editing.allowObservation === true,
-        variationGroups: [],
+        variationGroups: editing.variationGroups || [],
         promoConfig: editing.promoConfig || null,
         productType: (editing.productType as ProductType) || "Produto",
         isWeightScale: editing.isWeightScale === true,
@@ -510,6 +511,7 @@ function ProductFormModal({
         promoConfig: form.promoConfig?.enabled ? form.promoConfig : null,
         productType: form.productType,
         isWeightScale: form.isWeightScale,
+        variationGroups: form.variationGroups,
       };
       let res: Response;
       if (editing) {
@@ -1247,15 +1249,29 @@ function ProductsPage() {
   }, []);
 
   useEffect(() => {
-    const storeId = localStorage.getItem("storeId");
-    if (!storeId) { setLoading(false); return; }
-    Promise.all([
-      fetch(`/api/products/list?storeId=${storeId}`).then(r => r.json()).catch(() => ({})),
-      fetch(`/api/categories/list?storeId=${storeId}`).then(r => r.json()).catch(() => ({})),
-    ]).then(([pData, cData]) => {
-      setProducts(pData.products || []);
-      setCategories(cData.categories || []);
-    }).catch(() => {}).finally(() => setLoading(false));
+    async function load() {
+      let storeId = localStorage.getItem("storeId");
+      if (!storeId) {
+        try {
+          const res = await api.get("/api/store/user");
+          if (res.ok) {
+            const data = await res.json() as { store?: { id: string } };
+            storeId = data.store?.id ?? null;
+            if (storeId) localStorage.setItem("storeId", storeId);
+          }
+        } catch { /* não crítico */ }
+      }
+      if (!storeId) { setLoading(false); return; }
+      try {
+        const [pData, cData] = await Promise.all([
+          fetch(`/api/products/list?storeId=${storeId}`).then(r => r.json()),
+          fetch(`/api/categories/list?storeId=${storeId}`).then(r => r.json()),
+        ]);
+        setProducts((pData as { products?: Product[] }).products || []);
+        setCategories((cData as { categories?: Category[] }).categories || []);
+      } catch { /* ignore */ } finally { setLoading(false); }
+    }
+    load();
   }, []);
 
   const handleSaved = (product: Product, isNew: boolean) => {
@@ -1363,7 +1379,22 @@ function ProductsPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="rounded-xl gap-1.5 h-9"
-            onClick={() => { setLoading(true); const s = localStorage.getItem("storeId"); if (s) fetch(`/api/products/list?storeId=${s}`).then(r => r.json()).then(d => setProducts(d.products || [])).finally(() => setLoading(false)); }}>
+            onClick={async () => {
+              setLoading(true);
+              let s = localStorage.getItem("storeId");
+              if (!s) {
+                try {
+                  const r = await api.get("/api/store/user");
+                  if (r.ok) {
+                    const d = await r.json() as { store?: { id: string } };
+                    s = d.store?.id ?? null;
+                    if (s) localStorage.setItem("storeId", s);
+                  }
+                } catch { /* ignore */ }
+              }
+              if (!s) { setLoading(false); return; }
+              fetch(`/api/products/list?storeId=${s}`).then(r => r.json()).then(d => setProducts((d as { products?: Product[] }).products || [])).finally(() => setLoading(false));
+            }}>
             <RefreshCw className="w-3.5 h-3.5" />
           </Button>
           <Button variant="outline" size="sm" onClick={exportPDF} disabled={filtered.length === 0}

@@ -87,20 +87,19 @@ function LoginPage() {
         localStorage.setItem("csrf_token", data.csrfToken);
       }
       
-      // Fetch user's store - cookie will be sent automatically
+      // Fetch user's store to cache storeId in localStorage (optional — not required for auth)
       try {
-        const storeRes = await fetch(`/api/store/user`, {
-          credentials: "include", // Include cookies
-        });
-        const storeData = await storeRes.json();
-        if (storeRes.ok && storeData.store) {
-          // Store only non-sensitive data in localStorage
-          localStorage.setItem("storeId", storeData.store.id);
+        const storeRes = await fetch("/api/store/user", { credentials: "include" });
+        if (storeRes.ok) {
+          const storeData = await storeRes.json() as { store?: { id: string } };
+          if (storeData.store?.id) {
+            localStorage.setItem("storeId", storeData.store.id);
+          }
         }
-      } catch (err) {
-        console.error("Error fetching store:", err);
+      } catch {
+        // Não crítico — o dashboard usa o cookie JWT para autenticar
       }
-      
+
       navigate({ to: "/admin/dashboard" });
     } catch {
       setError("Erro de conexão. Tente novamente.");

@@ -167,6 +167,7 @@ export const products = pgTable("products", {
   rating: numeric("rating", { precision: 2, scale: 1 }).default("0"),
   reviewCount: integer("review_count").default(0),
   allowObservation: boolean("allow_observation").default(false),
+  variationGroups: jsonb("variation_groups").$type<Array<{ id: string; groupName: string; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }> }> }>>().default([]).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

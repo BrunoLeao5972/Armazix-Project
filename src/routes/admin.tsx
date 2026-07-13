@@ -81,6 +81,13 @@ function AdminLayout() {
     api
       .get("/api/user/get")
       .then(async (res) => {
+        // Sessão expirada ou inválida → redireciona para login
+        if (res.status === 401 || res.status === 403) {
+          localStorage.removeItem("csrf_token");
+          localStorage.removeItem("storeId");
+          navigate({ to: "/login" });
+          return;
+        }
         if (res.ok) {
           const data = (await res.json()) as {
             user?: { name?: string; avatarUrl?: string };
@@ -98,21 +105,35 @@ function AdminLayout() {
       })
       .catch(() => {});
 
-    const storeId = localStorage.getItem("storeId");
-    if (storeId) {
-      fetch(`/api/subscriptions/status?storeId=${storeId}`)
-        .then((r) => r.json())
-        .then((data: { plan?: string }) => {
-          const labels: Record<string, string> = {
-            free: "Free",
-            start: "Start",
-            pro: "Pro",
-            full: "Full",
-          };
-          if (data.plan) setUserPlan(labels[data.plan] || "Free");
-        })
-        .catch(() => {});
+    // Garante que storeId esteja no localStorage para todas as páginas filhas
+    async function ensureStoreId() {
+      let storeId = localStorage.getItem("storeId");
+      if (!storeId) {
+        try {
+          const r = await api.get("/api/store/user");
+          if (r.ok) {
+            const d = await r.json() as { store?: { id: string } };
+            storeId = d.store?.id ?? null;
+            if (storeId) localStorage.setItem("storeId", storeId);
+          }
+        } catch { /* não crítico */ }
+      }
+      if (storeId) {
+        fetch(`/api/subscriptions/status?storeId=${storeId}`)
+          .then((r) => r.json())
+          .then((data: { plan?: string }) => {
+            const labels: Record<string, string> = {
+              free: "Free",
+              start: "Start",
+              pro: "Pro",
+              full: "Full",
+            };
+            if (data.plan) setUserPlan(labels[data.plan] || "Free");
+          })
+          .catch(() => {});
+      }
     }
+    ensureStoreId();
   }, []);
 
   const handleLogout = async () => {

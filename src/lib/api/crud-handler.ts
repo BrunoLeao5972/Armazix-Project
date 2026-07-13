@@ -44,6 +44,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     promoConfig?: PromoConfig | null;
     productType?: string;
     isWeightScale?: boolean;
+    variationGroups?: Array<{ id: string; groupName: string; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }> }> }>;
   };
 
   if (!body.name || !body.price) {
@@ -82,6 +83,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
       promoConfig: body.promoConfig ?? null,
       productType: body.productType || "Produto",
       isWeightScale: body.isWeightScale ?? false,
+      variationGroups: body.variationGroups ?? [],
     }).returning();
 
     // Invalida cache da vitrine — novo produto deve aparecer imediatamente
@@ -245,6 +247,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     promoConfig?: PromoConfig | null;
     productType?: string;
     isWeightScale?: boolean;
+    variationGroups?: Array<{ id: string; groupName: string; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }> }> }>;
   };
 
   if (!body.productId) {
@@ -288,9 +291,10 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     if (body.trackStock  !== undefined) updates.trackStock  = body.trackStock;
     if (body.active      !== undefined) updates.active      = body.active;
     if (body.allowObservation !== undefined) updates.allowObservation = body.allowObservation;
-    if (body.promoConfig     !== undefined) updates.promoConfig      = body.promoConfig;
-    if (body.productType     !== undefined) updates.productType      = body.productType;
-    if (body.isWeightScale   !== undefined) updates.isWeightScale    = body.isWeightScale;
+    if (body.promoConfig      !== undefined) updates.promoConfig      = body.promoConfig;
+    if (body.productType      !== undefined) updates.productType      = body.productType;
+    if (body.isWeightScale    !== undefined) updates.isWeightScale    = body.isWeightScale;
+    if (body.variationGroups  !== undefined) updates.variationGroups  = body.variationGroups;
 
     const [updated] = await db.update(products)
       .set(updates)

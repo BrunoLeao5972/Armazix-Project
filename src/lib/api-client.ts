@@ -7,7 +7,10 @@ export function getCsrfToken(): string | null {
     const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
     if (match) return decodeURIComponent(match[1]);
   }
-  return localStorage.getItem("csrf_token");
+  if (typeof localStorage !== "undefined") {
+    return localStorage.getItem("csrf_token");
+  }
+  return null;
 }
 
 async function refreshCsrfToken(): Promise<string | null> {

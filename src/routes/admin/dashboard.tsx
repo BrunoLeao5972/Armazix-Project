@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { Component, lazy, Suspense, useEffect, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { api } from "@/lib/api-client";
 import {
   TrendingUp,
   ShoppingCart,
@@ -17,6 +18,27 @@ import { Badge } from "@/components/ui/badge";
 
 const RevenueChart = lazy(() => import("@/components/armazix/RevenueChart"));
 const OrdersChart = lazy(() => import("@/components/armazix/OrdersChart"));
+
+class ChartErrorBoundary extends Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; fallback?: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback ?? (
+        <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+          Gráfico indisponível
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export const Route = createFileRoute("/admin/dashboard")({
   component: DashboardPage,
@@ -63,57 +85,62 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 };
 
 function DashboardPage() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [chartData, setChartData] = useState<ChartData>({ revenueData: [], ordersData: [], monthlySales: [], stockMovement: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Get store ID from localStorage or session
-    const storeId = localStorage.getItem("storeId");
-    if (!storeId) {
-      setLoading(false);
-      setError("Loja não encontrada");
-      return;
-    }
-
-    fetchDashboardData(storeId);
+    setMounted(true);
+    fetchDashboardData();
   }, []);
 
-  const fetchDashboardData = async (storeId: string) => {
+  const fetchDashboardData = async () => {
     try {
       setLoading(true);
       const [statsRes, chartRes] = await Promise.all([
-        fetch(`/api/dashboard/stats?storeId=${storeId}`),
-        fetch(`/api/dashboard/charts?storeId=${storeId}`),
+        api.get("/api/dashboard/stats"),
+        api.get("/api/dashboard/charts"),
       ]);
-      const [data, chartDataResp] = await Promise.all([statsRes.json(), chartRes.json()]);
+
+      // Sessão expirada ou não autenticado → redireciona para login
+      if (statsRes.status === 401 || statsRes.status === 403) {
+        navigate({ to: "/login" });
+        return;
+      }
+
+      const [data, chartDataResp] = await Promise.all([statsRes.json(), chartRes.json()]) as [
+        { stats?: DashboardStats; recentOrders?: any[]; error?: string },
+        { revenueData?: any[]; ordersData?: any[]; monthlySales?: any[]; stockMovement?: any[]; }
+      ];
 
       if (!statsRes.ok) {
         setError(data.error || "Erro ao carregar dados");
         return;
       }
 
-      setStats(data.stats);
-      setRecentOrders(data.recentOrders?.map((o: any) => ({
+      setStats(data.stats ?? null);
+      setRecentOrders(data.recentOrders?.map((o) => ({
         id: `#${o.number || o.id.slice(-4)}`,
         customer: o.customerName || "Cliente",
         total: `R$ ${parseFloat(o.total).toFixed(2).replace(".", ",")}`,
         status: o.status,
         time: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-      })) || []);
+      })) ?? []);
 
       if (chartRes.ok) {
         setChartData({
-          revenueData: chartDataResp.revenueData || [],
-          ordersData: chartDataResp.ordersData || [],
-          monthlySales: chartDataResp.monthlySales || [],
-          stockMovement: chartDataResp.stockMovement || [],
+          revenueData: chartDataResp.revenueData ?? [],
+          ordersData:  chartDataResp.ordersData  ?? [],
+          monthlySales: chartDataResp.monthlySales ?? [],
+          stockMovement: chartDataResp.stockMovement ?? [],
         });
       }
-    } catch (err) {
-      setError("Erro de conexão");
+    } catch {
+      setError("Erro de conexão. Verifique sua rede e tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -168,7 +195,7 @@ function DashboardPage() {
         <KpiCard title="Estoque baixo" value={String(stats?.lowStockProducts || 0)} change="" up={false} icon={AlertTriangle} alert />
       </div>
 
-      {/* Charts */}
+      {/* Charts — wrapped in local error boundary + mounted guard to prevent SSR/hydration errors */}
       <div className="grid lg:grid-cols-2 gap-4">
         <div>
           <Card className="rounded-2xl border-border/50 shadow-soft">
@@ -182,9 +209,15 @@ function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="h-[220px]">
-                <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
-                  <RevenueChart data={chartData.revenueData} />
-                </Suspense>
+                {mounted ? (
+                  <ChartErrorBoundary>
+                    <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
+                      <RevenueChart data={chartData.revenueData} />
+                    </Suspense>
+                  </ChartErrorBoundary>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -202,9 +235,15 @@ function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="h-[220px]">
-                <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
-                  <OrdersChart data={chartData.ordersData} />
-                </Suspense>
+                {mounted ? (
+                  <ChartErrorBoundary>
+                    <Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>}>
+                      <OrdersChart data={chartData.ordersData} />
+                    </Suspense>
+                  </ChartErrorBoundary>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Carregando...</div>
+                )}
               </div>
             </CardContent>
           </Card>

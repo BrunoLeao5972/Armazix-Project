@@ -2,7 +2,6 @@ import { useState, createContext, useContext, useEffect, useMemo, useCallback, u
 import { createFileRoute, Link, Outlet, useRouter } from "@tanstack/react-router";
 import {
   Home,
-  LayoutGrid,
   Search,
   ShoppingCart,
   User,
@@ -460,7 +459,7 @@ function withAlpha(hex: string, alpha: number): string {
 }
 
 // ── StoreFooter ───────────────────────────────────────────────────────────────
-function StoreFooter({ store }: { store: StorePublicData }) {
+function StoreFooter({ store, isOpen }: { store: StorePublicData; isOpen: boolean | null }) {
   // ── Paleta derivada do tema da loja ──────────────────────────────────────
   //   footerBg  → mesma cor de fundo configurada pelo lojista (ou navy escuro como padrão)
   //   textMain  → cor de texto configurada (ou branco para o fundo escuro padrão)
@@ -544,12 +543,12 @@ function StoreFooter({ store }: { store: StorePublicData }) {
 
   return (
     <footer style={{ backgroundColor: footerBg, color: C.body, borderTop: `3px solid ${withAlpha(accent, 0.55)}` }}>
-      <div className="max-w-7xl mx-auto px-6 pt-12 pb-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-10 gap-y-10">
+      <div className="max-w-7xl mx-auto px-6 pt-12 pb-24 lg:pb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-10 gap-y-10 text-center sm:text-left">
 
           {/* ── Col 1: Sobre & Horários ─────────────────────────────────── */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 justify-center sm:justify-start">
               {store.logoUrl ? (
                 <img
                   src={store.logoUrl}
@@ -576,12 +575,26 @@ function StoreFooter({ store }: { store: StorePublicData }) {
 
             {store.businessHours && store.businessHours.length > 0 && (
               <div className="space-y-2.5">
-                <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
-                  <Clock className="w-3.5 h-3.5" /> Horários
-                </p>
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5">
+                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: C.muted }}>
+                    <Clock className="w-3.5 h-3.5" /> Horário de Funcionamento
+                  </p>
+                  {isOpen !== null && (
+                    <span
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold"
+                      style={isOpen
+                        ? { background: "rgba(34,197,94,0.18)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.28)" }
+                        : { background: "rgba(239,68,68,0.18)", color: "#f87171", border: "1px solid rgba(239,68,68,0.28)" }
+                      }
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: isOpen ? "#22c55e" : "#ef4444" }} />
+                      {isOpen ? "Aberto agora" : "Fechado"}
+                    </span>
+                  )}
+                </div>
                 <ul className="space-y-1.5">
                   {store.businessHours.map((h) => (
-                    <li key={h.day} className="flex items-center justify-between gap-3 text-xs">
+                    <li key={h.day} className="flex items-center justify-center sm:justify-between gap-3 text-xs">
                       <span className="shrink-0 w-20" style={{ color: C.body }}>{h.day}</span>
                       <span
                         className={h.closed ? "italic" : "font-medium tabular-nums"}
@@ -770,11 +783,9 @@ function StoreFooter({ store }: { store: StorePublicData }) {
 }
 
 const BOTTOM_ITEMS = [
-  { href: "/store", label: "Início", icon: Home },
-  { href: "/store/categories", label: "Categorias", icon: LayoutGrid },
-  { href: "/store/search", label: "Buscar", icon: Search },
-  { href: "/store/cart", label: "Carrinho", icon: ShoppingCart },
-  { href: "/store/account", label: "Perfil", icon: User },
+  { href: "/store",         label: "Início",   icon: Home         },
+  { href: "/store/cart",    label: "Carrinho", icon: ShoppingCart },
+  { href: "/store/account", label: "Perfil",   icon: User         },
 ];
 
 function StoreLayout() {
@@ -1047,11 +1058,11 @@ function StoreLayout() {
                 <Search className="w-4.5 h-4.5 text-slate-600" />
               </Link>
 
-              {/* Meus Pedidos */}
+              {/* Meus Pedidos — oculto no mobile (acessível pelo Perfil na bottom nav) */}
               <button
                 onClick={() => setOrdersOpen(true)}
                 aria-label="Meus pedidos"
-                className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-slate-100 transition-colors relative"
+                className="hidden md:flex w-9 h-9 rounded-xl items-center justify-center hover:bg-slate-100 transition-colors relative"
               >
                 <ClipboardList className="w-4.5 h-4.5 text-slate-700" />
                 {customerToken && (
@@ -1059,10 +1070,10 @@ function StoreLayout() {
                 )}
               </button>
 
-              {/* Cart */}
+              {/* Cart — oculto no mobile (acessível pelo Carrinho na bottom nav) */}
               <Sheet>
                 <SheetTrigger asChild>
-                  <button className="w-9 h-9 rounded-xl flex items-center justify-center hover:bg-slate-100 transition-colors relative">
+                  <button className="hidden md:flex w-9 h-9 rounded-xl items-center justify-center hover:bg-slate-100 transition-colors relative">
                     <ShoppingCart className="w-4.5 h-4.5 text-slate-700" />
                     {cartCount > 0 && (
                       <span className="absolute -top-0.5 -right-0.5 grid place-items-center min-w-[18px] h-[18px] rounded-full bg-[#163B78] text-white text-[10px] font-bold leading-none px-1">
@@ -1186,27 +1197,31 @@ function StoreLayout() {
         </main>
 
         {/* Footer */}
-        {store && <StoreFooter store={store} />}
+        {store && <StoreFooter store={store} isOpen={isOpen} />}
 
-        {/* Bottom Navigation - Mobile */}
+        {/* Bottom Navigation — Mobile */}
         {store && (
           <nav className="fixed bottom-0 left-0 right-0 z-40 bg-surface/90 backdrop-blur-md border-t border-border/40 lg:hidden safe-area-bottom">
-            <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
+            <div className="flex items-center justify-around h-16 max-w-lg mx-auto px-4">
               {BOTTOM_ITEMS.map((item) => {
                 const active = item.href === "/store" ? pathname === "/store" : pathname.startsWith(item.href);
                 return (
                   <Link
                     key={item.href}
                     to={item.href}
-                    className="flex flex-col items-center gap-0.5 min-w-[48px] py-1"
+                    className="flex flex-col items-center gap-0.5 min-w-[56px] py-1"
                   >
-                    <div className={`relative flex items-center justify-center w-10 h-7 rounded-xl transition-colors ${active ? "bg-primary/15" : ""}`}>
+                    <div className={`relative flex items-center justify-center w-10 h-7 rounded-xl transition-all ${active ? "bg-primary/15" : ""}`}>
                       <item.icon className={`w-5 h-5 ${active ? "text-primary" : "text-muted-foreground"}`} />
                       {item.href === "/store/cart" && cartCount > 0 && (
-                        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold grid place-items-center">{cartCount}</span>
+                        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold grid place-items-center">
+                          {cartCount}
+                        </span>
                       )}
                     </div>
-                    <span className={`text-[10px] font-medium ${active ? "text-primary" : "text-muted-foreground"}`}>{item.label}</span>
+                    <span className={`text-[10px] font-medium ${active ? "text-primary" : "text-muted-foreground"}`}>
+                      {item.label}
+                    </span>
                   </Link>
                 );
               })}

@@ -126,6 +126,7 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/customer/login": loginPasswordlessHandler,             // Login passwordless por telefone
   "/api/customer/auth/request-code": requestOtpHandler,       // Solicita OTP via WhatsApp
   "/api/customer/auth/verify-code": verifyOtpHandler,         // Valida OTP e retorna JWT
+  "/api/customer/profile": patchCustomerProfileHandler,       // Salva nome e endereço (auth via Bearer)
   "/api/payments/mp-webhook": mpWebhookHandler, // Webhook do MercadoPago
   "/api/subscriptions/mp-webhook": subscriptionWebhookHandler, // Webhook de assinaturas
   "/api/subscriptions/pix-webhook": pixWebhookHandler, // Webhook PIX avulso
@@ -142,7 +143,6 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/coupons/validate": validatePublicCouponHandler, // Público para vitrine
   "/api/customer/check": checkCustomerByPhoneHandler,  // Pré-preenchimento checkout
   "/api/customer/orders": getCustomerOrdersHandler,     // Central do cliente (auth própria via Bearer)
-  "/api/customer/profile": patchCustomerProfileHandler, // Auto-atualização de perfil (auth via Bearer)
 };
 
 // Rotas protegidas (requerem autenticação)

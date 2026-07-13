@@ -237,10 +237,10 @@ export async function verifyOtpHandler(request: Request): Promise<Response> {
   }
 }
 
-// ─── PATCH /api/customer/profile ─────────────────────────────────────────────
-// Atualiza nome e salva endereço do cliente autenticado.
+// ─── POST /api/customer/profile ──────────────────────────────────────────────
+// Atualiza nome e salva endereço estruturado do cliente autenticado.
 // Auth: Bearer <customerJWT>
-// Body: { name: string; address?: string }
+// Body: { name: string; address?: { cep, street, number, neighborhood, city, state, complement?, obs? } }
 export async function patchCustomerProfileHandler(request: Request): Promise<Response> {
   const raw = request.headers.get("Authorization");
   const token = raw?.startsWith("Bearer ") ? raw.slice(7) : null;
@@ -252,10 +252,21 @@ export async function patchCustomerProfileHandler(request: Request): Promise<Res
   const auth = await verifyCustomerJWT(token, secret);
   if (!auth) return json({ error: "Token inválido ou expirado" }, 401);
 
-  const body = await request.json() as { name?: string; address?: string };
-  const name = body.name?.trim();
-  const addressText = body.address?.trim();
+  const body = await request.json() as {
+    name?: string;
+    address?: {
+      cep?: string;
+      street?: string;
+      number?: string;
+      neighborhood?: string;
+      city?: string;
+      state?: string;
+      complement?: string;
+      obs?: string;
+    };
+  };
 
+  const name = body.name?.trim();
   if (!name) return json({ error: "Nome obrigatório" }, 400);
 
   const db = createDb(process.env.DATABASE_URL!);
@@ -269,17 +280,29 @@ export async function patchCustomerProfileHandler(request: Request): Promise<Res
 
     if (!updated) return json({ error: "Cliente não encontrado" }, 404);
 
-    if (addressText) {
+    const addr = body.address;
+    if (addr?.street && addr?.number && addr?.city && addr?.state) {
+      const cepDigits = (addr.cep ?? "").replace(/\D/g, "");
+      const zip = cepDigits.length === 8
+        ? `${cepDigits.slice(0, 5)}-${cepDigits.slice(5)}`
+        : cepDigits.slice(0, 9) || "00000-000";
+
+      // Substitui endereço padrão existente (upsert via delete + insert)
+      await db.delete(addresses).where(
+        and(eq(addresses.customerId, auth.customerId), eq(addresses.isDefault, true)),
+      );
+
       await db.insert(addresses).values({
-        customerId: auth.customerId,
-        label: "Principal",
-        street: addressText.slice(0, 200),
-        number: "S/N",
-        neighborhood: "-",
-        city: "-",
-        state: "XX",
-        zip: "00000000",
-        isDefault: true,
+        customerId:   auth.customerId,
+        label:        "Principal",
+        street:       addr.street.slice(0, 200),
+        number:       addr.number.slice(0, 20),
+        neighborhood: (addr.neighborhood || "-").slice(0, 80),
+        city:         addr.city.slice(0, 80),
+        state:        addr.state.toUpperCase().slice(0, 2),
+        zip:          zip,
+        complement:   addr.complement ? addr.complement.slice(0, 80) : null,
+        isDefault:    true,
       });
     }
 
