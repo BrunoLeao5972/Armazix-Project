@@ -7,6 +7,7 @@ import {
   Box, Barcode, Hash, LayoutGrid, List, ImagePlus, Check,
   TrendingUp, AlertTriangle, CheckCircle2, XCircle, RefreshCw,
   Layers, Pencil, FileDown, Percent, Star, Clock, Calendar,
+  Building2,
 } from "lucide-react";
 import { type PromoConfig, DEFAULT_PROMO_CONFIG, isPromoActive, getEffectivePrice } from "@/lib/promo-engine";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -384,6 +385,100 @@ function Section({ icon: Icon, title, children }: { icon: React.ElementType; tit
   );
 }
 
+// ─── Setores ─────────────────────────────────────────────────────
+interface Sector {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  active: boolean;
+}
+
+function SectorPickerModal({
+  open, onClose, allSectors, selected, onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  allSectors: Sector[];
+  selected: string[];
+  onConfirm: (ids: string[]) => void;
+}) {
+  const [draft, setDraft] = useState<string[]>(selected);
+
+  useEffect(() => { if (open) setDraft(selected); }, [open, selected]);
+
+  const toggle = (id: string) =>
+    setDraft(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const active = allSectors.filter(s => s.active);
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="rounded-2xl max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-muted-foreground" />
+            Setores de estoque
+          </DialogTitle>
+        </DialogHeader>
+        <div className="pt-1">
+          {active.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              Nenhum setor ativo.<br />
+              <span className="text-xs">Cadastre setores em Cadastros → Setores.</span>
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+              {active.map(sector => {
+                const checked = draft.includes(sector.id);
+                return (
+                  <button
+                    key={sector.id}
+                    type="button"
+                    onClick={() => toggle(sector.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors text-left ${
+                      checked
+                        ? "border-primary/40 bg-primary/5"
+                        : "border-border hover:bg-secondary/40"
+                    }`}
+                  >
+                    <div
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: sector.color ?? "#64748b" }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{sector.name}</p>
+                      {sector.description && (
+                        <p className="text-xs text-muted-foreground truncate">{sector.description}</p>
+                      )}
+                    </div>
+                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
+                      checked ? "bg-primary border-primary" : "border-muted-foreground/30"
+                    }`}>
+                      {checked && <Check className="w-2.5 h-2.5 text-primary-foreground" strokeWidth={3} />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="flex gap-2 pt-4">
+            <Button variant="outline" onClick={onClose} className="flex-1 rounded-xl">
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => { onConfirm(draft); onClose(); }}
+              className="flex-1 rounded-xl"
+            >
+              Confirmar
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Product Form Modal ───────────────────────────────────────────
 function ProductFormModal({
   open, onClose, categories, onSaved, editing, onDelete,
@@ -403,6 +498,9 @@ function ProductFormModal({
   const [newCatName, setNewCatName] = useState("");
   const [creatingCat, setCreatingCat] = useState(false);
   const [showNewCat, setShowNewCat] = useState(false);
+  const [allSectors, setAllSectors] = useState<Sector[]>([]);
+  const [selectedSectorIds, setSelectedSectorIds] = useState<string[]>([]);
+  const [sectorPickerOpen, setSectorPickerOpen] = useState(false);
 
   useEffect(() => {
     if (editing) {
@@ -440,6 +538,24 @@ function ProductFormModal({
     setTab("basic");
     setShowNewCat(false);
     setNewCatName("");
+    setSelectedSectorIds([]);
+
+    // Load sectors list + product sector assignments when modal opens
+    if (open) {
+      const storeId = localStorage.getItem("storeId");
+      if (storeId) {
+        fetch(`/api/sectors/list?storeId=${storeId}`, { credentials: "include" })
+          .then(r => r.json())
+          .then((d: { sectors?: Sector[] }) => setAllSectors(d.sectors ?? []))
+          .catch(() => {});
+      }
+      if (editing?.id) {
+        fetch(`/api/product-sectors?productId=${editing.id}`, { credentials: "include" })
+          .then(r => r.json())
+          .then((d: { sectorIds?: string[] }) => setSelectedSectorIds(d.sectorIds ?? []))
+          .catch(() => {});
+      }
+    }
   }, [editing, open]);
 
   const set = (k: keyof ProductForm, v: string | boolean | VariationGroup[] | ProductImage[]) =>
@@ -521,6 +637,10 @@ function ProductFormModal({
       }
       const data = await res.json();
       if (res.ok && (data.success || data.product)) {
+        const productId = data.product?.id ?? editing?.id;
+        if (productId) {
+          await api.post("/api/product-sectors/set", { productId, sectorIds: selectedSectorIds }).catch(() => {});
+        }
         onSaved(data.product, !editing);
         onClose();
       } else {
@@ -542,6 +662,14 @@ function ProductFormModal({
   ] as const;
 
   return (
+    <>
+      <SectorPickerModal
+        open={sectorPickerOpen}
+        onClose={() => setSectorPickerOpen(false)}
+        allSectors={allSectors}
+        selected={selectedSectorIds}
+        onConfirm={setSelectedSectorIds}
+      />
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="rounded-2xl max-w-2xl p-0 overflow-hidden max-h-[90vh] flex flex-col">
         <DialogHeader className="px-6 pt-5 pb-0">
@@ -924,6 +1052,58 @@ function ProductFormModal({
                   <p>O saldo atual do produto é atualizado exclusivamente pelo módulo de <strong>Estoque</strong> — via entradas, saídas, ajustes e balanços. Não é possível editar a quantidade diretamente aqui.</p>
                 </div>
               </div>
+
+              {/* Setores */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Setores de estoque</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Áreas ou locais onde este produto é armazenado
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl h-8 gap-1.5 text-xs"
+                    onClick={() => setSectorPickerOpen(true)}
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    Setores
+                    {selectedSectorIds.length > 0 && (
+                      <span className="ml-0.5 bg-primary text-primary-foreground rounded-full text-[10px] font-bold w-4 h-4 flex items-center justify-center">
+                        {selectedSectorIds.length}
+                      </span>
+                    )}
+                  </Button>
+                </div>
+                {selectedSectorIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedSectorIds.map(id => {
+                      const sector = allSectors.find(s => s.id === id);
+                      if (!sector) return null;
+                      return (
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
+                          style={{
+                            backgroundColor: sector.color ? `${sector.color}18` : undefined,
+                            borderColor: sector.color ? `${sector.color}40` : undefined,
+                            color: sector.color ?? undefined,
+                          }}
+                        >
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: sector.color ?? "#64748b" }}
+                          />
+                          {sector.name}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -1228,6 +1408,7 @@ function ProductFormModal({
         </div>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 

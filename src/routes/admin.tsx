@@ -30,6 +30,8 @@ import {
   UserCog,
   Building2,
   ArrowLeftRight,
+  ArrowUpCircle,
+  ArrowDownCircle,
   RefreshCw,
   FileText,
   Scale,
@@ -42,6 +44,7 @@ import {
   ArrowUpDown,
   BarChart2,
   Lock,
+  MonitorCheck,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -88,20 +91,23 @@ const NAV_GROUPS: NavGroup[] = [
   {
     id: "top",
     items: [
-      { label: "Dashboard", icon: LayoutDashboard, href: "/admin/dashboard" },
-      { label: "Pedidos",   icon: ShoppingCart,    href: "/admin/orders"    },
+      { label: "Dashboard",  icon: LayoutDashboard, href: "/admin/dashboard" },
+      { label: "Pedidos",    icon: ShoppingCart,    href: "/admin/orders"    },
+      { label: "Relatórios", icon: BarChart3,       href: "/admin/reports"   },
     ],
   },
   {
     id: "cadastros",
     label: "Cadastros",
+    collapsible: true,
     items: [
       { label: "Produtos e Serviços",     icon: Package,   href: "/admin/products"   },
       { label: "Categorias",              icon: Tags,      href: "/admin/categories" },
       { label: "Setores",                 icon: Building2, href: "/admin/sectors"    },
       { label: "Clientes e Fornecedores", icon: Users,     href: "/admin/customers"  },
       { label: "Usuários",                icon: UserCog,   href: "/admin/users"      },
-      { label: "Impressoras",             icon: Printer,   href: "/admin/printers"   },
+      { label: "Impressoras",             icon: Printer,       href: "/admin/printers"            },
+      { label: "Ambientes de Impressão",  icon: MonitorCheck,  href: "/admin/print-environments"  },
     ],
   },
   {
@@ -109,14 +115,15 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Estoque",
     collapsible: true,
     items: [
-      { label: "Inventário",        icon: Warehouse,         href: "/admin/stock"             },
-      { label: "Entradas / Saídas", icon: ArrowLeftRight,    href: "/admin/stock/movements"   },
-      { label: "Transferências",    icon: RefreshCw,         href: "/admin/stock/transfers"   },
-      { label: "Extrato",           icon: FileText,          href: "/admin/stock/extract"     },
-      { label: "Balanço",           icon: Scale,             href: "/admin/stock/balance"     },
-      { label: "Ajuste",            icon: SlidersHorizontal, href: "/admin/stock/adjustments" },
-      { label: "Histórico",         icon: History,           href: "/admin/stock/history"     },
-      { label: "Balancete",         icon: FileSpreadsheet,   href: "/admin/stock/balancete"   },
+      { label: "Inventário",    icon: Warehouse,         href: "/admin/stock"             },
+      { label: "Entradas",      icon: ArrowUpCircle,     href: "/admin/stock/entries"     },
+      { label: "Saídas",        icon: ArrowDownCircle,   href: "/admin/stock/exits"       },
+      { label: "Transferências",icon: ArrowLeftRight,    href: "/admin/stock/transfers"   },
+      { label: "Extrato",       icon: FileText,          href: "/admin/stock/extract"     },
+      { label: "Balanço",       icon: Scale,             href: "/admin/stock/balance"     },
+      { label: "Ajuste",        icon: SlidersHorizontal, href: "/admin/stock/adjustments" },
+      { label: "Histórico",     icon: History,           href: "/admin/stock/history"     },
+      { label: "Balancete",     icon: FileSpreadsheet,   href: "/admin/stock/balancete"   },
     ],
   },
   {

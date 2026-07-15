@@ -184,6 +184,7 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   orderItems: many(orderItems),
   favorites: many(favorites),
   reviews: many(reviews),
+  productSectors: many(productSectors),
 }));
 
 // ─── PRODUCT ADDITIONS (Adicionais) ─────────────────────────────
@@ -521,42 +522,73 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   store: one(stores, { fields: [auditLogs.storeId], references: [stores.id] }),
 }));
 
+// ─── STOCK PRODUCT BALANCES (Saldo por produto × setor) ──────────
+// Fonte de verdade para estoque descentralizado por setor.
+// products.stock continua como total global (soma de todos os setores + vendas sem setor).
+export const stockProductBalances = pgTable("stock_product_balances", {
+  id:          uuid("id").defaultRandom().primaryKey(),
+  storeId:     uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  productId:   uuid("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  sectorId:    uuid("sector_id").references(() => sectors.id, { onDelete: "cascade" }).notNull(),
+  quantity:    numeric("quantity", { precision: 12, scale: 3 }).default("0").notNull(),
+  minQuantity: numeric("min_quantity", { precision: 12, scale: 3 }).default("0").notNull(),
+  updatedAt:   timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("spb_product_sector_uidx").on(t.productId, t.sectorId),
+  index("spb_store_idx").on(t.storeId),
+  index("spb_sector_idx").on(t.sectorId),
+]);
+
+export const stockProductBalancesRelations = relations(stockProductBalances, ({ one }) => ({
+  store:   one(stores,   { fields: [stockProductBalances.storeId],   references: [stores.id] }),
+  product: one(products, { fields: [stockProductBalances.productId], references: [products.id] }),
+  sector:  one(sectors,  { fields: [stockProductBalances.sectorId],  references: [sectors.id] }),
+}));
+
 // ─── STOCK MOVEMENTS (Movimentações de Estoque) ──────────────────
-// Tipos: VENDA | ENTRADA | SAIDA | AJUSTE | PERDA | AVARIA | RECONTAGEM
+// Tipos: VENDA | ENTRADA | SAIDA | AJUSTE | PERDA | AVARIA | RECONTAGEM | TRANSFERENCIA
 export const stockMovements = pgTable("stock_movements", {
-  id:            uuid("id").defaultRandom().primaryKey(),
-  storeId:       uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
-  productId:     uuid("product_id").references(() => products.id, { onDelete: "set null" }),
-  productName:   varchar("product_name", { length: 150 }).notNull(),
-  type:          varchar("type", { length: 20 }).notNull(),
-  quantity:      integer("quantity").notNull(),           // sempre positivo; direção pelo type
-  balanceBefore: integer("balance_before").notNull(),
-  balanceAfter:  integer("balance_after").notNull(),
-  origem:        varchar("origem", { length: 250 }).notNull(),
-  orderId:       uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
-  supplierId:    uuid("supplier_id").references(() => customers.id, { onDelete: "set null" }),
-  nf:            varchar("nf",          { length: 50 }),
-  lot:           varchar("lot",         { length: 50 }),
-  expiry:        varchar("expiry",      { length: 20 }),
-  costPrice:     numeric("cost_price",  { precision: 10, scale: 2 }),
-  payMethod:     varchar("pay_method",  { length: 50 }),
-  dueDate:       varchar("due_date",    { length: 20 }),
-  observations:  text("observations"),
-  createdBy:     uuid("created_by"),
-  createdByName: varchar("created_by_name", { length: 120 }),
-  createdAt:     timestamp("created_at").defaultNow().notNull(),
+  id:                   uuid("id").defaultRandom().primaryKey(),
+  storeId:              uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  productId:            uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+  productName:          varchar("product_name", { length: 150 }).notNull(),
+  type:                 varchar("type", { length: 20 }).notNull(),
+  quantity:             integer("quantity").notNull(),           // sempre positivo; direção pelo type
+  balanceBefore:        integer("balance_before").notNull(),
+  balanceAfter:         integer("balance_after").notNull(),
+  origem:               varchar("origem", { length: 250 }).notNull(),
+  // Rastreio de setor (nullable para backward-compat com vendas sem contexto de setor)
+  sectorId:             uuid("sector_id").references(() => sectors.id, { onDelete: "set null" }),
+  sourceSectorId:       uuid("source_sector_id").references(() => sectors.id, { onDelete: "set null" }),
+  destinationSectorId:  uuid("destination_sector_id").references(() => sectors.id, { onDelete: "set null" }),
+  orderId:              uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+  supplierId:           uuid("supplier_id").references(() => customers.id, { onDelete: "set null" }),
+  nf:                   varchar("nf",          { length: 50 }),
+  lot:                  varchar("lot",         { length: 50 }),
+  expiry:               varchar("expiry",      { length: 20 }),
+  costPrice:            numeric("cost_price",  { precision: 10, scale: 2 }),
+  payMethod:            varchar("pay_method",  { length: 50 }),
+  dueDate:              varchar("due_date",    { length: 20 }),
+  observations:         text("observations"),
+  createdBy:            uuid("created_by"),
+  createdByName:        varchar("created_by_name", { length: 120 }),
+  createdAt:            timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("stock_movements_store_idx").on(t.storeId),
   index("stock_movements_product_idx").on(t.productId),
   index("stock_movements_type_idx").on(t.type),
+  index("stock_movements_sector_idx").on(t.sectorId),
   index("stock_movements_created_idx").on(t.createdAt),
 ]);
 
 export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
-  store:    one(stores,    { fields: [stockMovements.storeId],    references: [stores.id] }),
-  product:  one(products,  { fields: [stockMovements.productId],  references: [products.id] }),
-  order:    one(orders,    { fields: [stockMovements.orderId],    references: [orders.id] }),
-  supplier: one(customers, { fields: [stockMovements.supplierId], references: [customers.id] }),
+  store:             one(stores,    { fields: [stockMovements.storeId],             references: [stores.id] }),
+  product:           one(products,  { fields: [stockMovements.productId],            references: [products.id] }),
+  order:             one(orders,    { fields: [stockMovements.orderId],              references: [orders.id] }),
+  supplier:          one(customers, { fields: [stockMovements.supplierId],           references: [customers.id] }),
+  sector:            one(sectors,   { fields: [stockMovements.sectorId],             references: [sectors.id] }),
+  sourceSector:      one(sectors,   { fields: [stockMovements.sourceSectorId],       references: [sectors.id] }),
+  destinationSector: one(sectors,   { fields: [stockMovements.destinationSectorId],  references: [sectors.id] }),
 }));
 
 // ─── STOCK BALANCES (Balanços de estoque) ────────────────────────
@@ -600,6 +632,7 @@ export const stockAdjustments = pgTable("stock_adjustments", {
   storeId:       uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
   productId:     uuid("product_id").references(() => products.id, { onDelete: "set null" }),
   productName:   varchar("product_name", { length: 150 }).notNull(),
+  sectorId:      uuid("sector_id").references(() => sectors.id, { onDelete: "set null" }),
   balanceBefore: integer("balance_before").notNull(),
   balanceAfter:  integer("balance_after").notNull(),
   qty:           integer("qty").notNull(),
@@ -613,12 +646,14 @@ export const stockAdjustments = pgTable("stock_adjustments", {
 }, (t) => [
   index("stock_adjustments_store_idx").on(t.storeId),
   index("stock_adjustments_product_idx").on(t.productId),
+  index("stock_adjustments_sector_idx").on(t.sectorId),
   index("stock_adjustments_created_idx").on(t.createdAt),
 ]);
 
 export const stockAdjustmentsRelations = relations(stockAdjustments, ({ one }) => ({
   store:   one(stores,   { fields: [stockAdjustments.storeId],   references: [stores.id] }),
   product: one(products, { fields: [stockAdjustments.productId], references: [products.id] }),
+  sector:  one(sectors,  { fields: [stockAdjustments.sectorId],  references: [sectors.id] }),
 }));
 
 // ─── MESAS (Mapa de atendimento PDV) ────────────────────────────
@@ -753,4 +788,62 @@ export const roleProfiles = pgTable("role_profiles", {
 
 export const roleProfilesRelations = relations(roleProfiles, ({ one }) => ({
   store: one(stores, { fields: [roleProfiles.storeId], references: [stores.id] }),
+}));
+
+// ─── SECTORS (Setores de estoque) ───────────────────────────────
+export const sectors = pgTable("sectors", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  color: varchar("color", { length: 20 }),
+  active: boolean("active").default(true).notNull(),
+  position: integer("position").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("sectors_store_idx").on(t.storeId),
+]);
+
+export const sectorsRelations = relations(sectors, ({ one, many }) => ({
+  store:                one(stores,   { fields: [sectors.storeId], references: [stores.id] }),
+  productSectors:       many(productSectors),
+  stockProductBalances: many(stockProductBalances),
+}));
+
+export const productSectors = pgTable("product_sectors", {
+  productId: uuid("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  sectorId: uuid("sector_id").references(() => sectors.id, { onDelete: "cascade" }).notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.productId, t.sectorId] }),
+  index("product_sectors_product_idx").on(t.productId),
+  index("product_sectors_sector_idx").on(t.sectorId),
+]);
+
+export const productSectorsRelations = relations(productSectors, ({ one }) => ({
+  product: one(products, { fields: [productSectors.productId], references: [products.id] }),
+  sector: one(sectors, { fields: [productSectors.sectorId], references: [sectors.id] }),
+}));
+
+// ─── PRINT ENVIRONMENTS (Ambientes de Impressão) ────────────────
+export const printEnvironments = pgTable("print_environments", {
+  id:         uuid("id").defaultRandom().primaryKey(),
+  storeId:    uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  code:       varchar("code", { length: 10 }).notNull(),
+  name:       varchar("name", { length: 100 }).notNull(),
+  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "cascade" }).notNull(),
+  printerId:  uuid("printer_id").references(() => printers.id, { onDelete: "set null" }),
+  active:     boolean("active").default(true).notNull(),
+  createdAt:  timestamp("created_at").defaultNow().notNull(),
+  updatedAt:  timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("print_env_store_idx").on(t.storeId),
+  index("print_env_category_idx").on(t.categoryId),
+  index("print_env_printer_idx").on(t.printerId),
+]);
+
+export const printEnvironmentsRelations = relations(printEnvironments, ({ one }) => ({
+  store:    one(stores,     { fields: [printEnvironments.storeId],    references: [stores.id] }),
+  category: one(categories, { fields: [printEnvironments.categoryId], references: [categories.id] }),
+  printer:  one(printers,   { fields: [printEnvironments.printerId],  references: [printers.id] }),
 }));

@@ -15,6 +15,13 @@
       "when": 1782912799270,
       "tag": "0001_naive_kulan_gath",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783976373461,
+      "tag": "0002_dashing_gravity",
+      "breakpoints": true
     }
   ]
 }

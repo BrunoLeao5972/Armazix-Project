@@ -75,8 +75,10 @@ import {
   stockEntryHandler,
   stockExitHandler,
   stockAdjustmentHandler,
+  stockTransferHandler,
   listStockMovementsHandler,
   listStockAdjustmentsHandler,
+  listStockProductBalancesHandler,
 } from "./api/stock-movement-handler";
 import {
   connectWhatsAppHandler,
@@ -106,6 +108,21 @@ import {
   detectPrintersHandler,
 } from "./api/printers";
 import { printTestHandler, printOrderHandler, printRawTestHandler } from "./api/print-handler";
+import {
+  listSectorsHandler,
+  createSectorHandler,
+  updateSectorHandler,
+  deleteSectorHandler,
+  getProductSectorsHandler,
+  setProductSectorsHandler,
+} from "./api/sectors-handler";
+import {
+  listPrintEnvironmentsHandler,
+  getPrintEnvironmentFormDataHandler,
+  createPrintEnvironmentHandler,
+  updatePrintEnvironmentHandler,
+  deletePrintEnvironmentHandler,
+} from "./api/print-environments-handler";
 import { requireAuth, AuthContext } from "./middleware/auth";
 import { rateLimit, createRateLimitResponse } from "./middleware/rate-limit";
 import { withSecurityHeaders } from "./middleware/security-headers";
@@ -201,6 +218,14 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/printers/test-raw":            printRawTestHandler,
   "/api/printers/print-test":         printTestHandler,
   "/api/printers/print-order":        printOrderHandler,
+  "/api/sectors/create":              createSectorHandler,
+  "/api/sectors/update":              updateSectorHandler,
+  "/api/sectors/delete":              deleteSectorHandler,
+  "/api/product-sectors/set":         setProductSectorsHandler,
+  "/api/stock/transfer":              stockTransferHandler,
+  "/api/print-environments/create":   createPrintEnvironmentHandler,
+  "/api/print-environments/update":   updatePrintEnvironmentHandler,
+  "/api/print-environments/delete":   deletePrintEnvironmentHandler,
 };
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
@@ -231,6 +256,11 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/role-profiles/list":     listRoleProfilesHandler,
   "/api/printers/list":          listPrintersHandler,
   "/api/printers/detect":        detectPrintersHandler,
+  "/api/sectors/list":                  listSectorsHandler,
+  "/api/product-sectors":               getProductSectorsHandler,
+  "/api/stock/balances-by-sector":      listStockProductBalancesHandler,
+  "/api/print-environments/list":       listPrintEnvironmentsHandler,
+  "/api/print-environments/form-data":  getPrintEnvironmentFormDataHandler,
 };
 
 // Mapeamento de rotas para configurações de rate limit

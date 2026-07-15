@@ -7,7 +7,7 @@ import { notifyOwnerNewOrder, notifyCustomerStatus, normalizePhone, DEFAULT_WPP_
 import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey, customersCacheKey, deleteKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
 
-const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements, addresses } = schema;
+const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements, addresses, financeiroLancamentos, orderTimeline } = schema;
 
 // ─── Create Product ──────────────────────────────────────────────
 export async function createProductHandler(request: Request, auth?: AuthContext): Promise<Response> {
@@ -905,7 +905,7 @@ export async function listOrdersHandler(request: Request, auth?: AuthContext): P
     const formatted = storeOrders.map(o => ({
       ...o,
       totalFormatted: `R$ ${parseFloat(o.total).toFixed(2).replace(".", ",")}`,
-      date: new Date(o.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+      date: (o.createdAt instanceof Date ? o.createdAt : new Date(String(o.createdAt))).toISOString(),
     }));
 
     return new Response(JSON.stringify({ orders: formatted }), { status: 200, headers: { "content-type": "application/json" } });
@@ -932,7 +932,7 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     });
   }
 
-  const body = await request.json() as { orderId: string; status: string };
+  const body = await request.json() as { orderId: string; status: string; paymentMethod?: string };
   if (!body.orderId || !body.status) return new Response(JSON.stringify({ error: "orderId e status obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
 
   // SECURITY: Whitelist valid statuses to prevent arbitrary status injection
@@ -940,6 +940,11 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     return new Response(JSON.stringify({ error: `Status inválido. Deve ser: ${VALID_ORDER_STATUSES.join(", ")}` }), {
       status: 400, headers: { "content-type": "application/json" },
     });
+  }
+
+  const VALID_PAYMENT_METHODS = ["pix", "card", "debit", "cash"];
+  if (body.paymentMethod && !VALID_PAYMENT_METHODS.includes(body.paymentMethod)) {
+    return new Response(JSON.stringify({ error: "Método de pagamento inválido" }), { status: 400, headers: { "content-type": "application/json" } });
   }
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -966,25 +971,55 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     };
 
     const now = new Date();
+    const finalPaymentMethod = body.paymentMethod || existingOrder.paymentMethod;
+
     const statusPatch: Record<string, unknown> = {
       status:    body.status,
       updatedAt: now,
-      // Merge dos timestamps condicionais — 1 UPDATE ao invés de 3 sequenciais
       ...(body.status === "delivered" && { deliveredAt: now }),
       ...(body.status === "cancelled" && { cancelledAt: now }),
+      ...(body.paymentMethod && { paymentMethod: body.paymentMethod }),
+      ...(body.status === "delivered" && { paymentStatus: "paid" }),
     };
 
-    // UPDATE de status + INSERT de timeline em paralelo (independentes)
-    await Promise.all([
-      db.update(orders)
+    // Transação atômica: status + timeline + lançamento financeiro (se delivered)
+    await db.transaction(async (tx) => {
+      await tx.update(orders)
         .set(statusPatch)
-        .where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId))),
-      db.insert(schema.orderTimeline).values({
+        .where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
+
+      await tx.insert(orderTimeline).values({
         orderId: body.orderId,
         status:  body.status,
         note:    statusLabels[body.status] || body.status,
-      }),
-    ]);
+      });
+
+      if (body.status === "delivered" && finalPaymentMethod) {
+        // Evita lançamento duplicado se o pedido for concluído mais de uma vez
+        const existingEntry = await tx.query.financeiroLancamentos.findFirst({
+          where: and(
+            eq(financeiroLancamentos.orderId, body.orderId),
+            eq(financeiroLancamentos.storeId, storeId),
+          ),
+          columns: { id: true },
+        });
+        if (!existingEntry) {
+          const today = now.toISOString().split("T")[0];
+          await tx.insert(financeiroLancamentos).values({
+            storeId,
+            tipo:            "entrada",
+            categoria:       "venda",
+            descricao:       `Recebimento Automático - Pedido #${existingOrder.number}`,
+            valor:           existingOrder.total,
+            metodoPagamento: finalPaymentMethod,
+            status:          "liquidado",
+            dataCompetencia: today,
+            dataPagamento:   today,
+            orderId:         body.orderId,
+          });
+        }
+      }
+    });
 
     // ── WhatsApp notification — background via ctx.waitUntil ──────────────────
     waitUntil(request, (async () => {

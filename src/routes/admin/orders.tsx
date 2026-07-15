@@ -4,7 +4,7 @@ import { api } from "@/lib/api-client";
 import {
   Search, Filter, Clock, ChefHat, Truck, CheckCircle2, XCircle,
   Loader2, Package, ShoppingBag, QrCode, Banknote, CreditCard,
-  MapPin, User, Printer, Send, Eye, Check, Zap,
+  MapPin, User, Printer, Send, Eye, Check, Zap, Settings, RotateCcw, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -127,11 +127,11 @@ const PAY_LABEL: Record<string, string> = {
 
 // ── Next action per status ────────────────────────────────────────────────────
 const NEXT_ACTION: Record<string, { label: string; next: string; icon: React.ElementType }> = {
-  pending:    { label: "Aceitar",  next: "received",   icon: CheckCircle2 },
-  received:   { label: "Preparar", next: "preparing",  icon: ChefHat },
-  preparing:  { label: "Pronto",   next: "ready",      icon: CheckCircle2 },
-  ready:      { label: "Enviar",   next: "delivering", icon: Truck },
-  delivering: { label: "Entregue", next: "delivered",  icon: CheckCircle2 },
+  pending:    { label: "Aceitar",           next: "received",   icon: CheckCircle2 },
+  received:   { label: "Preparar",          next: "preparing",  icon: ChefHat },
+  preparing:  { label: "Pronto",            next: "ready",      icon: CheckCircle2 },
+  ready:      { label: "Enviar",            next: "delivering", icon: Truck },
+  delivering: { label: "Confirmar Entrega", next: "delivered",  icon: CheckCircle2 },
 };
 
 // ── Filter state ──────────────────────────────────────────────────────────────
@@ -149,15 +149,21 @@ const DEFAULT_FILTERS: FilterState = {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function parseDate(iso: string): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
 function fmtTime(iso: string) {
-  if (!iso) return "";
-  try { return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); }
+  const d = parseDate(iso);
+  if (!d) return "";
+  try { return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); }
   catch { return ""; }
 }
 function fmtDate(iso: string) {
-  if (!iso) return "";
+  const d = parseDate(iso);
+  if (!d) return "";
   try {
-    const d = new Date(iso);
     const today = new Date();
     if (d.toDateString() === today.toDateString()) return "Hoje";
     const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
@@ -165,6 +171,107 @@ function fmtDate(iso: string) {
     return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   } catch { return ""; }
 }
+
+// ── Print agent utilities (mirrors printers.tsx) ─────────────────────────────
+const AGENT_URL = "http://localhost:3989";
+
+function isNetworkPath(path: string): boolean {
+  const t = path.trim();
+  if (!t || t.startsWith("\\\\")) return false;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?$/.test(t)) return true;
+  if (/^[\w-]+(?:\.[\w-]+)+(?::\d+)?$/.test(t)) return true;
+  return false;
+}
+
+async function sendViaAgent(printerName: string, escposB64: string): Promise<void> {
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20_000);
+  try {
+    const res  = await fetch(`${AGENT_URL}/print`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ printer_name: printerName, escpos_b64: escposB64 }),
+      signal: ctrl.signal,
+    });
+    const data = await res.json() as { success?: boolean; error?: string };
+    if (!data.success) throw new Error(data.error ?? "Impressora não respondeu");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ── Auto-print helpers ────────────────────────────────────────────────────────
+function printViaIframe(html: string) {
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:0;opacity:0";
+  document.body.appendChild(iframe);
+  const doc = iframe.contentDocument!;
+  doc.open(); doc.write(html); doc.close();
+  iframe.contentWindow?.focus();
+  iframe.contentWindow?.print();
+  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 2000);
+}
+
+function buildPrintHtml(text: string): string {
+  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:11px;line-height:1.5;width:40ch;padding:8px;background:#fff;color:#000}pre{white-space:pre-wrap}@media print{@page{margin:4mm;size:58mm auto}body{width:100%}}</style>
+    </head><body><pre>${esc}</pre></body></html>`;
+}
+
+function buildBrowserText(order: Order, layout: "production" | "ficha"): string {
+  const sep = "=".repeat(36);
+  const lin = "-".repeat(36);
+  if (layout === "production") {
+    return [
+      sep, `  COMANDA DE PRODUCAO  #${order.number}`, sep,
+      `Cliente : ${order.customer}`,
+      `Tipo    : ${order.type === "pickup" ? "Retirada no local" : "Delivery"}`,
+      `Horario : ${fmtDate(order.rawDate)} ${fmtTime(order.rawDate)}`,
+      lin, `ITENS:`, ...order.items.map(i => `  ${i}`), lin,
+      `TOTAL: ${order.total}`, sep,
+    ].join("\n");
+  }
+  return [
+    sep, `  FICHA DE ENTREGA  #${order.number}`, sep,
+    `Cliente   : ${order.customer}`,
+    ...(order.address && order.type !== "pickup" ? [`Endereco  : ${order.address}`] : []),
+    lin, `ITENS:`, ...order.items.map(i => `  ${i}`), lin,
+    `TOTAL     : ${order.total}`,
+    `Pagamento : ${PAY_LABEL[order.payment] ?? order.payment}`,
+    sep,
+  ].join("\n");
+}
+
+async function autoPrint(order: Order, layout: "production" | "ficha"): Promise<void> {
+  try {
+    const listData = await fetch("/api/printers/list").then(r => r.json()) as { printers?: PrinterRecord[] };
+    const printer  = listData.printers?.[0];
+
+    if (!printer) {
+      printViaIframe(buildPrintHtml(buildBrowserText(order, layout)));
+      return;
+    }
+
+    const res  = await api.post("/api/printers/print-order", {
+      printerId: printer.id,
+      orderId:   order.orderId,
+      layout,
+      send:      isNetworkPath(printer.path ?? ""),
+    });
+    const data = await res.json() as { sent?: boolean; escposB64?: string };
+
+    if (data.sent) return;
+    if (!isNetworkPath(printer.path ?? "") && data.escposB64) {
+      await sendViaAgent(printer.path!, data.escposB64);
+    }
+  } catch {
+    printViaIframe(buildPrintHtml(buildBrowserText(order, layout)));
+  }
+}
+
+function imprimirComandaProducao(order: Order) { autoPrint(order, "production").catch(() => {}); }
+function imprimirFichaEntrega(order: Order)    { autoPrint(order, "ficha").catch(() => {}); }
 
 // ── PrintOrderDialog ──────────────────────────────────────────────────────────
 type PrintLayout = "production" | "caixa" | "delivery" | "ficha";
@@ -182,6 +289,7 @@ function PrintOrderDialog({ orderId, onClose }: { orderId: string | null; onClos
   const [selected,    setSelected]    = useState<string>("");
   const [layout,      setLayout]      = useState<PrintLayout>("production");
   const [preview,     setPreview]     = useState<string>("");
+  const [escposB64,   setEscposB64]   = useState<string>("");
   const [loading,     setLoading]     = useState(false);
   const [sending,     setSending]     = useState(false);
   const [sent,        setSent]        = useState(false);
@@ -190,7 +298,7 @@ function PrintOrderDialog({ orderId, onClose }: { orderId: string | null; onClos
   // Load printers once when dialog opens
   useEffect(() => {
     if (!orderId) return;
-    setSent(false); setSendError(null); setPreview("");
+    setSent(false); setSendError(null); setPreview(""); setEscposB64("");
     fetch("/api/printers/list")
       .then(r => r.json())
       .then((d: { printers?: PrinterRecord[] }) => {
@@ -201,14 +309,19 @@ function PrintOrderDialog({ orderId, onClose }: { orderId: string | null; onClos
       .catch(() => {});
   }, [orderId]);
 
-  // Fetch preview whenever printer or layout changes
+  // Fetch preview (and escposB64) whenever printer or layout changes
   useEffect(() => {
     if (!orderId || !selected) return;
     let cancelled = false;
     setLoading(true); setSent(false); setSendError(null);
     api.post("/api/printers/print-order", { printerId: selected, orderId, layout, send: false })
       .then(r => r.json())
-      .then((d: { preview?: string }) => { if (!cancelled) setPreview(d.preview ?? ""); })
+      .then((d: { preview?: string; escposB64?: string }) => {
+        if (!cancelled) {
+          setPreview(d.preview ?? "");
+          setEscposB64(d.escposB64 ?? "");
+        }
+      })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -237,14 +350,30 @@ function PrintOrderDialog({ orderId, onClose }: { orderId: string | null; onClos
 
   const handleSendToDevice = async () => {
     if (!selected || !orderId) return;
+    const printer = printers.find(p => p.id === selected);
+    if (!printer?.path) return;
     setSending(true); setSent(false); setSendError(null);
     try {
-      const res  = await api.post("/api/printers/print-order", { printerId: selected, orderId, layout, send: true });
-      const data = await res.json() as { sent?: boolean; error?: string };
-      if (data.sent) setSent(true);
-      else setSendError(data.error ?? "Erro ao enviar para a impressora");
-    } catch {
-      setSendError("Erro de conexão");
+      if (isNetworkPath(printer.path)) {
+        // IP/hostname → servidor faz TCP
+        const res  = await api.post("/api/printers/print-order", { printerId: selected, orderId, layout, send: true });
+        const data = await res.json() as { sent?: boolean; error?: string };
+        if (data.sent) setSent(true);
+        else setSendError(data.error ?? "Erro ao enviar para a impressora");
+      } else {
+        // Nome Windows → agente local
+        const b64 = escposB64 || await (
+          api.post("/api/printers/print-order", { printerId: selected, orderId, layout, send: false })
+            .then(r => r.json())
+            .then((d: { escposB64?: string }) => d.escposB64 ?? "")
+        );
+        await sendViaAgent(printer.path, b64);
+        setSent(true);
+      }
+    } catch (err) {
+      const msg     = err instanceof Error ? err.message : "Erro de conexão";
+      const offline = msg.includes("fetch") || msg.includes("Failed") || msg.includes("abort");
+      setSendError(offline ? "Agente não encontrado. Verifique se o Armazix Print Agent está ativo na bandeja." : msg);
     } finally {
       setSending(false);
     }
@@ -374,18 +503,43 @@ function PrintOrderDialog({ orderId, onClose }: { orderId: string | null; onClos
 }
 
 // ── OrderCard ─────────────────────────────────────────────────────────────────
+const PAY_OPTIONS = [
+  { value: "pix",   label: "PIX" },
+  { value: "card",  label: "Cartão Crédito" },
+  { value: "debit", label: "Cartão Débito" },
+  { value: "cash",  label: "Dinheiro" },
+] as const;
+
 function OrderCard({
-  order, onAdvance, onCancel, onPrint, isAdvancing,
+  order, onAdvance, onCancel, onPrint, isAdvancing, hasPdv,
 }: {
   order: Order;
-  onAdvance: (id: string, next: string) => void;
+  onAdvance: (id: string, next: string, paymentMethod?: string) => void;
   onCancel: (id: string) => void;
   onPrint: (id: string) => void;
   isAdvancing: boolean;
+  hasPdv: boolean;
 }) {
+  const [reprintOpen, setReprintOpen] = useState(false);
+  const reprintRef = useRef<HTMLDivElement>(null);
+  const [paymentOverride, setPaymentOverride] = useState(order.payment || "pix");
+
+  useEffect(() => {
+    if (!reprintOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (reprintRef.current && !reprintRef.current.contains(e.target as Node)) {
+        setReprintOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [reprintOpen]);
+
   const action = order.status === "ready" && order.type === "pickup"
     ? { label: "Retirado", next: "delivered", icon: CheckCircle2 }
     : NEXT_ACTION[order.status];
+
+  const isFinalAction = action?.next === "delivered";
 
   const sCfg = STATUS_CFG[order.status];
   const PayIcon = PAY_ICON[order.payment] ?? Banknote;
@@ -454,18 +608,68 @@ function OrderCard({
         </div>
       )}
 
+      {/* Seletor de pagamento — somente para lojas sem PDV e pedidos não finalizados */}
+      {!hasPdv && !["delivered", "cancelled"].includes(order.status) && (
+        <div className="flex items-center gap-2 pt-1 border-t border-dashed border-border/40">
+          <span className="text-[10px] font-medium text-muted-foreground shrink-0">Recebimento:</span>
+          <div className="relative flex-1">
+            <select
+              value={paymentOverride}
+              onChange={e => setPaymentOverride(e.target.value)}
+              className="w-full h-6 rounded-lg border border-border/50 bg-secondary/20 text-[11px] font-medium pl-2 pr-6 appearance-none cursor-pointer focus:outline-none focus:border-primary/50 text-foreground"
+            >
+              {PAY_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 pointer-events-none text-muted-foreground" />
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40">
         <span className="text-sm font-bold">{order.total}</span>
         <div className="flex items-center gap-1.5">
-          {/* Print icon — always visible */}
-          <button
-            onClick={() => onPrint(order.orderId)}
-            title="Imprimir pedido"
-            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-secondary/60"
-          >
-            <Printer className="w-3.5 h-3.5" />
-          </button>
+          {/* Reimprimir dropdown */}
+          <div className="relative" ref={reprintRef}>
+            <button
+              onClick={() => setReprintOpen(v => !v)}
+              title="Reimprimir"
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-secondary/60"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <RotateCcw className="w-2.5 h-2.5 opacity-60" />
+            </button>
+            {reprintOpen && (
+              <div className="absolute bottom-full right-0 mb-1.5 z-50 min-w-[180px] bg-popover border border-border/60 rounded-xl shadow-lg overflow-hidden">
+                <button
+                  onClick={() => { imprimirComandaProducao(order); setReprintOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] font-medium hover:bg-secondary/60 transition-colors text-left"
+                >
+                  <ChefHat className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                  Reimprimir Produção
+                </button>
+                <div className="h-px bg-border/40" />
+                <button
+                  onClick={() => { imprimirFichaEntrega(order); setReprintOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] font-medium hover:bg-secondary/60 transition-colors text-left"
+                >
+                  <Truck className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                  Reimprimir Expedição
+                </button>
+                <div className="h-px bg-border/40" />
+                <button
+                  onClick={() => { onPrint(order.orderId); setReprintOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-muted-foreground hover:bg-secondary/60 transition-colors text-left"
+                >
+                  <Settings className="w-3.5 h-3.5 shrink-0" />
+                  Impressão avançada...
+                </button>
+              </div>
+            )}
+          </div>
+
           {canCancel && (
             <button
               onClick={() => onCancel(order.orderId)}
@@ -478,14 +682,23 @@ function OrderCard({
           {action && (
             <button
               disabled={isAdvancing}
-              onClick={() => onAdvance(order.orderId, action.next)}
-              className="flex items-center gap-1.5 text-[11px] font-semibold bg-primary text-primary-foreground px-3 py-1.5 rounded-xl hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
+              onClick={() => onAdvance(
+                order.orderId,
+                action.next,
+                (!hasPdv && isFinalAction) ? paymentOverride : undefined,
+              )}
+              className={[
+                "flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl hover:opacity-90 active:scale-95 transition-all disabled:opacity-50",
+                !hasPdv && isFinalAction
+                  ? "bg-emerald-600 text-white"
+                  : "bg-primary text-primary-foreground",
+              ].join(" ")}
             >
               {isAdvancing
                 ? <Loader2 className="w-3 h-3 animate-spin" />
                 : <action.icon className="w-3 h-3" />
               }
-              {action.label}
+              {!hasPdv && isFinalAction ? "Concluir e Lançar" : action.label}
             </button>
           )}
         </div>
@@ -496,14 +709,15 @@ function OrderCard({
 
 // ── KanbanColumn ──────────────────────────────────────────────────────────────
 function KanbanColumn({
-  column, orders, onAdvance, onCancel, onPrint, advancing,
+  column, orders, onAdvance, onCancel, onPrint, advancing, hasPdv,
 }: {
   column: ColumnConfig;
   orders: Order[];
-  onAdvance: (id: string, next: string) => void;
+  onAdvance: (id: string, next: string, paymentMethod?: string) => void;
   onCancel: (id: string) => void;
   onPrint: (id: string) => void;
   advancing: string | null;
+  hasPdv: boolean;
 }) {
   return (
     <div className={`flex flex-col rounded-2xl border ${column.border} overflow-hidden`}>
@@ -523,10 +737,7 @@ function KanbanColumn({
       </div>
 
       {/* Cards scrollable area */}
-      <div
-        className="flex-1 overflow-y-auto p-3 space-y-2.5"
-        style={{ maxHeight: "calc(100vh - 220px)" }}
-      >
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5 max-h-[60vh] lg:max-h-[calc(100vh-220px)]">
         {orders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center select-none">
             <ShoppingBag className="w-8 h-8 text-muted-foreground/25 mb-2" />
@@ -541,6 +752,7 @@ function KanbanColumn({
               onCancel={onCancel}
               onPrint={onPrint}
               isAdvancing={advancing === order.orderId}
+              hasPdv={hasPdv}
             />
           ))
         )}
@@ -558,7 +770,34 @@ function OrdersPage() {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
   const [printOrderId, setPrintOrderId] = useState<string | null>(null);
+  const [hasPdv, setHasPdv] = useState(true);
   const storeIdRef = useRef<string | null>(null);
+
+  // Detecta se a loja tem PDV com base no plano
+  useEffect(() => {
+    api.get("/api/store/user")
+      .then(r => r.json())
+      .then((d: { store?: { plan?: string } }) => {
+        const plan = d.store?.plan ?? "free";
+        setHasPdv(plan === "full");
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Config de impressão ──────────────────────────────────────────────────────
+  const [printCfgOpen, setPrintCfgOpen] = useState(false);
+  const [printCfg, setPrintCfg] = useState(() => ({
+    producao:  typeof window !== "undefined" ? localStorage.getItem("armazix:printProducao")  !== "false" : true,
+    expedicao: typeof window !== "undefined" ? localStorage.getItem("armazix:printExpedicao") !== "false" : true,
+  }));
+
+  const togglePrintCfg = (key: "producao" | "expedicao") => {
+    setPrintCfg(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      localStorage.setItem(`armazix:print${key === "producao" ? "Producao" : "Expedicao"}`, String(next[key]));
+      return next;
+    });
+  };
 
   // ── Auto-aceite ─────────────────────────────────────────────────────────────
   const [autoAccept, setAutoAccept] = useState(() =>
@@ -633,11 +872,24 @@ function OrdersPage() {
     return () => clearInterval(interval);
   }, [fetchOrders]);
 
-  const handleAdvance = async (orderId: string, nextStatus: string) => {
+  const handleAdvance = async (orderId: string, nextStatus: string, paymentMethod?: string) => {
+    const order = orders.find(o => o.orderId === orderId);
     setAdvancing(orderId);
     try {
-      const res = await api.post("/api/orders/update-status", { orderId, status: nextStatus });
-      if (res.ok) setOrders(prev => prev.map(o => o.orderId === orderId ? { ...o, status: nextStatus } : o));
+      const payload: Record<string, string> = { orderId, status: nextStatus };
+      if (paymentMethod) payload.paymentMethod = paymentMethod;
+      const res = await api.post("/api/orders/update-status", payload);
+      if (res.ok) {
+        setOrders(prev => prev.map(o =>
+          o.orderId === orderId
+            ? { ...o, status: nextStatus, ...(paymentMethod && { payment: paymentMethod }) }
+            : o
+        ));
+        if (order) {
+          if (nextStatus === "preparing" && printCfg.producao) imprimirComandaProducao(order);
+          if (nextStatus === "delivering" && printCfg.expedicao) imprimirFichaEntrega(order);
+        }
+      }
     } catch { /* ignore */ }
     finally { setAdvancing(null); }
   };
@@ -728,6 +980,75 @@ function OrdersPage() {
               className="pl-9 h-10 rounded-xl w-52 sm:w-64"
             />
           </div>
+
+          {/* Print config popover */}
+          <Popover open={printCfgOpen} onOpenChange={setPrintCfgOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                title="Configurar Impressão"
+                className={[
+                  "h-10 rounded-xl gap-1.5 shrink-0 relative",
+                  (printCfg.producao || printCfg.expedicao)
+                    ? "border-primary/40 text-primary bg-primary/5"
+                    : "",
+                ].join(" ")}
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <Settings className="w-3 h-3 opacity-70" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 rounded-2xl shadow-lg p-0 overflow-hidden">
+              <div className="px-4 py-3 border-b border-border/50">
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-muted-foreground" />
+                  Configurar Impressão
+                </p>
+              </div>
+              <div className="p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Comanda de Produção</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Imprime ao avançar para Preparando</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={printCfg.producao}
+                    onClick={() => togglePrintCfg("producao")}
+                    className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                      printCfg.producao ? "bg-primary" : "bg-muted-foreground/30"
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                      printCfg.producao ? "translate-x-5" : "translate-x-0"
+                    }`} />
+                  </button>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Comanda de Expedição</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Imprime ao avançar para Em Entrega</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={printCfg.expedicao}
+                    onClick={() => togglePrintCfg("expedicao")}
+                    className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                      printCfg.expedicao ? "bg-primary" : "bg-muted-foreground/30"
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                      printCfg.expedicao ? "translate-x-5" : "translate-x-0"
+                    }`} />
+                  </button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
 
           {/* Filter popover */}
           <Popover open={filterOpen} onOpenChange={setFilterOpen}>
@@ -864,22 +1185,22 @@ function OrdersPage() {
       </div>
 
       {/* ── Kanban ──────────────────────────────────────────────────────────── */}
-      <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {[
           ...COLUMNS,
           ...(filters.showDelivered ? [COLUMN_DELIVERED] : []),
           ...(filters.showCancelled ? [COLUMN_CANCELLED] : []),
         ].map(col => (
-          <div key={col.id} className="flex-none w-[300px] lg:flex-1 lg:w-auto lg:min-w-[240px]">
-            <KanbanColumn
-              column={col}
-              orders={colOrders(col.statuses)}
-              onAdvance={handleAdvance}
-              onCancel={handleCancel}
-              onPrint={id => setPrintOrderId(id)}
-              advancing={advancing}
-            />
-          </div>
+          <KanbanColumn
+            key={col.id}
+            column={col}
+            orders={colOrders(col.statuses)}
+            onAdvance={handleAdvance}
+            onCancel={handleCancel}
+            onPrint={id => setPrintOrderId(id)}
+            advancing={advancing}
+            hasPdv={hasPdv}
+          />
         ))}
       </div>
 

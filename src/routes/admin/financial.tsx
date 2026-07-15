@@ -7,10 +7,10 @@ import {
   agruparComTotais,
   calcularTotais,
 } from "@/lib/financial/useFluxoCaixa";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 import {
   DollarSign, TrendingUp, ArrowUpRight, ArrowDownRight,
-  LayoutDashboard, ReceiptText, CreditCard, BarChart2, ArrowLeftRight,
+  ReceiptText, CreditCard, BarChart2, ArrowLeftRight,
   Tag, Plus, Search, ChevronDown, Check, X, AlertTriangle, Clock,
   RefreshCw, Pencil, Trash2, CheckCircle2, CheckCircle, XCircle, PieChart,
   Calendar, MoreVertical, ShieldAlert,
@@ -27,7 +27,6 @@ export const Route = createFileRoute("/admin/financial")({
 });
 
 // TIPOS
-type FinTab = "dashboard" | "receber" | "pagar" | "fluxo" | "movimentacoes" | "historicos" | "dre" | "sessoes-pdv";
 type StatusFin = "pendente" | "pago" | "vencido" | "cancelado" | "parcial";
 type TipoMov = "entrada" | "saida" | "ajuste";
 
@@ -772,18 +771,6 @@ function top5Historicos(
   return { despesas, receitas };
 }
 
-// TABS
-const TABS: { id: FinTab; label: string; icon: React.ElementType }[] = [
-  { id: "dashboard",     label: "Dashboard",     icon: LayoutDashboard },
-  { id: "receber",       label: "A Receber",      icon: ArrowUpRight    },
-  { id: "pagar",         label: "A Pagar",        icon: ArrowDownRight  },
-  { id: "fluxo",         label: "Fluxo de Caixa", icon: BarChart2       },
-  { id: "movimentacoes", label: "Movimentacoes",  icon: ArrowLeftRight  },
-  { id: "dre",           label: "DRE",            icon: BarChart2       },
-  { id: "historicos",    label: "Históricos",     icon: Tag             },
-  { id: "sessoes-pdv",  label: "Sessões PDV",    icon: ReceiptText     },
-];
-
 // COMPONENTES BASE
 function KpiCard({ icon: Icon, label, value, sub, iconBg, iconColor, highlight }: {
   icon: React.ElementType; label: string; value: string; sub?: string;
@@ -951,7 +938,7 @@ function parseMovData(s: string): number {
 }
 
 // 1. DASHBOARD
-function SecaoDashboard() {
+export function SecaoDashboard() {
   const [dtr, setDtr] = useState<DateTimeRange>(DTR_DEFAULT);
   const [mov, setMov] = useState<Movimentacao[]>([]);
   const [rec, setRec] = useState<ContaReceber[]>([]);
@@ -1261,7 +1248,7 @@ function ModalNovaContaReceber({ onClose, onSave }: { onClose: () => void; onSav
 }
 
 // 2. CONTAS A RECEBER
-function SecaoReceber() {
+export function SecaoReceber() {
   const [contas, setContas] = useState<ContaReceber[]>([]);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusRec[]>([]);
@@ -1715,7 +1702,7 @@ const CATS_PAG        = ["Todas","Estoque","Despesa Fixa","Utilidades","Marketin
 const DTR_PAG_DEFAULT = { dataInicio: "", horaInicio: "00:00", dataFim: "", horaFim: "23:59" };
 
 // 3. CONTAS A PAGAR
-function SecaoPagar() {
+export function SecaoPagar() {
   const [contas, setContas]                   = useState<ContaPagar[]>([]);
   const [toast, setToast]                     = useState("");
   const [modalAberto, setModalAberto]         = useState(false);
@@ -2173,7 +2160,7 @@ function PainelTotais({ totais }: { totais: ReturnType<typeof calcularTotais> })
 }
 
 // 4. FLUXO DE CAIXA (unificado com Contas a Pagar / Receber)
-function SecaoFluxo() {
+export function SecaoFluxo() {
   const { filtros, setFiltro, resetFiltros, resultado, chaveAgrupamento, setChaveAgrupamento, opcoesUnicas } = useFluxoCaixa();
   const [expandidos, setExpandidos] = useState<Record<string, boolean>>({});
   const [filtrosAbertos, setFiltrosAbertos] = useState(true);
@@ -2559,7 +2546,7 @@ function SecaoFluxo() {
 }
 
 // 5. MOVIMENTACOES (log somente-leitura)
-function SecaoMovimentacoes() {
+export function SecaoMovimentacoes() {
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("todos");
   const [dtr, setDtr] = useState<DateTimeRange>(DTR_DEFAULT);
@@ -2736,7 +2723,7 @@ function DreTreeView({
 // ─────────────────────────────────────────────────
 // 7. SEÇÃO DRE — Demonstrativo de Resultado
 // ─────────────────────────────────────────────────
-function SecaoDre() {
+export function SecaoDre() {
   const [dtrInicio, setDtrInicio] = useState("");
   const [dtrFim,    setDtrFim]    = useState("");
 
@@ -3008,7 +2995,7 @@ function ModalHistorico({
 // ─────────────────────────────────────────────────
 // 6. HISTÓRICOS — CRUD completo
 // ─────────────────────────────────────────────────
-function SecaoHistoricos() {
+export function SecaoHistoricos() {
   const [lista, setLista] = useState<HistoricoFinanceiro[]>(HISTORICOS);
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState<HistoricoFinanceiro | null>(null);
@@ -3406,7 +3393,7 @@ interface CaixaSessaoPdv {
   status: string; abertoPor: string | null; encerradoPor: string | null;
   openedAt: string; closedAt: string | null;
 }
-function SecaoCaixaSessoes() {
+export function SecaoCaixaSessoes() {
   const [sessoes, setSessoes]     = useState<CaixaSessaoPdv[]>([]);
   const [statusFil, setStatusFil] = useState("all");
   const [dateFrom, setDateFrom]   = useState(() => {
@@ -3563,50 +3550,7 @@ function SecaoCaixaSessoes() {
   );
 }
 
-// PAGINA PRINCIPAL
+// LAYOUT — renders the active financial sub-route
 function FinancialPage() {
-  const [tab, setTab] = useState<FinTab>("dashboard");
-
-  const sections: Record<FinTab, React.ReactElement> = {
-    dashboard:     <SecaoDashboard />,
-    receber:       <SecaoReceber />,
-    pagar:         <SecaoPagar />,
-    fluxo:         <SecaoFluxo />,
-    movimentacoes: <SecaoMovimentacoes />,
-    dre:           <SecaoDre />,
-    historicos:    <SecaoHistoricos />,
-    "sessoes-pdv": <SecaoCaixaSessoes />,
-  };
-
-  return (
-    <div className="space-y-5 animate-in fade-in duration-300">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Financeiro</h1>
-        <p className="text-sm text-muted-foreground mt-1">Controle de contas, fluxo de caixa e movimentacoes</p>
-      </div>
-
-      <div className="flex gap-1 overflow-x-auto pb-0.5 border-b border-border/40">
-        {TABS.map(t => {
-          const Icon = t.icon;
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium whitespace-nowrap rounded-t-lg border-b-2 transition-colors ${
-                active
-                  ? "border-primary text-primary bg-primary/5"
-                  : "border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5 shrink-0" />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="pt-1">{sections[tab]}</div>
-    </div>
-  );
+  return <Outlet />;
 }

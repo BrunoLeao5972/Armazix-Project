@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 import {
   ArrowUpCircle, ArrowDownCircle, AlertTriangle, Package, TrendingUp, TrendingDown,
   MoreHorizontal, Loader2, Search, Filter, Download, Plus, RefreshCw,
@@ -25,8 +25,6 @@ export const Route = createFileRoute("/admin/stock")({
 });
 
 // ─── Types ────────────────────────────────────────────────────────
-type MovTab = "estoque" | "entrada" | "saida" | "transferencias" | "extrato" | "inventario" | "ajustes" | "historico" | "balanco";
-
 interface StockProduct {
   id: string; name: string; sku: string; category: string;
   stock: number; minStock: number; location: string;
@@ -68,6 +66,51 @@ interface DbAdjustment {
   observations: string | null;
   createdByName: string | null;
   createdAt: string;
+}
+
+interface Sector { id: string; name: string; color: string | null; active: boolean }
+
+/** Hook compartilhado: carrega lista de setores ativos da loja. */
+function useSectors() {
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  useEffect(() => {
+    api.get("/api/sectors/list")
+      .then(r => r.json())
+      .then((d: { sectors?: Sector[] }) => setSectors((d.sectors ?? []).filter(s => s.active)))
+      .catch(() => {});
+  }, []);
+  return sectors;
+}
+
+/** Select estilizado para escolha de setor. */
+function SectorSelect({
+  sectors, value, onChange, required, error, placeholder,
+}: {
+  sectors: Sector[];
+  value: string;
+  onChange: (v: string) => void;
+  required?: boolean;
+  error?: boolean;
+  placeholder?: string;
+}) {
+  return (
+    <div className="relative">
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={`w-full h-10 px-3 pr-8 text-sm rounded-xl border appearance-none focus:outline-none focus:ring-2 focus:ring-ring bg-background ${
+          error ? "border-destructive ring-1 ring-destructive" : "border-input"
+        }`}
+      >
+        <option value="">{placeholder ?? "Selecione o setor..."}</option>
+        {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+      {required && !value && error && (
+        <p className="text-[11px] text-destructive mt-1">Setor obrigatório</p>
+      )}
+    </div>
+  );
 }
 
 const PAYMENT_METHODS = ["Dinheiro", "Boleto", "Pix", "Cartão de crédito", "Cartão de débito", "Transferência", "Cheque"];
@@ -152,38 +195,73 @@ function SkeletonRows({ n = 5 }: { n?: number }) {
 // Dados agora vêm da API; estados iniciam vazios
 
 // ─── SEÇÃO: ESTOQUE ───────────────────────────────────────────────
-function SecaoEstoque() {
+export function SecaoEstoque() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<StockProduct[]>([]);
   const [exportOpen, setExportOpen] = useState(false);
+  const [selectedSectorId, setSelectedSectorId] = useState<string>("");
+  const sectors = useSectors();
 
+  // Carrega inventário: global (products.stock) ou por setor (stockProductBalances)
   useEffect(() => {
     let mounted = true;
-    const storeId = localStorage.getItem("storeId");
-    if (!storeId) { setLoading(false); return; }
     setLoading(true);
-    fetch(`/api/products/list?storeId=${storeId}`)
-      .then(r => r.json())
-      .then((d: { products?: Array<{ id: string; name: string; sku?: string | null; stock?: number | null; lowStockThreshold?: number | null; costPrice?: string | null; price?: string | null; active?: boolean }> }) => {
-        if (!mounted) return;
-        setProducts((d.products ?? []).filter(p => p.active !== false).map(p => ({
-          id:           p.id,
-          name:         p.name,
-          sku:          p.sku ?? "—",
-          category:     "—",
-          stock:        p.stock ?? 0,
-          minStock:     p.lowStockThreshold ?? 5,
-          location:     "—",
-          lastMovement: "—",
-          costPrice:    p.costPrice ? parseFloat(p.costPrice) : 0,
-          price:        p.price    ? parseFloat(p.price)     : 0,
-        })));
-      })
-      .catch(() => { if (mounted) setProducts([]); })
-      .finally(() => { if (mounted) setLoading(false); });
+
+    if (selectedSectorId) {
+      // Visão por setor: usa stockProductBalances
+      api.get(`/api/stock/balances-by-sector?sectorId=${selectedSectorId}`)
+        .then(r => r.json())
+        .then((d: { balances?: Array<{
+          quantity: string; minQuantity: string;
+          product: { id: string; name: string; sku?: string | null; costPrice?: string | null; price?: string | null; lowStockThreshold?: number | null; active?: boolean };
+        }> }) => {
+          if (!mounted) return;
+          setProducts(
+            (d.balances ?? [])
+              .filter(b => b.product?.active !== false)
+              .map(b => ({
+                id:           b.product.id,
+                name:         b.product.name,
+                sku:          b.product.sku ?? "—",
+                category:     "—",
+                stock:        Math.round(Number(b.quantity)),
+                minStock:     Number(b.minQuantity) || (b.product.lowStockThreshold ?? 5),
+                location:     sectors.find(s => s.id === selectedSectorId)?.name ?? "—",
+                lastMovement: "—",
+                costPrice:    b.product.costPrice ? parseFloat(b.product.costPrice) : 0,
+                price:        b.product.price     ? parseFloat(b.product.price)     : 0,
+              }))
+          );
+        })
+        .catch(() => { if (mounted) setProducts([]); })
+        .finally(() => { if (mounted) setLoading(false); });
+    } else {
+      // Visão global: usa products.stock
+      const storeId = localStorage.getItem("storeId");
+      if (!storeId) { setLoading(false); return; }
+      fetch(`/api/products/list?storeId=${storeId}`)
+        .then(r => r.json())
+        .then((d: { products?: Array<{ id: string; name: string; sku?: string | null; stock?: number | null; lowStockThreshold?: number | null; costPrice?: string | null; price?: string | null; active?: boolean }> }) => {
+          if (!mounted) return;
+          setProducts((d.products ?? []).filter(p => p.active !== false).map(p => ({
+            id:           p.id,
+            name:         p.name,
+            sku:          p.sku ?? "—",
+            category:     "—",
+            stock:        p.stock ?? 0,
+            minStock:     p.lowStockThreshold ?? 5,
+            location:     "—",
+            lastMovement: "—",
+            costPrice:    p.costPrice ? parseFloat(p.costPrice) : 0,
+            price:        p.price    ? parseFloat(p.price)     : 0,
+          })));
+        })
+        .catch(() => { if (mounted) setProducts([]); })
+        .finally(() => { if (mounted) setLoading(false); });
+    }
     return () => { mounted = false; };
-  }, []);
+  }, [selectedSectorId, sectors]);
 
   const handleExportEstoqueCSV = () => {
     const filtered_ref = products.filter(p =>
@@ -303,9 +381,24 @@ function SecaoEstoque() {
 
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input placeholder="Buscar produto, SKU..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 rounded-xl" />
+        <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center flex-1">
+          <div className="relative w-full sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input placeholder="Buscar produto, SKU..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 rounded-xl" />
+          </div>
+          {sectors.length > 0 && (
+            <div className="relative w-full sm:w-52">
+              <select
+                value={selectedSectorId}
+                onChange={e => setSelectedSectorId(e.target.value)}
+                className="w-full h-9 px-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Todos os setores</option>
+                {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            </div>
+          )}
         </div>
         <div className="flex gap-2 items-center">
           <Button variant="outline" size="sm" className="rounded-xl h-9 gap-1.5"><Filter className="w-3.5 h-3.5" />Filtrar</Button>
@@ -363,12 +456,13 @@ function SecaoEstoque() {
 // Formas de pagamento com baixa automática no financeiro
 const BAIXA_AUTOMATICA = ["Dinheiro", "Pix"];
 
-function SecaoEntrada() {
+export function SecaoEntrada() {
   const [showForm, setShowForm] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [alertaBaixa, setAlertaBaixa] = useState<string | null>(null);
   const [items, setItems] = useState<EntryItem[]>([{ productId: "", productName: "", qty: "", cost: "", lot: "", expiry: "" }]);
   const [supplierRecord, setSupplierRecord] = useState<{ id: string; name: string; phone: string | null } | null>(null);
+  const [sectorId, setSectorId] = useState("");
   const [nf, setNf] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [obs, setObs] = useState("");
@@ -377,6 +471,7 @@ function SecaoEntrada() {
   const [dueDate, setDueDate] = useState("");
   const [sendToFinancial, setSendToFinancial] = useState(true);
   const [saved, setSaved] = useState(false);
+  const sectors = useSectors();
 
   const addItem = () => setItems(v => [...v, { productId: "", productName: "", qty: "", cost: "", lot: "", expiry: "" }]);
   const removeItem = (i: number) => setItems(v => v.filter((_, idx) => idx !== i));
@@ -391,6 +486,7 @@ function SecaoEntrada() {
   const resetForm = () => {
     setItems([{ productId: "", productName: "", qty: "", cost: "", lot: "", expiry: "" }]);
     setSupplierRecord(null);
+    setSectorId("");
     setNf("");
     setDate(new Date().toISOString().split("T")[0]);
     setObs("");
@@ -401,14 +497,15 @@ function SecaoEntrada() {
     setEditandoId(null);
   };
 
-  const [entradaErrors, setEntradaErrors] = useState<{ supplier?: boolean; products?: boolean }>({});
+  const [entradaErrors, setEntradaErrors] = useState<{ supplier?: boolean; sector?: boolean; products?: boolean }>({});
   const [entradaSaving, setEntradaSaving] = useState(false);
   const [entradaApiError, setEntradaApiError] = useState<string | null>(null);
 
   const handleSave = async () => {
-    const errs: { supplier?: boolean; products?: boolean } = {};
-    if (!supplierRecord) errs.supplier = true;
-    if (items.some(it => !it.productId)) errs.products = true;
+    const errs: { supplier?: boolean; sector?: boolean; products?: boolean } = {};
+    if (!supplierRecord)                          errs.supplier = true;
+    if (!sectorId && sectors.length > 0)          errs.sector   = true;
+    if (items.some(it => !it.productId))          errs.products = true;
     if (Object.keys(errs).length > 0) { setEntradaErrors(errs); return; }
     setEntradaErrors({});
     setEntradaApiError(null);
@@ -416,6 +513,7 @@ function SecaoEntrada() {
 
     try {
       const payload = {
+        sectorId:     sectorId || undefined,
         supplierId:   supplierRecord!.id,
         supplierName: supplierRecord!.name,
         nf:           nf || undefined,
@@ -583,6 +681,12 @@ function SecaoEntrada() {
         <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Fornecedor</Label>
             <SupplierCombobox value={supplierRecord} onChange={setSupplierRecord} error={entradaErrors.supplier} /></div>
+          {sectors.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className={`text-xs font-semibold uppercase ${entradaErrors.sector ? "text-destructive" : "text-muted-foreground"}`}>Setor de destino *</Label>
+              <SectorSelect sectors={sectors} value={sectorId} onChange={setSectorId} required error={entradaErrors.sector} />
+            </div>
+          )}
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Nº da Nota Fiscal</Label>
             <Input placeholder="Ex: 00123" value={nf} onChange={e => setNf(e.target.value)} className="h-10 rounded-xl" /></div>
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Data de entrada</Label>
@@ -712,18 +816,20 @@ function SecaoEntrada() {
 // ─── SEÇÃO: SAÍDA ─────────────────────────────────────────────────
 const EXIT_TYPES = ["Venda", "Perda", "Uso interno", "Troca", "Avaria"];
 
-function SecaoSaida() {
+export function SecaoSaida() {
   const [showForm, setShowForm] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [alertaBaixa, setAlertaBaixa] = useState<string | null>(null);
   const [items, setItems] = useState<ExitItem[]>([{ productId: "", productName: "", qty: "" }]);
   const [tipo, setTipo] = useState("Venda");
+  const [sectorId, setSectorId] = useState("");
   const [responsavel, setResponsavel] = useState("");
   const [obs, setObs] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [saidaErrors, setSaidaErrors] = useState<{ products?: boolean }>({});
+  const [saidaErrors, setSaidaErrors] = useState<{ sector?: boolean; products?: boolean }>({});
+  const sectors = useSectors();
 
   const addItem = () => setItems(v => [...v, { productId: "", productName: "", qty: "" }]);
   const removeItem = (i: number) => setItems(v => v.filter((_, idx) => idx !== i));
@@ -735,6 +841,7 @@ function SecaoSaida() {
   const resetForm = () => {
     setItems([{ productId: "", productName: "", qty: "" }]);
     setTipo("Venda");
+    setSectorId("");
     setResponsavel("");
     setObs("");
     setEditandoId(null);
@@ -746,12 +853,16 @@ function SecaoSaida() {
 
   const handleSave = async () => {
     const validItems = items.filter(it => it.productId && parseFloat(it.qty) > 0);
-    if (validItems.length === 0) { setSaidaErrors({ products: true }); return; }
+    const errs: { sector?: boolean; products?: boolean } = {};
+    if (validItems.length === 0)          errs.products = true;
+    if (!sectorId && sectors.length > 0)  errs.sector   = true;
+    if (Object.keys(errs).length > 0) { setSaidaErrors(errs); return; }
     setSaidaErrors({});
     setApiError(null);
     setSaving(true);
     try {
       const res = await api.post("/api/stock/exit", {
+        sectorId:    sectorId || undefined,
         tipo:        EXIT_TYPE_MAP[tipo] ?? "SAIDA",
         responsavel: responsavel || undefined,
         obs:         obs || undefined,
@@ -921,11 +1032,15 @@ function SecaoSaida() {
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
             </div>
           </div>
+          {sectors.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className={`text-xs font-semibold uppercase ${saidaErrors.sector ? "text-destructive" : "text-muted-foreground"}`}>Setor de origem *</Label>
+              <SectorSelect sectors={sectors} value={sectorId} onChange={setSectorId} required error={saidaErrors.sector} />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-muted-foreground uppercase">Responsável</Label>
-            <div className="relative">
-              <Input placeholder="Responsável" value={responsavel} onChange={e => setResponsavel(e.target.value)} className="h-10 rounded-xl" />
-            </div>
+            <Input placeholder="Responsável" value={responsavel} onChange={e => setResponsavel(e.target.value)} className="h-10 rounded-xl" />
           </div>
           <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs font-semibold text-muted-foreground uppercase">Observação</Label>
             <Input placeholder="Motivo, pedido relacionado..." value={obs} onChange={e => setObs(e.target.value)} className="h-10 rounded-xl" /></div>
@@ -972,34 +1087,151 @@ function SecaoSaida() {
 }
 
 // ─── SEÇÃO: TRANSFERÊNCIAS ────────────────────────────────────────
-function SecaoTransferencias() {
-  const [items, setItems] = useState<TransferItem[]>([{ product: "", qty: "" }]);
-  const [origem, setOrigem] = useState("");
-  const [destino, setDestino] = useState("");
-  const [obs, setObs] = useState("");
-  const [saved, setSaved] = useState(false);
+interface TransferProductItem { productId: string; productName: string; qty: string }
 
-  const addItem = () => setItems(v => [...v, { product: "", qty: "" }]);
+export function SecaoTransferencias() {
+  const sectors = useSectors();
+  const [sourceSectorId,      setSourceSectorId]      = useState("");
+  const [destinationSectorId, setDestinationSectorId] = useState("");
+  const [obs,    setObs]    = useState("");
+  const [items,  setItems]  = useState<TransferProductItem[]>([{ productId: "", productName: "", qty: "" }]);
+  const [saving, setSaving] = useState(false);
+  const [saved,  setSaved]  = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [errors, setErrors]    = useState<{ source?: boolean; destination?: boolean; products?: boolean }>({});
+
+  const addItem    = () => setItems(v => [...v, { productId: "", productName: "", qty: "" }]);
   const removeItem = (i: number) => setItems(v => v.filter((_, idx) => idx !== i));
-  const setItem = (i: number, k: keyof TransferItem, v: string) =>
-    setItems(prev => prev.map((it, idx) => idx === i ? { ...it, [k]: v } : it));
+  const setItemProduct = (i: number, p: { id: string; name: string; sku: string | null; stock: number } | null) =>
+    setItems(prev => prev.map((it, idx) => idx === i ? { ...it, productId: p?.id ?? "", productName: p?.name ?? "" } : it));
+  const setItemQty = (i: number, v: string) =>
+    setItems(prev => prev.map((it, idx) => idx === i ? { ...it, qty: v } : it));
+
+  const resetForm = () => {
+    setSourceSectorId(""); setDestinationSectorId(""); setObs("");
+    setItems([{ productId: "", productName: "", qty: "" }]);
+    setErrors({});
+  };
+
+  const handleTransfer = async () => {
+    const validItems = items.filter(it => it.productId && parseFloat(it.qty) > 0);
+    const errs: typeof errors = {};
+    if (!sourceSectorId)                             errs.source      = true;
+    if (!destinationSectorId)                        errs.destination = true;
+    if (validItems.length === 0)                     errs.products    = true;
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    if (sourceSectorId === destinationSectorId) {
+      setApiError("Setor de origem e destino devem ser diferentes");
+      return;
+    }
+    setErrors({});
+    setApiError(null);
+    setSaving(true);
+
+    try {
+      const res  = await api.post("/api/stock/transfer", {
+        sourceSectorId,
+        destinationSectorId,
+        obs: obs || undefined,
+        items: validItems.map(it => ({
+          productId:   it.productId,
+          productName: it.productName,
+          qty:         parseFloat(it.qty),
+        })),
+      });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (res.ok && data.success) {
+        setSaved(true);
+        setTimeout(() => { setSaved(false); resetForm(); }, 2200);
+      } else {
+        setApiError(data.error ?? "Erro ao registrar transferência.");
+      }
+    } catch {
+      setApiError("Erro de conexão.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (sectors.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center gap-4">
+        <EmptyState
+          icon={ArrowLeftRight}
+          title="Nenhum setor cadastrado"
+          desc="Cadastre ao menos dois setores em Configurações → Setores para habilitar transferências."
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center gap-4">
-      <div className="w-16 h-16 rounded-2xl bg-amber-500/15 flex items-center justify-center">
-        <AlertTriangle className="w-8 h-8 text-amber-500" />
+    <div className="space-y-5 w-full max-w-3xl">
+      <p className="text-sm text-muted-foreground">Mova itens de um setor para outro. A quantidade sai do setor de origem e entra no setor de destino.</p>
+
+      {/* Setores */}
+      <Card className="rounded-2xl border-border/50 shadow-soft">
+        <CardHeader className="pb-3"><CardTitle className="text-base">Setores</CardTitle></CardHeader>
+        <CardContent className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-center">
+          <div className="space-y-1.5">
+            <Label className={`text-xs font-semibold uppercase ${errors.source ? "text-destructive" : "text-muted-foreground"}`}>Setor de origem *</Label>
+            <SectorSelect sectors={sectors} value={sourceSectorId} onChange={setSourceSectorId} required error={errors.source} placeholder="Selecione origem..." />
+          </div>
+          <div className="hidden sm:flex items-center justify-center mt-5">
+            <div className="w-8 h-8 rounded-full bg-amber-500/15 flex items-center justify-center">
+              <ArrowRight className="w-4 h-4 text-amber-600" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className={`text-xs font-semibold uppercase ${errors.destination ? "text-destructive" : "text-muted-foreground"}`}>Setor de destino *</Label>
+            <SectorSelect sectors={sectors} value={destinationSectorId} onChange={setDestinationSectorId} required error={errors.destination} placeholder="Selecione destino..." />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Produtos */}
+      <Card className="rounded-2xl border-border/50 shadow-soft">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Produtos a transferir</CardTitle>
+          <Button size="sm" variant="outline" className="rounded-xl gap-1.5 h-8" onClick={addItem}><Plus className="w-3.5 h-3.5" />Adicionar</Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {items.map((it, i) => (
+            <div key={i} className="grid grid-cols-[1fr_100px_36px] gap-2 items-center">
+              <ProductCombobox
+                value={it.productId ? { id: it.productId, name: it.productName, sku: null, stock: 0 } : null}
+                onChange={p => setItemProduct(i, p)}
+                error={errors.products && !it.productId}
+              />
+              <Input placeholder="Qtd" type="number" min="0.001" step="any" value={it.qty} onChange={e => setItemQty(i, e.target.value)} className="h-9 rounded-xl text-sm" />
+              <button onClick={() => removeItem(i)} className="w-9 h-9 rounded-xl flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+          <div className="pt-2">
+            <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Observação</Label>
+              <Input placeholder="Motivo da transferência..." value={obs} onChange={e => setObs(e.target.value)} className="h-10 rounded-xl" /></div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="space-y-2">
+        <Button className="rounded-xl gap-2 bg-gradient-primary text-primary-foreground" onClick={handleTransfer} disabled={saving}>
+          {saving
+            ? <><Loader2 className="w-4 h-4 animate-spin" />Processando...</>
+            : saved
+              ? <><Check className="w-4 h-4" />Transferido!</>
+              : <><ArrowLeftRight className="w-4 h-4" />Confirmar transferência</>}
+        </Button>
+        {apiError && <p className="text-sm text-destructive bg-destructive/10 rounded-xl px-4 py-2">{apiError}</p>}
       </div>
-      <div>
-        <p className="font-semibold text-base">Módulo em desenvolvimento</p>
-        <p className="text-sm text-muted-foreground mt-1 max-w-sm">A seção de transferências entre depósitos está sendo lapidada. Em breve estará disponível.</p>
-      </div>
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-500/15 text-amber-600"><Clock className="w-3.5 h-3.5" />Em breve</span>
     </div>
   );
 }
 
 // ─── SEÇÃO: EXTRATO ───────────────────────────────────────────────
-function SecaoExtrato() {
+export function SecaoExtrato() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("todos");
   const [movements, setMovements] = useState<Movement[]>([]);
@@ -1133,7 +1365,7 @@ function gerarCodigo() {
   return `${String(n).slice(0,3)}.${String(n).slice(3,6)}.${String(n).slice(6,9)}`;
 }
 
-function SecaoInventario() {
+export function SecaoInventario() {
   // ── Produtos reais da API ──
   const [realProducts, setRealProducts] = useState<BalanceProduct[]>([]);
   const [loadingProds, setLoadingProds] = useState(false);
@@ -1908,28 +2140,47 @@ function SecaoInventario() {
 const ADJUST_TYPES = ["Correção", "Perda", "Avaria"] as const;
 type AjusteTipo = typeof ADJUST_TYPES[number];
 
-function SecaoAjustes() {
+export function SecaoAjustes() {
+  const sectors = useSectors();
   const [productRecord, setProductRecord] = useState<{ id: string; name: string; sku: string | null; stock: number } | null>(null);
-  const [qty, setQty] = useState("");
-  const [tipo, setTipo] = useState<AjusteTipo>("Correção");
+  const [sectorId, setSectorId]           = useState("");
+  const [sectorBalance, setSectorBalance] = useState<number | null>(null);
+  const [qty, setQty]     = useState("");
+  const [tipo, setTipo]   = useState<AjusteTipo>("Correção");
   const [motivo, setMotivo] = useState("");
-  const [obs, setObs] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [obs, setObs]     = useState("");
+  const [saved, setSaved]   = useState(false);
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [ajusteErrors, setAjusteErrors] = useState<{ product?: boolean; qty?: boolean }>({});
+  const [ajusteErrors, setAjusteErrors] = useState<{ product?: boolean; sector?: boolean; qty?: boolean }>({});
   const [adjustments, setAdjustments] = useState<DbAdjustment[]>([]);
-  const [loadingAdj, setLoadingAdj] = useState(false);
+  const [loadingAdj, setLoadingAdj]   = useState(false);
+
+  // Busca saldo do setor quando produto + setor estão selecionados
+  useEffect(() => {
+    if (!productRecord?.id || !sectorId) { setSectorBalance(null); return; }
+    api.get(`/api/stock/balances-by-sector?sectorId=${sectorId}&productId=${productRecord.id}`)
+      .then(r => r.json())
+      .then((d: { balances?: Array<{ quantity: string }> }) => {
+        const bal = d.balances?.[0];
+        setSectorBalance(bal ? Math.round(Number(bal.quantity)) : 0);
+      })
+      .catch(() => setSectorBalance(null));
+  }, [productRecord?.id, sectorId]);
+
+  // Saldo de referência para o preview: setor (se houver) ou global
+  const referenceStock = sectorBalance !== null ? sectorBalance : (productRecord?.stock ?? 0);
 
   // Semântica muda conforme o tipo
   const isCorrecao = tipo === "Correção";
   const qtyLabel   = isCorrecao ? "Quantidade Real (Física)" : "Quantidade a Subtrair";
   const qtyPlaceholder = isCorrecao
-    ? `Saldo real (atual: ${productRecord?.stock ?? "?"})`
+    ? `Saldo real no setor (atual: ${referenceStock})`
     : "Ex: 3";
 
   // Limpa qty ao trocar de tipo para evitar confusão semântica
   const handleTipoChange = (t: AjusteTipo) => { setTipo(t); setQty(""); setAjusteErrors({}); };
+  const handleProductChange = (p: typeof productRecord) => { setProductRecord(p); setSectorBalance(null); setQty(""); };
 
   // Bloqueia entrada de sinal negativo e notação científica
   const handleQtyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1952,14 +2203,13 @@ function SecaoAjustes() {
   useEffect(() => { fetchAdjustments(); }, [fetchAdjustments]);
 
   const handleAjuste = async () => {
-    const errs: { product?: boolean; qty?: boolean } = {};
-    if (!productRecord) errs.product = true;
+    const errs: { product?: boolean; sector?: boolean; qty?: boolean } = {};
+    if (!productRecord)                  errs.product = true;
+    if (!sectorId && sectors.length > 0) errs.sector  = true;
     const qtyNum = parseInt(qty, 10);
     if (isCorrecao) {
-      // Correção: quantidade absoluta >= 0
       if (qty === "" || isNaN(qtyNum) || qtyNum < 0) errs.qty = true;
     } else {
-      // Perda / Avaria: quantidade a subtrair, obrigatoriamente > 0
       if (!qty || isNaN(qtyNum) || qtyNum <= 0) errs.qty = true;
     }
     if (Object.keys(errs).length > 0) { setAjusteErrors(errs); return; }
@@ -1969,9 +2219,10 @@ function SecaoAjustes() {
 
     try {
       const res  = await api.post("/api/stock/adjustment", {
+        sectorId:     sectorId || undefined,
         productId:    productRecord!.id,
         productName:  productRecord!.name,
-        qty:          qtyNum,   // sempre >= 0; backend interpreta baseado em tipo
+        qty:          qtyNum,
         tipo,
         motivo:       motivo || undefined,
         observations: obs    || undefined,
@@ -1980,7 +2231,8 @@ function SecaoAjustes() {
 
       if (res.ok && data.success) {
         setSaved(true);
-        setProductRecord(null); setQty(""); setMotivo(""); setObs(""); setTipo("Correção");
+        setProductRecord(null); setSectorId(""); setSectorBalance(null);
+        setQty(""); setMotivo(""); setObs(""); setTipo("Correção");
         setTimeout(() => setSaved(false), 2500);
         fetchAdjustments();
       } else {
@@ -1996,7 +2248,7 @@ function SecaoAjustes() {
   const qtyNum = parseInt(qty, 10);
   const previewDelta = !isNaN(qtyNum) && qty !== "" && productRecord
     ? isCorrecao
-      ? qtyNum - productRecord.stock
+      ? qtyNum - referenceStock
       : -qtyNum
     : null;
 
@@ -2007,7 +2259,16 @@ function SecaoAjustes() {
         <CardHeader className="pb-3"><CardTitle className="text-base">Novo ajuste</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Produto</Label>
-            <ProductCombobox value={productRecord} onChange={setProductRecord} error={ajusteErrors.product} /></div>
+            <ProductCombobox value={productRecord} onChange={handleProductChange} error={ajusteErrors.product} /></div>
+          {sectors.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className={`text-xs font-semibold uppercase ${ajusteErrors.sector ? "text-destructive" : "text-muted-foreground"}`}>Setor *</Label>
+              <SectorSelect sectors={sectors} value={sectorId} onChange={v => { setSectorId(v); setQty(""); }} required error={ajusteErrors.sector} />
+              {sectorBalance !== null && (
+                <p className="text-[11px] text-muted-foreground">Saldo neste setor: <span className="font-semibold text-foreground">{sectorBalance}</span> un</p>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5"><Label className="text-xs font-semibold text-muted-foreground uppercase">Tipo de ajuste</Label>
               <div className="relative">
@@ -2051,11 +2312,11 @@ function SecaoAjustes() {
                 <p className={`text-[11px] font-medium leading-snug pt-0.5 ${previewDelta > 0 ? "text-emerald-600" : previewDelta < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                   {isCorrecao
                     ? previewDelta > 0
-                      ? `↑ Acréscimo de ${previewDelta} un (${productRecord!.stock} → ${qtyNum})`
+                      ? `↑ Acréscimo de ${previewDelta} un (${referenceStock} → ${qtyNum})`
                       : previewDelta < 0
-                        ? `↓ Redução de ${Math.abs(previewDelta)} un (${productRecord!.stock} → ${qtyNum})`
+                        ? `↓ Redução de ${Math.abs(previewDelta)} un (${referenceStock} → ${qtyNum})`
                         : "Saldo igual ao atual, nenhuma alteração."
-                    : `↓ Subtração de ${qtyNum} un (${productRecord!.stock} → ${Math.max(0, productRecord!.stock - qtyNum)})`
+                    : `↓ Subtração de ${qtyNum} un (${referenceStock} → ${Math.max(0, referenceStock - qtyNum)})`
                   }
                 </p>
               )}
@@ -2129,7 +2390,7 @@ function SecaoAjustes() {
 }
 
 // ─── SEÇÃO: HISTÓRICO ─────────────────────────────────────────────
-function SecaoHistorico() {
+export function SecaoHistorico() {
   const [search, setSearch] = useState("");
   const [movements, setMovements] = useState<DbMovement[]>([]);
   const [loading, setLoading] = useState(false);
@@ -2217,7 +2478,7 @@ interface BalanceteProduct {
 }
 interface BalanceteCategory { id: string; name: string }
 
-function SecaoBalanco() {
+export function SecaoBalanco() {
   // ── Core data ─────────────────────────────────────────────────
   const [allProducts,  setAllProducts]  = useState<BalanceteProduct[]>([]);
   const [categories,   setCategories]   = useState<BalanceteCategory[]>([]);
@@ -2622,26 +2883,10 @@ function SecaoBalanco() {
   );
 }
 
-// ─── TABS CONFIG ──────────────────────────────────────────────────
-const TABS: { id: MovTab; label: string; icon: React.ElementType }[] = [
-  { id: "estoque",          label: "Estoque",             icon: Package },
-  { id: "entrada",          label: "Entrada",             icon: ArrowUpCircle },
-  { id: "saida",            label: "Saída",               icon: ArrowDownCircle },
-  { id: "transferencias",   label: "Transferências",      icon: ArrowLeftRight },
-  { id: "extrato",          label: "Extrato",             icon: FileText },
-  { id: "inventario",       label: "Balanço",             icon: ClipboardList },
-  { id: "ajustes",          label: "Ajustes",             icon: Settings2 },
-  { id: "historico",        label: "Histórico",           icon: History },
-  { id: "balanco",          label: "Balancete",           icon: BarChart3 },
-];
-
-// ─── MAIN PAGE ────────────────────────────────────────────────────
+// ─── LAYOUT ────────────────────────────────────────────────────────
 function StockPage() {
-  const [tab, setTab] = useState<MovTab>("estoque");
-
   return (
     <div className="space-y-5 animate-in fade-in duration-300">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Estoque</h1>
@@ -2651,37 +2896,7 @@ function StockPage() {
           <RefreshCw className="w-3.5 h-3.5" />Atualizar
         </Button>
       </div>
-
-      {/* Tab Nav */}
-      <div className="flex gap-1 overflow-x-auto no-scrollbar border-b border-border/40 pb-px">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium rounded-t-xl whitespace-nowrap transition-colors border-b-2 -mb-px ${
-              tab === t.id
-                ? "border-primary text-primary bg-primary/5"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <t.icon className="w-3.5 h-3.5" />
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Content */}
-      <div>
-        {tab === "estoque"        && <SecaoEstoque />}
-        {tab === "entrada"        && <SecaoEntrada />}
-        {tab === "saida"          && <SecaoSaida />}
-        {tab === "transferencias" && <SecaoTransferencias />}
-        {tab === "extrato"        && <SecaoExtrato />}
-        {tab === "inventario"     && <SecaoInventario />}
-        {tab === "ajustes"        && <SecaoAjustes />}
-        {tab === "historico"      && <SecaoHistorico />}
-        {tab === "balanco"        && <SecaoBalanco />}
-      </div>
+      <Outlet />
     </div>
   );
 }
