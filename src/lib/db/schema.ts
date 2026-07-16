@@ -46,6 +46,8 @@ export const stores = pgTable("stores", {
   whatsappOrderEnabled: boolean("whatsapp_order_enabled").default(false),
   whatsappPhone: varchar("whatsapp_phone", { length: 20 }),
   highlightLowStock: boolean("highlight_low_stock").default(false),
+  allowNegativeStock: boolean("allow_negative_stock").default(true),
+  layoutType: varchar("layout_type", { length: 10 }).default("grid"),
   mpAccessToken: text("mp_access_token"),
   mpPublicKey: text("mp_public_key"),
   paymentMethodsConfig: jsonb("payment_methods_config").$type<
@@ -155,6 +157,7 @@ export const products = pgTable("products", {
   costPrice: numeric("cost_price", { precision: 10, scale: 2 }),
   sku: varchar("sku", { length: 50 }),
   barcode: varchar("barcode", { length: 30 }),
+  pdvCode: varchar("pdv_code", { length: 20 }),
   stock: integer("stock").default(0),
   lowStockThreshold: integer("low_stock_threshold").default(5),
   unit: varchar("unit", { length: 20 }).default("un"),
@@ -175,6 +178,7 @@ export const products = pgTable("products", {
   index("products_category_idx").on(t.categoryId),
   index("products_featured_idx").on(t.featured),
   index("products_active_idx").on(t.active),
+  uniqueIndex("store_pdv_code_idx").on(t.storeId, t.pdvCode),
 ]);
 
 export const productsRelations = relations(products, ({ one, many }) => ({

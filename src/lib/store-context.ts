@@ -152,6 +152,7 @@ export interface StorePublicData {
   whatsappOrderEnabled: boolean | null;
   whatsappPhone: string | null;
   highlightLowStock: boolean | null;
+  layoutType: string | null;
   rating: string | null;
   active: boolean | null;
   mpPublicKey: string | null;
@@ -185,6 +186,7 @@ export interface ConfiguracaoVitrine {
   pedidoWhatsapp: boolean;
   telefoneWhatsapp?: string;
   destacarEstoqueBaixo: boolean;
+  layoutType: string;
 }
 
 export interface StoreProduct {

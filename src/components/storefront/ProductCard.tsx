@@ -9,6 +9,7 @@ interface ProductCardProps {
   onAdd: () => void;
   onOpenDetail: () => void;
   primaryColor: string;
+  layoutType?: 'grid' | 'list';
 }
 
 export function ProductCard({
@@ -18,6 +19,7 @@ export function ProductCard({
   onAdd,
   onOpenDetail,
   primaryColor,
+  layoutType = 'grid',
 }: ProductCardProps) {
   const [isFavorite, setIsFavorite] = useState(false);
 
@@ -37,6 +39,82 @@ export function ProductCard({
           100
       )
     : 0;
+
+  if (layoutType === 'list') {
+    return (
+      <div
+        className="flex items-center gap-3 rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+        onClick={onOpenDetail}
+      >
+        {/* Image */}
+        <div className="relative w-24 h-24 shrink-0 bg-slate-50 overflow-hidden">
+          {product.imageUrl ? (
+            <img
+              src={product.imageUrl}
+              alt={product.name}
+              className="w-full h-full object-contain"
+              onError={(e) => { (e.target as HTMLImageElement).src = ""; }}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-4xl">
+              {product.emoji || "📦"}
+            </div>
+          )}
+          {lowStock && (
+            <div className="absolute top-1 left-1">
+              <div className="px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[9px] font-semibold">
+                Últimas
+              </div>
+            </div>
+          )}
+          {hasPromo && (
+            <div className="absolute bottom-1 left-1">
+              <div className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold">
+                -{discountPercent}%
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0 py-3 pr-1">
+          <h3 className="font-semibold text-sm text-slate-900 line-clamp-2 leading-snug">
+            {product.name}
+          </h3>
+          {product.description && (
+            <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">
+              {product.description}
+            </p>
+          )}
+          {showPrice ? (
+            <div className="flex items-baseline gap-1.5 mt-1">
+              {hasPromo && (
+                <span className="text-[11px] text-slate-400 line-through">
+                  R$ {formatPrice(product.compareAtPrice || "0")}
+                </span>
+              )}
+              <span className="text-base font-bold" style={{ color: primaryColor }}>
+                R$ {formatPrice(product.price)}
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 mt-1">Sob consulta</p>
+          )}
+        </div>
+
+        {/* Add button */}
+        <div className="flex flex-col items-center justify-end self-stretch pb-3 pr-3">
+          <button
+            onClick={(e) => { e.stopPropagation(); onAdd(); }}
+            className="w-9 h-9 rounded-xl font-bold text-white flex items-center justify-center transition-all hover:opacity-90 active:scale-95 text-lg"
+            style={{ backgroundColor: primaryColor }}
+          >
+            +
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -122,7 +200,7 @@ export function ProductCard({
           <div className="space-y-1 pt-1">
             {hasPromo && (
               <p className="text-xs text-slate-400 line-through">
-                R$ {formatPrice(product.compareAtPrice)}
+                R$ {formatPrice(product.compareAtPrice || "0")}
               </p>
             )}
             <p

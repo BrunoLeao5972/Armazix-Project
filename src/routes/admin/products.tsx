@@ -42,6 +42,7 @@ interface Product {
   lowStockThreshold: number | null;
   sku: string | null;
   barcode: string | null;
+  pdvCode: string | null;
   unit: string | null;
   emoji: string | null;
   imageUrl: string | null;
@@ -88,6 +89,7 @@ interface ProductForm {
   lowStockThreshold: string;
   sku: string;
   barcode: string;
+  pdvCode: string;
   unit: string;
   images: ProductImage[];
   badge: string;
@@ -104,7 +106,7 @@ interface ProductForm {
 const EMPTY_FORM: ProductForm = {
   name: "", description: "", price: "",
   costPrice: "", lowStockThreshold: "5",
-  sku: "", barcode: "", unit: "un", images: [],
+  sku: "", barcode: "", pdvCode: "", unit: "un", images: [],
   badge: "", categoryId: "", trackStock: false, status: "ativo", allowObservation: false,
   variationGroups: [], promoConfig: null,
   productType: "Produto", isWeightScale: false,
@@ -520,6 +522,7 @@ function ProductFormModal({
         lowStockThreshold: String(editing.lowStockThreshold ?? 5),
         sku: editing.sku || "",
         barcode: editing.barcode || "",
+        pdvCode: editing.pdvCode || "",
         unit: editing.unit || "un",
         images: loadedImages,
         badge: editing.badge || "",
@@ -616,6 +619,7 @@ function ProductFormModal({
         lowStockThreshold: form.lowStockThreshold !== "" ? Number(form.lowStockThreshold) : 5,
         sku: form.sku || undefined,
         barcode: form.barcode || undefined,
+        pdvCode: form.pdvCode || undefined,
         unit: form.unit,
         imageUrl: primaryImg?.url || undefined,
         images: imagesPayload,
@@ -702,11 +706,30 @@ function ProductFormModal({
           {/* ── Tab: Informações ── */}
           {tab === "basic" && (
             <>
-              <Field label="Nome do produto *">
-                <Input autoFocus placeholder="Ex: Arroz Integral 5kg"
-                  value={form.name} onChange={e => set("name", e.target.value)}
-                  className="h-10 rounded-xl" />
-              </Field>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-3">
+                  <Field label="Nome do produto *">
+                    <Input autoFocus placeholder="Ex: Arroz Integral 5kg"
+                      value={form.name} onChange={e => set("name", e.target.value)}
+                      className="h-10 rounded-xl" />
+                  </Field>
+                </div>
+                <div className="md:col-span-1">
+                  <Field label="Código PDV">
+                    <div className="relative">
+                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                      <Input
+                        placeholder="Ex: 102"
+                        value={form.pdvCode}
+                        onChange={e => set("pdvCode", e.target.value.replace(/\D/g, "").slice(0, 20))}
+                        className="h-10 rounded-xl pl-8 font-mono tracking-wider"
+                        inputMode="numeric"
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">Único por loja</p>
+                  </Field>
+                </div>
+              </div>
 
               <Field label="Descrição" hint={`${form.description.length}/500`}>
                 <textarea
@@ -1705,7 +1728,14 @@ function ProductsPage() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate">{p.name}</p>
-                    {p.sku && <p className="text-[11px] text-muted-foreground">SKU: {p.sku}</p>}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {p.sku && <p className="text-[11px] text-muted-foreground">SKU: {p.sku}</p>}
+                      {p.pdvCode && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-mono font-semibold bg-primary/8 text-primary px-1.5 py-0.5 rounded-md border border-primary/20">
+                          <Hash className="w-2.5 h-2.5" />{p.pdvCode}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {/* Category */}

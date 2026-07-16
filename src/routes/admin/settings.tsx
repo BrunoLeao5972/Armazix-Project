@@ -39,6 +39,8 @@ import {
   ExternalLink,
   Fingerprint,
   Truck,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,6 +93,8 @@ interface StoreData {
   whatsappOrderEnabled?: boolean;
   whatsappPhone?: string;
   highlightLowStock?: boolean;
+  allowNegativeStock?: boolean;
+  layoutType?: string;
   freeShippingAbove?: string | null;
   deliveryConfig?: {
     modalidade?: string;
@@ -148,6 +152,11 @@ function SettingsPage() {
   const [whatsappOrderEnabled, setWhatsappOrderEnabled] = useState(false);
   const [whatsappPhone, setWhatsappPhone] = useState("");
   const [highlightLowStock, setHighlightLowStock] = useState(false);
+  const [allowNegativeStock, setAllowNegativeStock] = useState(true);
+  const [layoutType, setLayoutType] = useState<'grid' | 'list'>('grid');
+  const [estoqueSaving, setEstoqueSaving] = useState(false);
+  const [estoqueSuccess, setEstoqueSuccess] = useState(false);
+  const [estoqueError, setEstoqueError] = useState("");
 
   // Email edit states
   const [emailLocked, setEmailLocked] = useState(true);
@@ -315,6 +324,8 @@ function SettingsPage() {
         setWhatsappOrderEnabled(data.store.whatsappOrderEnabled === true);
         setWhatsappPhone(data.store.whatsappPhone || data.store.phone || "");
         setHighlightLowStock(data.store.highlightLowStock === true);
+        setAllowNegativeStock(data.store.allowNegativeStock !== false);
+        setLayoutType((data.store.layoutType as 'grid' | 'list') || 'grid');
         if (data.store.paymentMethodsConfig?.length) setPaymentMethodsConfig(data.store.paymentMethodsConfig);
         if (data.store.deliveryPaymentEnabled !== undefined) setDeliveryPaymentEnabled(data.store.deliveryPaymentEnabled !== false);
         if (data.store.freeShippingAbove != null) {
@@ -435,6 +446,7 @@ function SettingsPage() {
           whatsappOrderEnabled,
           whatsappPhone: whatsappOrderEnabled ? whatsappPhone : null,
           highlightLowStock,
+          layoutType,
           bannerIntervalMs,
         }),
         api.post("/api/banners/save", {
@@ -465,6 +477,29 @@ function SettingsPage() {
       setVitrineError("Erro de conexão");
     } finally {
       setVitrineSaving(false);
+    }
+  };
+
+  const handleSaveEstoque = async () => {
+    if (!store) return;
+    setEstoqueSaving(true);
+    setEstoqueSuccess(false);
+    setEstoqueError("");
+    try {
+      const res = await api.post("/api/store/update", { allowNegativeStock, highlightLowStock });
+      if (!res.ok) {
+        const d = await res.json() as { error?: string };
+        setEstoqueError(d.error || "Erro ao salvar");
+        return;
+      }
+      const d = await res.json() as { store?: typeof store };
+      if (d.store) setStore(d.store);
+      setEstoqueSuccess(true);
+      setTimeout(() => setEstoqueSuccess(false), 3000);
+    } catch {
+      setEstoqueError("Erro de conexão");
+    } finally {
+      setEstoqueSaving(false);
     }
   };
 
@@ -1090,6 +1125,7 @@ function SettingsPage() {
                       primaryColor={primaryColor}
                       backgroundColor={backgroundColor}
                       textColor={textColor}
+                      layoutType={layoutType}
                     />
                   </div>
                 </div>
@@ -1099,6 +1135,31 @@ function SettingsPage() {
 
               <div className="space-y-4">
                 <div className="text-sm font-semibold">Opções de layout</div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Layout dos produtos</div>
+                  <div className="text-xs text-muted-foreground">Escolha como os produtos aparecem na vitrine pública</div>
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setLayoutType('grid')}
+                      className={`flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all ${layoutType === 'grid' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+                    >
+                      <LayoutGrid className={`w-6 h-6 ${layoutType === 'grid' ? 'text-primary' : 'text-muted-foreground'}`} />
+                      <span className={`text-xs font-semibold ${layoutType === 'grid' ? 'text-primary' : 'text-muted-foreground'}`}>Grade</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLayoutType('list')}
+                      className={`flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all ${layoutType === 'list' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+                    >
+                      <List className={`w-6 h-6 ${layoutType === 'list' ? 'text-primary' : 'text-muted-foreground'}`} />
+                      <span className={`text-xs font-semibold ${layoutType === 'list' ? 'text-primary' : 'text-muted-foreground'}`}>Lista</span>
+                    </button>
+                  </div>
+                </div>
+
+                <Separator />
 
                 <div className="flex items-center justify-between gap-4">
                   <div>
@@ -1168,6 +1229,7 @@ function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+
         </TabsContent>
 
         {/* ── Formas de Pagamento ────────────────────────────────────── */}
@@ -1525,14 +1587,6 @@ function SettingsPage() {
               <Separator />
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-medium">Estoque baixo</div>
-                  <div className="text-xs text-muted-foreground">Alertar quando produto atingir mínimo</div>
-                </div>
-                <Switch defaultChecked />
-              </div>
-              <Separator />
-              <div className="flex items-center justify-between">
-                <div>
                   <div className="text-sm font-medium">Pagamentos</div>
                   <div className="text-xs text-muted-foreground">Notificar sobre pagamentos recebidos</div>
                 </div>
@@ -1546,6 +1600,57 @@ function SettingsPage() {
                 </div>
                 <Switch />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Estoque */}
+          <Card className="rounded-2xl border-border/50 shadow-soft">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Package className="w-4 h-4" />
+                Estoque
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium">Estoque baixo</div>
+                  <div className="text-xs text-muted-foreground">Alertar quando produto atingir mínimo</div>
+                </div>
+                <Switch checked={highlightLowStock} onCheckedChange={setHighlightLowStock} />
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium">Permitir vender produto sem estoque</div>
+                  <div className="text-xs text-muted-foreground">
+                    Quando ativado, pedidos são aceitos mesmo com estoque zerado. Ideal para lojas que não controlam estoque.
+                  </div>
+                </div>
+                <Switch checked={allowNegativeStock} onCheckedChange={setAllowNegativeStock} />
+              </div>
+              {!allowNegativeStock && (
+                <div className="flex items-start gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 p-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Com esta opção desativada, pedidos de produtos com <strong>rastreio de estoque</strong> serão bloqueados quando o estoque for insuficiente.
+                  </p>
+                </div>
+              )}
+              {estoqueError && <p className="text-sm text-destructive">{estoqueError}</p>}
+              {estoqueSuccess && (
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <Check className="w-4 h-4" />
+                  Configuração salva com sucesso!
+                </div>
+              )}
+              <Button
+                onClick={handleSaveEstoque}
+                disabled={estoqueSaving}
+                className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
+              >
+                {estoqueSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar configuração"}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1796,7 +1901,7 @@ function ColorField(props: { label: string; value: string; onChange: (value: str
   );
 }
 
-function StorefrontMiniPreview(props: { primaryColor: string; backgroundColor: string; textColor: string }) {
+function StorefrontMiniPreview(props: { primaryColor: string; backgroundColor: string; textColor: string; layoutType: 'grid' | 'list' }) {
   const borderColor = `color-mix(in oklab, ${props.textColor} 18%, transparent)`;
   const surfaceColor = `color-mix(in oklab, ${props.backgroundColor} 90%, white)`;
   const surface2Color = `color-mix(in oklab, ${props.backgroundColor} 82%, white)`;
@@ -1864,31 +1969,55 @@ function StorefrontMiniPreview(props: { primaryColor: string; backgroundColor: s
                 }}
               />
 
-              <div className="grid grid-cols-2 gap-2">
-                {Array.from({ length: 2 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="rounded-2xl border overflow-hidden"
-                    style={{ backgroundColor: surfaceColor, borderColor: borderColor }}
-                  >
-                    <div className="aspect-square" style={{ backgroundColor: surface2Color }} />
-                    <div className="p-2 space-y-1">
-                      <div className="text-[11px] font-medium leading-snug">Produto</div>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] font-bold" style={{ color: props.primaryColor }}>
-                          R$ 19,90
-                        </div>
-                        <div
-                          className="w-7 h-7 rounded-xl flex items-center justify-center"
-                          style={{ backgroundColor: props.primaryColor, color: "#fff" }}
-                        >
-                          +
+              {props.layoutType === 'list' ? (
+                <div className="flex flex-col gap-2">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2 rounded-2xl border overflow-hidden"
+                      style={{ backgroundColor: surfaceColor, borderColor: borderColor }}
+                    >
+                      <div className="w-14 h-14 shrink-0" style={{ backgroundColor: surface2Color }} />
+                      <div className="flex-1 min-w-0 py-1 pr-2">
+                        <div className="text-[10px] font-medium truncate">Produto {i + 1}</div>
+                        <div className="text-[10px] font-bold mt-0.5" style={{ color: props.primaryColor }}>R$ 19,90</div>
+                      </div>
+                      <div
+                        className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 mr-2"
+                        style={{ backgroundColor: props.primaryColor, color: "#fff" }}
+                      >
+                        +
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="rounded-2xl border overflow-hidden"
+                      style={{ backgroundColor: surfaceColor, borderColor: borderColor }}
+                    >
+                      <div className="aspect-square" style={{ backgroundColor: surface2Color }} />
+                      <div className="p-2 space-y-1">
+                        <div className="text-[11px] font-medium leading-snug">Produto</div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[11px] font-bold" style={{ color: props.primaryColor }}>
+                            R$ 19,90
+                          </div>
+                          <div
+                            className="w-7 h-7 rounded-xl flex items-center justify-center"
+                            style={{ backgroundColor: props.primaryColor, color: "#fff" }}
+                          >
+                            +
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
               <div
                 className="h-10 rounded-2xl flex items-center justify-center text-xs font-semibold"

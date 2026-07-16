@@ -14,7 +14,7 @@ export const Route = createFileRoute("/store/search")({
 function SearchPage() {
   const [query, setQuery] = useState("");
   const [products, setProducts] = useState<StoreProduct[]>([]);
-  const { store, addToCart, favorites, toggleFavorite } = useStore();
+  const { store, configuracaoVitrine, addToCart, favorites, toggleFavorite } = useStore();
 
   useEffect(() => {
     if (!store?.id) return;
@@ -65,11 +65,12 @@ function SearchPage() {
             {results.length} resultado{results.length !== 1 ? "s" : ""} para "{query}"
           </p>
           {results.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className={configuracaoVitrine.layoutType === 'list' ? "flex flex-col gap-3" : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"}>
               {results.map(product => (
                 <ProductCard key={product.id} product={product} onAdd={handleAdd}
                   isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite}
-                  showPrice highlightLowStock primaryColor="" />
+                  showPrice={configuracaoVitrine.exibirPreco} highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                  primaryColor={configuracaoVitrine.corPrimaria} layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'} />
               ))}
             </div>
           ) : (
@@ -85,11 +86,12 @@ function SearchPage() {
         <div className="px-4 pb-4">
           <h3 className="text-sm font-semibold mb-3 text-muted-foreground">Produtos populares</h3>
           {activeProducts.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className={configuracaoVitrine.layoutType === 'list' ? "flex flex-col gap-3" : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"}>
               {activeProducts.slice(0, 8).map(product => (
                 <ProductCard key={product.id} product={product} onAdd={handleAdd}
                   isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite}
-                  showPrice highlightLowStock primaryColor="" />
+                  showPrice={configuracaoVitrine.exibirPreco} highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                  primaryColor={configuracaoVitrine.corPrimaria} layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'} />
               ))}
             </div>
           ) : (

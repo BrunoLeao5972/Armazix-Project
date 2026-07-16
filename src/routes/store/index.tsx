@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStore } from "../store";
 import { type StoreProduct, type StoreCategory, formatPrice } from "@/lib/store-context";
+import { fetchRetry } from "@/lib/fetch-retry";
 import { getEffectivePrice } from "@/lib/promo-engine";
 import { CategoryIcon } from "@/lib/category-icons";
 
@@ -65,7 +66,7 @@ function StoreHome() {
     append ? setLoadingMore(true) : setLoading(true);
 
     try {
-      const data = await fetch(`/api/products/list?${params}`).then(r => r.json()) as {
+      const data = await fetchRetry(`/api/products/list?${params}`).then(r => r.json()) as {
         products?: StoreProduct[];
         total?: number;
         hasMore?: boolean;
@@ -86,7 +87,7 @@ function StoreHome() {
   // ── Categorias: carregamento único, projeção mínima (sem N+1) ────
   useEffect(() => {
     if (!store?.id) return;
-    fetch(`/api/categories/list?storeId=${store.id}&scope=public`)
+    fetchRetry(`/api/categories/list?storeId=${store.id}&scope=public`)
       .then(r => r.json())
       .then((cd: { categories?: StoreCategory[] }) => {
         if (cd.categories) setCategories(cd.categories);
@@ -356,44 +357,74 @@ function StoreHome() {
                   )}
                 </div>
 
-                {/* Mobile: horizontal scroll row */}
-                <div className="md:hidden overflow-x-auto no-scrollbar">
-                  <div className="flex gap-3 px-3 pb-1">
+                {/* Mobile: list or horizontal scroll row */}
+                {configuracaoVitrine.layoutType === 'list' ? (
+                  <div className="md:hidden flex flex-col gap-3 px-3">
                     {catProds.slice(0, SECTION_LIMIT).map(p => (
-                      <div key={p.id} className="w-44 shrink-0 flex">
-                        <ProductCard
-                          product={p}
-                          onAdd={handleAdd}
-                          isFavorite={favorites.includes(p.id)}
-                          onToggleFavorite={toggleFavorite}
-                          showPrice={configuracaoVitrine.exibirPreco}
-                          highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
-                          primaryColor={configuracaoVitrine.corPrimaria}
-                        />
-                      </div>
+                      <ProductCard
+                        key={p.id}
+                        product={p}
+                        onAdd={handleAdd}
+                        isFavorite={favorites.includes(p.id)}
+                        onToggleFavorite={toggleFavorite}
+                        showPrice={configuracaoVitrine.exibirPreco}
+                        highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                        primaryColor={configuracaoVitrine.corPrimaria}
+                        layoutType="list"
+                      />
                     ))}
                     {catProds.length > SECTION_LIMIT && (
-                      <div className="w-36 shrink-0 flex items-center justify-center">
-                        <button
-                          onClick={() => handleCategorySelect(category.id)}
-                          className="flex flex-col items-center gap-2 text-xs font-semibold"
-                          style={{ color: configuracaoVitrine.corPrimaria }}
-                        >
-                          <span
-                            className="w-12 h-12 rounded-full flex items-center justify-center border-2"
-                            style={{ borderColor: configuracaoVitrine.corPrimaria }}
-                          >
-                            <ChevronRight className="w-5 h-5" />
-                          </span>
-                          Ver todos
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleCategorySelect(category.id)}
+                        className="h-10 rounded-xl border text-xs font-semibold"
+                        style={{ color: configuracaoVitrine.corPrimaria, borderColor: configuracaoVitrine.corPrimaria }}
+                      >
+                        Ver todos ({catProds.length}) →
+                      </button>
                     )}
                   </div>
-                </div>
+                ) : (
+                  <div className="md:hidden overflow-x-auto no-scrollbar">
+                    <div className="flex gap-3 px-3 pb-1">
+                      {catProds.slice(0, SECTION_LIMIT).map(p => (
+                        <div key={p.id} className="w-44 shrink-0 flex">
+                          <ProductCard
+                            product={p}
+                            onAdd={handleAdd}
+                            isFavorite={favorites.includes(p.id)}
+                            onToggleFavorite={toggleFavorite}
+                            showPrice={configuracaoVitrine.exibirPreco}
+                            highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                            primaryColor={configuracaoVitrine.corPrimaria}
+                          />
+                        </div>
+                      ))}
+                      {catProds.length > SECTION_LIMIT && (
+                        <div className="w-36 shrink-0 flex items-center justify-center">
+                          <button
+                            onClick={() => handleCategorySelect(category.id)}
+                            className="flex flex-col items-center gap-2 text-xs font-semibold"
+                            style={{ color: configuracaoVitrine.corPrimaria }}
+                          >
+                            <span
+                              className="w-12 h-12 rounded-full flex items-center justify-center border-2"
+                              style={{ borderColor: configuracaoVitrine.corPrimaria }}
+                            >
+                              <ChevronRight className="w-5 h-5" />
+                            </span>
+                            Ver todos
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-                {/* Desktop: responsive grid */}
-                <div className="hidden md:grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 px-6">
+                {/* Desktop: responsive grid or list */}
+                <div className={configuracaoVitrine.layoutType === 'list'
+                  ? "hidden md:flex flex-col gap-3 px-6"
+                  : "hidden md:grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 px-6"
+                }>
                   {catProds.slice(0, SECTION_LIMIT).map(p => (
                     <ProductCard
                       key={p.id}
@@ -404,6 +435,7 @@ function StoreHome() {
                       showPrice={configuracaoVitrine.exibirPreco}
                       highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
                       primaryColor={configuracaoVitrine.corPrimaria}
+                      layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'}
                     />
                   ))}
                 </div>
@@ -431,7 +463,10 @@ function StoreHome() {
 
           {products.length > 0 ? (
             <>
-              <div className="grid grid-cols-2 gap-3 px-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6 md:px-6">
+              <div className={configuracaoVitrine.layoutType === 'list'
+                ? "flex flex-col gap-3 px-3 md:px-6"
+                : "grid grid-cols-2 gap-3 px-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6 md:px-6"
+              }>
                 {products.map((product) => (
                   <ProductCard
                     key={product.id}
@@ -442,6 +477,7 @@ function StoreHome() {
                     showPrice={configuracaoVitrine.exibirPreco}
                     highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
                     primaryColor={configuracaoVitrine.corPrimaria}
+                    layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'}
                   />
                 ))}
               </div>
@@ -484,6 +520,7 @@ export function ProductCard({
   showPrice,
   highlightLowStock,
   primaryColor,
+  layoutType = 'grid',
 }: {
   product: StoreProduct;
   onAdd: (p: StoreProduct) => void;
@@ -492,6 +529,7 @@ export function ProductCard({
   showPrice: boolean;
   highlightLowStock: boolean;
   primaryColor: string;
+  layoutType?: 'grid' | 'list';
 }) {
   const [added, setAdded] = useState(false);
   const promoResult = getEffectivePrice(product.price, product.promoConfig, "store");
@@ -506,6 +544,7 @@ export function ProductCard({
     highlightLowStock &&
     typeof product.stock === "number" &&
     typeof product.lowStockThreshold === "number" &&
+    product.stock > 0 &&
     product.stock <= product.lowStockThreshold;
 
   const handleAdd = (e: React.MouseEvent) => {
@@ -515,6 +554,60 @@ export function ProductCard({
     setAdded(true);
     setTimeout(() => setAdded(false), 900);
   };
+
+  if (layoutType === 'list') {
+    return (
+      <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group">
+        <div className="relative bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all group-hover:shadow-md flex items-center gap-3">
+          {/* Image */}
+          <div className="relative w-24 h-24 shrink-0 bg-slate-100 flex items-center justify-center overflow-hidden rounded-l-2xl">
+            {product.imageUrl
+              ? <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain" />
+              : <span className="text-4xl">{product.emoji || "📦"}</span>
+            }
+            {lowStock && (
+              <Badge className="absolute top-1 left-1 rounded-full bg-amber-500/15 text-amber-700 border-0 text-[9px] px-1">
+                Últimas
+              </Badge>
+            )}
+            {(promoResult.promoActive || discount > 0) && (
+              <Badge className={`absolute bottom-1 left-1 rounded-full border-0 text-[9px] px-1 ${promoResult.promoActive ? "bg-violet-600 text-white" : "bg-rose-600 text-white"}`}>
+                {promoResult.promoActive ? "PROMO" : `-${discount}%`}
+              </Badge>
+            )}
+          </div>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0 py-3 pr-2">
+            <p className="text-sm font-medium line-clamp-2 leading-snug">{product.name}</p>
+            <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{product.description || "Produto disponível"}</p>
+            {showPrice ? (
+              <div className="flex items-baseline gap-1.5 mt-1">
+                <span className="text-sm font-bold whitespace-nowrap" style={{ color: promoResult.promoActive ? "#7c3aed" : primaryColor }}>
+                  R$ {formatPrice(price)}
+                </span>
+                {oldPrice !== null && (
+                  <span className="text-xs text-slate-400 line-through whitespace-nowrap">R$ {formatPrice(oldPrice)}</span>
+                )}
+              </div>
+            ) : (
+              <span className="text-sm font-semibold text-slate-500 mt-1 block">Sob consulta</span>
+            )}
+          </div>
+
+          {/* Add button */}
+          <button
+            onClick={handleAdd}
+            className="w-9 h-9 rounded-xl text-white flex items-center justify-center shrink-0 mr-3 transition-transform active:scale-95"
+            style={{ backgroundColor: primaryColor }}
+            aria-label="Adicionar"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      </Link>
+    );
+  }
 
   return (
     <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group h-full">

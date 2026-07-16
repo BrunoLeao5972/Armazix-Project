@@ -26,6 +26,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { type CartItem, type ConfiguracaoVitrine, type StorePublicData, resolveStoreSlug, formatPrice } from "@/lib/store-context";
+import { fetchRetry } from "@/lib/fetch-retry";
+import { ProfileDrawer } from "@/components/storefront/ProfileDrawer";
 
 export interface ActiveCustomer {
   id?: string;   // undefined = novo cliente ainda não persistido no CRM
@@ -70,6 +72,7 @@ export const StoreContext = createContext<StoreContextType>({
     pedidoWhatsapp: false,
     telefoneWhatsapp: undefined,
     destacarEstoqueBaixo: false,
+    layoutType: 'grid',
   },
   storeLoading: true,
   cart: [],
@@ -800,7 +803,8 @@ function StoreLayout() {
   // ── Central do Cliente ────────────────────────────────────────────────────
   const [customerToken, setCustomerToken] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string>("");
-  const [ordersOpen, setOrdersOpen] = useState(false);
+  const [ordersOpen, setOrdersOpen]   = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -837,7 +841,7 @@ function StoreLayout() {
       if (!slug) { setStoreLoading(false); return; }
 
       try {
-        const res = await fetch(`/api/store/get?slug=${encodeURIComponent(slug)}`);
+        const res = await fetchRetry(`/api/store/get?slug=${encodeURIComponent(slug)}`);
         if (res.ok) {
           const data = await res.json();
           setStore(data.store);
@@ -924,6 +928,7 @@ function StoreLayout() {
       pedidoWhatsapp: store?.whatsappOrderEnabled === true,
       telefoneWhatsapp: phone || undefined,
       destacarEstoqueBaixo: store?.highlightLowStock === true,
+      layoutType: store?.layoutType || 'grid',
     };
   }, [
     store?.backgroundColor,
@@ -931,6 +936,7 @@ function StoreLayout() {
     store?.bannerUrl,
     store?.highlightLowStock,
     store?.id,
+    store?.layoutType,
     store?.logoUrl,
     store?.phone,
     store?.primaryColor,
@@ -1067,6 +1073,31 @@ function StoreLayout() {
                 <ClipboardList className="w-4.5 h-4.5 text-slate-700" />
                 {customerToken && (
                   <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-primary border-2 border-white" />
+                )}
+              </button>
+
+              {/* Perfil — desktop only */}
+              <button
+                onClick={() => setProfileOpen(true)}
+                aria-label={customerToken ? `Perfil de ${customerName}` : "Entrar"}
+                className="hidden md:flex items-center gap-2 h-9 px-3 rounded-xl hover:bg-slate-100 transition-colors"
+              >
+                {customerToken ? (
+                  <>
+                    <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+                      <span className="text-[11px] font-bold text-primary">
+                        {customerName.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?"}
+                      </span>
+                    </div>
+                    <span className="hidden lg:inline text-sm font-medium text-slate-700 max-w-[90px] truncate">
+                      Olá, {customerName.split(" ")[0] || "você"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <User className="w-4 h-4 text-slate-600" />
+                    <span className="text-sm font-medium text-slate-700">Entrar</span>
+                  </>
                 )}
               </button>
 
@@ -1238,6 +1269,20 @@ function StoreLayout() {
             customerName={customerName}
             onLogin={handleCustomerLogin}
             onLogout={handleCustomerLogout}
+          />
+        )}
+
+        {/* Perfil — drawer desktop (também usado no mobile via header) */}
+        {store?.id && (
+          <ProfileDrawer
+            open={profileOpen}
+            onOpenChange={setProfileOpen}
+            storeId={store.id}
+            token={customerToken}
+            customerName={customerName}
+            onLogin={handleCustomerLogin}
+            onLogout={handleCustomerLogout}
+            favorites={favorites}
           />
         )}
       </div>

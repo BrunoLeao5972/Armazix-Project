@@ -10,7 +10,7 @@ export const Route = createFileRoute("/store/categories")({
 });
 
 function CategoriesPage() {
-  const { store, addToCart, favorites, toggleFavorite } = useStore();
+  const { store, configuracaoVitrine, addToCart, favorites, toggleFavorite } = useStore();
   const [categories, setCategories] = useState<StoreCategory[]>([]);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -75,10 +75,12 @@ function CategoriesPage() {
           <p className="text-sm text-muted-foreground">Nenhum produto nessa categoria.</p>
         </div>
       ) : (
-        <div className="px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pb-4">
+        <div className={`px-4 pb-4 ${configuracaoVitrine.layoutType === 'list' ? "flex flex-col gap-3" : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3"}`}>
           {displayed.map(product => (
             <ProductCard key={product.id} product={product} onAdd={handleAdd}
-              isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite} />
+              isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite}
+              showPrice={configuracaoVitrine.exibirPreco} highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+              primaryColor={configuracaoVitrine.corPrimaria} layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'} />
           ))}
         </div>
       )}

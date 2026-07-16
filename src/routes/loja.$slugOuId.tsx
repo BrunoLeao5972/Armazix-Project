@@ -25,6 +25,7 @@ import { ProductCard } from "@/components/storefront/ProductCard";
 import { ProductDetailModal } from "@/components/storefront/ProductDetailModal";
 import { StorefrontSidebar } from "@/components/storefront/StorefrontSidebar";
 import { type StoreCategory } from "@/lib/store-context";
+import { fetchRetry } from "@/lib/fetch-retry";
 
 export const Route = createFileRoute("/loja/$slugOuId")({
   component: PublicStorefrontPage,
@@ -89,10 +90,16 @@ function PublicStorefrontPage() {
         const qs = isUuid(slugOuId)
           ? `id=${encodeURIComponent(slugOuId)}`
           : `slug=${encodeURIComponent(slugOuId)}`;
-        const res = await fetch(`/api/store/get?${qs}`);
+        const res = await fetchRetry(`/api/store/get?${qs}`);
         const data = (await res.json()) as { store?: StorePublicData; error?: string };
         if (!res.ok || !data.store) {
-          setStoreError(data.error || "Loja não encontrada");
+          setStoreError(
+            res.status === 503
+              ? "Serviço temporariamente indisponível. Tente novamente em instantes."
+              : res.status === 404
+                ? "Loja não encontrada"
+                : data.error || "Loja não encontrada"
+          );
           setStore(null);
           return;
         }
@@ -153,10 +160,11 @@ function PublicStorefrontPage() {
       telefoneWhatsapp:
         (store?.whatsappPhone || store?.phone || "").replace(/\D/g, "") || undefined,
       destacarEstoqueBaixo: store?.highlightLowStock === true,
+      layoutType: store?.layoutType || 'grid',
     }),
     [
       store?.backgroundColor, store?.bannerUrl, store?.banners,
-      store?.highlightLowStock, store?.id, store?.logoUrl, store?.phone,
+      store?.highlightLowStock, store?.id, store?.layoutType, store?.logoUrl, store?.phone,
       store?.primaryColor, store?.showPrice, store?.textColor,
       store?.whatsappOrderEnabled, store?.whatsappPhone,
     ]
@@ -391,6 +399,7 @@ function PublicStorefrontPage() {
       onAdd={() => addToCart(product)}
       onOpenDetail={() => setSelectedProduct(product)}
       primaryColor={primaryColor}
+      layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'}
     />
   );
 
@@ -650,7 +659,7 @@ function PublicStorefrontPage() {
                         </div>
 
                         {/* Grid (máx 8 produtos) */}
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <div className={configuracaoVitrine.layoutType === 'list' ? "flex flex-col gap-3 w-full" : "grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"}>
                           {sectionProds.slice(0, 8).map(renderCard)}
                         </div>
                       </section>
@@ -698,7 +707,7 @@ function PublicStorefrontPage() {
                 {visibleProducts.length === 0
                   ? emptyState("Nenhum produto encontrado", "Tente ajustar a busca ou os filtros.")
                   : (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div className={configuracaoVitrine.layoutType === 'list' ? "flex flex-col gap-3 w-full" : "grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"}>
                       {visibleProducts.map(renderCard)}
                     </div>
                   )

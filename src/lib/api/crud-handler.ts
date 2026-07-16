@@ -33,6 +33,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     lowStockThreshold?: number;
     sku?: string;
     barcode?: string;
+    pdvCode?: string;
     unit?: string;
     emoji?: string;
     imageUrl?: string;
@@ -61,6 +62,21 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
   const primaryUrl = imagesArr.find(i => i.isPrimary)?.url ?? imagesArr[0]?.url ?? body.imageUrl ?? null;
 
   try {
+    // Valida unicidade do Código PDV dentro da loja
+    if (body.pdvCode) {
+      const [pdvConflict] = await db
+        .select({ id: products.id, name: products.name })
+        .from(products)
+        .where(and(eq(products.storeId, storeId), eq(products.pdvCode, body.pdvCode)))
+        .limit(1);
+      if (pdvConflict) {
+        return new Response(
+          JSON.stringify({ error: `Este Código PDV já está sendo utilizado pelo produto "${pdvConflict.name}"` }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        );
+      }
+    }
+
     const [product] = await db.insert(products).values({
       storeId,
       name: body.name,
@@ -72,6 +88,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
       lowStockThreshold: body.lowStockThreshold ?? 5,
       sku: body.sku || null,
       barcode: body.barcode || null,
+      pdvCode: body.pdvCode || null,
       unit: body.unit || "un",
       emoji: body.emoji || null,
       imageUrl: primaryUrl,
@@ -190,7 +207,7 @@ export async function listProductsHandler(request: Request): Promise<Response> {
       });
     } catch (error) {
       console.error("List products (public) error:", error);
-      return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Serviço temporariamente indisponível" }), { status: 503, headers: { "content-type": "application/json", "Retry-After": "3" } });
     }
   }
 
@@ -236,6 +253,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     lowStockThreshold?: number;
     sku?: string;
     barcode?: string;
+    pdvCode?: string;
     unit?: string;
     emoji?: string;
     imageUrl?: string;
@@ -269,6 +287,25 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
       return new Response(JSON.stringify({ error: "Product not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
     }
 
+    // Valida unicidade do Código PDV (exclui o próprio produto sendo editado)
+    if (body.pdvCode) {
+      const [pdvConflict] = await db
+        .select({ id: products.id, name: products.name })
+        .from(products)
+        .where(and(
+          eq(products.storeId, storeId),
+          eq(products.pdvCode, body.pdvCode),
+          ne(products.id, body.productId),
+        ))
+        .limit(1);
+      if (pdvConflict) {
+        return new Response(
+          JSON.stringify({ error: `Este Código PDV já está sendo utilizado pelo produto "${pdvConflict.name}"` }),
+          { status: 409, headers: { "content-type": "application/json" } },
+        );
+      }
+    }
+
     const updates: Partial<typeof products.$inferInsert> & { updatedAt: Date } = { updatedAt: new Date() };
     if (body.name        !== undefined) updates.name        = body.name;
     if (body.description !== undefined) updates.description = body.description || null;
@@ -278,6 +315,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     if (body.lowStockThreshold !== undefined) updates.lowStockThreshold = body.lowStockThreshold;
     if (body.sku         !== undefined) updates.sku         = body.sku         || null;
     if (body.barcode     !== undefined) updates.barcode     = body.barcode     || null;
+    if (body.pdvCode     !== undefined) updates.pdvCode     = body.pdvCode     || null;
     if (body.unit        !== undefined) updates.unit        = body.unit;
     if (body.emoji       !== undefined) updates.emoji       = body.emoji       || null;
     if (body.images !== undefined) {
@@ -455,7 +493,7 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
       });
     } catch (error) {
       console.error("List categories (public) error:", error);
-      return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Serviço temporariamente indisponível" }), { status: 503, headers: { "content-type": "application/json", "Retry-After": "3" } });
     }
   }
 
@@ -624,6 +662,51 @@ export async function createOrderHandler(request: Request): Promise<Response> {
   const db = createDb(dbUrl);
 
   try {
+    // ── 0. Validação de estoque (quando a loja bloqueia venda sem estoque) ─���──
+    const [storeConfig] = await db
+      .select({ allowNegativeStock: stores.allowNegativeStock })
+      .from(stores)
+      .where(eq(stores.id, body.storeId))
+      .limit(1);
+
+    if (!storeConfig) {
+      return new Response(JSON.stringify({ error: "Loja não encontrada" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+
+    if (storeConfig.allowNegativeStock === false) {
+      const productIds = body.items.map(i => i.productId).filter(Boolean) as string[];
+      if (productIds.length > 0) {
+        const stockRows = await db
+          .select({ id: products.id, name: products.name, stock: products.stock, trackStock: products.trackStock })
+          .from(products)
+          .where(and(eq(products.storeId, body.storeId), inArray(products.id, productIds)));
+
+        // Agrega quantidades por productId — captura o mesmo produto em duas linhas
+        const aggregated = new Map<string, { qty: number; name: string }>();
+        for (const item of body.items) {
+          if (!item.productId) continue;
+          const cur = aggregated.get(item.productId);
+          aggregated.set(item.productId, {
+            qty:  (cur?.qty ?? 0) + item.quantity,
+            name: item.productName ?? cur?.name ?? item.productId,
+          });
+        }
+
+        const stockMap = new Map(stockRows.map(r => [r.id, r]));
+        for (const [productId, { qty, name }] of aggregated) {
+          const prod = stockMap.get(productId);
+          if (!prod?.trackStock) continue;
+          const available = prod.stock ?? 0;
+          if (available < qty) {
+            return new Response(
+              JSON.stringify({ error: `Estoque insuficiente para "${name}": ${available} disponível(is), ${qty} solicitado(s)` }),
+              { status: 400, headers: { "content-type": "application/json" } },
+            );
+          }
+        }
+      }
+    }
+
     // ── 1. Número sequencial por loja ─────────────────────────────────────────
     const [maxOrder] = await db
       .select({ max: sql<number>`COALESCE(MAX(${orders.number}), 0)` })
@@ -757,7 +840,7 @@ export async function createOrderHandler(request: Request): Promise<Response> {
           if (!prod?.trackStock) continue;
 
           const balanceBefore = prod.stock ?? 0;
-          const balanceAfter  = Math.max(0, balanceBefore - item.quantity);
+          const balanceAfter  = balanceBefore - item.quantity; // permite saldo negativo
 
           await db.update(products)
             .set({ stock: balanceAfter, updatedAt: new Date() })
@@ -771,7 +854,9 @@ export async function createOrderHandler(request: Request): Promise<Response> {
             quantity:     item.quantity,
             balanceBefore,
             balanceAfter,
-            origem:       `Venda — Pedido #${nextNumber}`,
+            origem:       balanceAfter < 0
+              ? `Venda s/ estoque — Pedido #${nextNumber}`
+              : `Venda — Pedido #${nextNumber}`,
             orderId:      order.id,
           });
         }

@@ -138,6 +138,7 @@ const MOV_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string
 };
 
 function StockStatusBadge({ stock, min }: { stock: number; min: number }) {
+  if (stock < 0)          return <Badge className="rounded-full text-[11px] bg-red-600/20 text-red-700 border border-red-300/60 font-semibold">Estoque negativo</Badge>;
   if (stock === 0)        return <Badge className="rounded-full text-[11px] bg-destructive/15 text-destructive border-0">Sem estoque</Badge>;
   if (stock <= min * 0.5) return <Badge className="rounded-full text-[11px] bg-red-500/15 text-red-600 border-0">Crítico</Badge>;
   if (stock <= min)       return <Badge className="rounded-full text-[11px] bg-amber-500/15 text-amber-600 border-0">Baixo</Badge>;
@@ -365,16 +366,20 @@ export function SecaoEstoque() {
     p.category.toLowerCase().includes(search.toLowerCase())
   );
 
-  const totalValue = products.reduce((s, p) => s + p.stock * p.costPrice, 0);
-  const semEstoque = products.filter(p => p.stock === 0).length;
-  const baixo      = products.filter(p => p.stock > 0 && p.stock <= p.minStock).length;
+  const totalValue  = products.filter(p => p.stock > 0).reduce((s, p) => s + p.stock * p.costPrice, 0);
+  const negativo    = products.filter(p => p.stock < 0).length;
+  const semEstoque  = products.filter(p => p.stock === 0).length;
+  const baixo       = products.filter(p => p.stock > 0 && p.stock <= p.minStock).length;
 
   return (
     <div className="space-y-5">
       {/* Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <SummaryCard icon={Package}       label="Total de produtos"       value={products.length}                        color="text-primary"       bg="bg-primary/15" />
-        <SummaryCard icon={XCircle}       label="Sem estoque"             value={semEstoque}                            color="text-destructive"   bg="bg-destructive/15" />
+        {negativo > 0
+          ? <SummaryCard icon={XCircle}   label="Estoque negativo"        value={negativo}                               color="text-red-600"       bg="bg-red-600/15" />
+          : <SummaryCard icon={XCircle}   label="Sem estoque"             value={semEstoque}                             color="text-destructive"   bg="bg-destructive/15" />
+        }
         <SummaryCard icon={AlertTriangle} label="Estoque baixo"           value={baixo}                                 color="text-amber-600"     bg="bg-amber-500/15" />
         <SummaryCard icon={TrendingUp}    label="Valor total em estoque"  value={`R$ ${totalValue.toFixed(2).replace(".", ",")}`} color="text-emerald-600" bg="bg-emerald-500/15" />
       </div>
@@ -436,7 +441,7 @@ export function SecaoEstoque() {
                     <td className="px-4 py-3 font-medium">{p.name}</td>
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{p.sku}</td>
                     <td className="px-4 py-3 text-muted-foreground">{p.category}</td>
-                    <td className="px-4 py-3 font-bold">{p.stock}</td>
+                    <td className={`px-4 py-3 font-bold tabular-nums ${p.stock < 0 ? "text-red-600" : ""}`}>{p.stock}</td>
                     <td className="px-4 py-3 text-muted-foreground">{p.minStock}</td>
                     <td className="px-4 py-3 text-muted-foreground">{p.location}</td>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{p.lastMovement}</td>
@@ -2612,8 +2617,9 @@ export function SecaoBalanco() {
   }, [periodMode, customStart, customEnd]);
 
   // ── KPIs ──────────────────────────────────────────────────────
-  const totalValue   = kpiProducts.reduce((s, p) => s + p.stock * p.costPrice, 0);
-  const totalItems   = kpiProducts.reduce((s, p) => s + p.stock, 0);
+  const totalValue   = kpiProducts.filter(p => p.stock > 0).reduce((s, p) => s + p.stock * p.costPrice, 0);
+  const totalItems   = kpiProducts.filter(p => p.stock > 0).reduce((s, p) => s + p.stock, 0);
+  const negativoKpi  = kpiProducts.filter(p => p.stock < 0).length;
   const semEstoque   = kpiProducts.filter(p => p.stock === 0).length;
   const baixo        = kpiProducts.filter(p => p.stock > 0 && p.stock <= p.minStock).length;
   const entradas     = activeMovements.filter(m => m.type === "ENTRADA").reduce((s, m) => s + m.quantity, 0);
@@ -2644,7 +2650,9 @@ export function SecaoBalanco() {
   const kpis = [
     { icon: TrendingUp,      label: "Valor total em estoque", value: `R$ ${totalValue.toFixed(2).replace(".", ",")}`, color: "text-emerald-600", bg: "bg-emerald-500/15" },
     { icon: Package,         label: "Total de itens",         value: totalItems,                                       color: "text-primary",     bg: "bg-primary/15" },
-    { icon: XCircle,         label: "Produtos sem estoque",   value: semEstoque,                                       color: "text-destructive", bg: "bg-destructive/15" },
+    negativoKpi > 0
+      ? { icon: XCircle,     label: "Estoque negativo",        value: negativoKpi,                                      color: "text-red-600",     bg: "bg-red-600/15" }
+      : { icon: XCircle,     label: "Produtos sem estoque",    value: semEstoque,                                       color: "text-destructive", bg: "bg-destructive/15" },
     { icon: AlertTriangle,   label: "Estoque baixo",          value: baixo,                                            color: "text-amber-600",   bg: "bg-amber-500/15" },
     { icon: ArrowUpCircle,   label: "Entradas no período",    value: entradas,                                         color: "text-emerald-600", bg: "bg-emerald-500/15" },
     { icon: ArrowDownCircle, label: "Saídas no período",      value: saidas,                                           color: "text-blue-600",    bg: "bg-blue-500/15" },
@@ -2857,20 +2865,20 @@ export function SecaoBalanco() {
                 </td></tr>
               ) : tableProducts.map(p => {
                 const vt    = p.stock * p.costPrice;
-                const giro  = p.stock > 50 ? "Alto" : p.stock > 15 ? "Médio" : "Baixo";
-                const risco = p.stock === 0 ? "Ruptura" : p.stock <= p.minStock ? "Atenção" : "Normal";
+                const giro  = p.stock < 0 ? "Negativo" : p.stock > 50 ? "Alto" : p.stock > 15 ? "Médio" : "Baixo";
+                const risco = p.stock < 0 ? "Negativo" : p.stock === 0 ? "Ruptura" : p.stock <= p.minStock ? "Atenção" : "Normal";
                 return (
                   <tr key={p.id} className="hover:bg-secondary/30 transition-colors">
                     <td className="px-4 py-3 font-medium">{p.name}</td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">{p.sku}</td>
-                    <td className="px-4 py-3 font-bold">{p.stock}</td>
+                    <td className={`px-4 py-3 font-bold tabular-nums ${p.stock < 0 ? "text-red-600" : ""}`}>{p.stock}</td>
                     <td className="px-4 py-3 text-muted-foreground">R$ {p.costPrice.toFixed(2).replace(".", ",")}</td>
                     <td className="px-4 py-3 font-semibold">R$ {vt.toFixed(2).replace(".", ",")}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${giro === "Alto" ? "bg-emerald-500/15 text-emerald-600" : giro === "Médio" ? "bg-blue-500/15 text-blue-600" : "bg-secondary text-muted-foreground"}`}>{giro}</span>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${giro === "Negativo" ? "bg-red-600/20 text-red-700" : giro === "Alto" ? "bg-emerald-500/15 text-emerald-600" : giro === "Médio" ? "bg-blue-500/15 text-blue-600" : "bg-secondary text-muted-foreground"}`}>{giro}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${risco === "Ruptura" ? "bg-destructive/15 text-destructive" : risco === "Atenção" ? "bg-amber-500/15 text-amber-600" : "bg-emerald-500/15 text-emerald-600"}`}>{risco}</span>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${risco === "Negativo" ? "bg-red-600/20 text-red-700 font-semibold" : risco === "Ruptura" ? "bg-destructive/15 text-destructive" : risco === "Atenção" ? "bg-amber-500/15 text-amber-600" : "bg-emerald-500/15 text-emerald-600"}`}>{risco}</span>
                     </td>
                   </tr>
                 );

@@ -62,9 +62,9 @@ export async function getStoreHandler(request: Request): Promise<Response> {
     });
   } catch (error) {
     console.error("Error fetching store:", error);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
+    return new Response(JSON.stringify({ error: "Serviço temporariamente indisponível" }), {
+      status: 503,
+      headers: { "content-type": "application/json", "Retry-After": "3" },
     });
   }
 }
@@ -99,6 +99,8 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
     whatsappOrderEnabled?: boolean;
     whatsappPhone?: string;
     highlightLowStock?: boolean;
+    allowNegativeStock?: boolean;
+    layoutType?: string;
     bannerIntervalMs?: number;
     address?: {
       street: string;
@@ -125,14 +127,18 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
   }
 
   try {
+    // Busca slug atual antes do update para invalidar a chave antiga caso o slug mude.
+    let prevSlug: string | null = null;
     if (nextSlug) {
-      const existing = await db.select({ id: stores.id }).from(stores).where(eq(stores.slug, nextSlug));
+      const existing = await db.select({ id: stores.id, slug: stores.slug }).from(stores).where(eq(stores.slug, nextSlug));
       if (existing.length > 0 && existing[0].id !== storeId) {
         return new Response(JSON.stringify({ error: "Slug já está em uso" }), {
           status: 409,
           headers: { "content-type": "application/json" },
         });
       }
+      const [cur] = await db.select({ slug: stores.slug }).from(stores).where(eq(stores.id, storeId)).limit(1);
+      prevSlug = cur?.slug ?? null;
     }
 
     const [updated] = await db
@@ -154,6 +160,8 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
         whatsappOrderEnabled: body.whatsappOrderEnabled,
         whatsappPhone: body.whatsappPhone,
         highlightLowStock: body.highlightLowStock,
+        ...(body.allowNegativeStock !== undefined ? { allowNegativeStock: body.allowNegativeStock } : {}),
+        ...(body.layoutType !== undefined ? { layoutType: body.layoutType } : {}),
         ...(body.bannerIntervalMs !== undefined ? { bannerIntervalMs: body.bannerIntervalMs } : {}),
         address: body.address,
         ...(body.deliveryConfig !== undefined ? { deliveryConfig: body.deliveryConfig } : {}),
@@ -163,11 +171,18 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
       .where(eq(stores.id, storeId))
       .returning();
 
-    // Invalida as duas variantes de chave (por ID e por slug) em background
-    waitUntil(request, deleteKey(
-      `store:${storeId}:config`,
-      `store:slug:${updated?.slug}:config`,
-    ));
+    // Invalida ID + novo slug + slug antigo (se houve renomeação).
+    // db.update().returning() não traz relações — o próximo getCached buscará com banners.
+    if (updated) {
+      const keysToDelete = [
+        `store:${storeId}:config`,
+        `store:slug:${updated.slug}:config`,
+      ];
+      if (prevSlug && prevSlug !== updated.slug) {
+        keysToDelete.push(`store:slug:${prevSlug}:config`);
+      }
+      waitUntil(request, deleteKey(...keysToDelete));
+    }
 
     return new Response(JSON.stringify({ success: true, store: updated }), {
       status: 200,
@@ -396,7 +411,7 @@ export async function savePaymentConfigHandler(
     const dbUrl = process.env.DATABASE_URL!;
     const db = createDb(dbUrl);
 
-    await db
+    const [updatedPayment] = await db
       .update(stores)
       .set({
         paymentConfig: cfg,
@@ -404,10 +419,14 @@ export async function savePaymentConfigHandler(
         deliveryPaymentEnabled: cfg.delivery.enabled,
         updatedAt: new Date(),
       })
-      .where(eq(stores.id, storeId));
+      .where(eq(stores.id, storeId))
+      .returning({ slug: stores.slug });
 
-    // Invalida config cacheada — novas formas de pagamento devem refletir imediatamente
-    waitUntil(request, deleteKey(storeCacheKey(storeId)));
+    // Invalida ambas as chaves (ID e slug) — storefront acessa por slug
+    waitUntil(request, deleteKey(
+      storeCacheKey(storeId),
+      ...(updatedPayment?.slug ? [`store:slug:${updatedPayment.slug}:config`] : []),
+    ));
 
     return new Response(
       JSON.stringify({ success: true, paymentConfig: cfg }),
