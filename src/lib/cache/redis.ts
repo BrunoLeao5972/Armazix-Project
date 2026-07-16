@@ -97,9 +97,13 @@ function bgRefresh<T>(
 // disparariam N queries ao Neon ao mesmo tempo.
 //
 // Fluxo:
-//   SET _lk:<key> 1 NX EX 8  → adquire o lock
+//   SET _lk:<key> 1 NX EX 5  → adquire o lock
 //   HIT   → busca no banco, popula cache, libera lock
-//   MISS  → poll por até 450ms (3 × 150ms); se ainda vazio, vai ao banco direto
+//   MISS  → tenta ler o cache 1× sem sleep; se vazio, vai ao banco direto
+//
+// Por que sem polling? setTimeout em Cloudflare Workers mantém o isolate vivo
+// e acumula tempo de CPU residual a cada tick. 3×setTimeout = risco de Error 1102.
+// Aceitar até 2 queries simultâneas no cold miss é melhor que matar o Worker.
 async function acquireAndFetch<T>(
   redis:    Redis,
   key:      string,
@@ -114,33 +118,27 @@ async function acquireAndFetch<T>(
   try {
     lockAcquired = !!(await redis.set(lockKey, "1", { nx: true, ex: 5 }));
   } catch {
-    // Redis error ao tentar lock → vai direto ao banco sem lock
     return withRetry(fetcher);
   }
 
   if (lockAcquired) {
-    // Somos o único a buscar no banco
     try {
       const data = await withRetry(fetcher);
       await setEnvelope(redis, key, data, freshMs, staleTtl, storeId).catch(() => {});
       return data;
     } finally {
-      // Libera o lock independente de sucesso ou erro
       await redis.del(lockKey).catch(() => {});
     }
   }
 
-  // Outra instância está buscando: aguarda 3 × 150 ms (450 ms) e desiste.
-  // Manter menos iterações reduz o risco de CPU acumulado (Error 1102).
-  for (let i = 0; i < 3; i++) {
-    await new Promise<void>(r => setTimeout(r, 150));
-    try {
-      const cached = await redis.get<unknown>(key);
-      if (cached !== null && isEnvelope<T>(cached)) return cached.v;
-    } catch { /* ignora erros de polling */ }
-  }
+  // Lock não adquirido: outro Worker já está buscando.
+  // Tenta o cache uma única vez — se o holder terminou rápido, já está lá.
+  try {
+    const cached = await redis.get<unknown>(key);
+    if (cached !== null && isEnvelope<T>(cached)) return cached.v;
+  } catch { }
 
-  // Após ~450ms de espera, vai ao banco diretamente
+  // Ainda vazio → vai ao banco sem esperar para não acumular CPU (Error 1102).
   return withRetry(fetcher);
 }
 

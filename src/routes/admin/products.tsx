@@ -495,7 +495,8 @@ function ProductFormModal({
   const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"basic" | "price" | "stock" | "variations" | "promocoes">("basic");
-  const [errors, setErrors] = useState<{ categoryId?: string; price?: string }>({});
+  const [errors, setErrors] = useState<{ categoryId?: string; price?: string; pdvCode?: string }>({});
+  const [pdvCodeLoading, setPdvCodeLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [newCatName, setNewCatName] = useState("");
   const [creatingCat, setCreatingCat] = useState(false);
@@ -537,6 +538,15 @@ function ProductFormModal({
       });
     } else {
       setForm(EMPTY_FORM);
+      // Auto-preenche o próximo código disponível para novos produtos
+      if (open) {
+        setPdvCodeLoading(true);
+        api.get("/api/products/next-pdv-code")
+          .then(r => r.json() as Promise<{ nextPdvCode?: number }>)
+          .then(d => { if (d.nextPdvCode) setForm(f => ({ ...f, pdvCode: String(d.nextPdvCode) })); })
+          .catch(() => {})
+          .finally(() => setPdvCodeLoading(false));
+      }
     }
     setTab("basic");
     setShowNewCat(false);
@@ -595,12 +605,13 @@ function ProductFormModal({
   const margin = calcMargin(form.price, form.costPrice);
 
   const handleSave = async () => {
-    const newErrors: { categoryId?: string; price?: string } = {};
+    const newErrors: { categoryId?: string; price?: string; pdvCode?: string } = {};
     if (!form.categoryId) newErrors.categoryId = "Selecione uma categoria para o produto.";
     if (!form.price) newErrors.price = "Informe o preço do produto.";
+    if (!form.pdvCode.trim()) newErrors.pdvCode = "O código PDV é obrigatório para vendas rápidas no caixa.";
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      if (newErrors.categoryId) setTab("basic");
+      if (newErrors.categoryId || newErrors.pdvCode) setTab("basic");
       else if (newErrors.price) setTab("price");
       return;
     }
@@ -715,18 +726,26 @@ function ProductFormModal({
                   </Field>
                 </div>
                 <div className="md:col-span-1">
-                  <Field label="Código PDV">
+                  <Field label="Código PDV *">
                     <div className="relative">
                       <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                       <Input
-                        placeholder="Ex: 102"
+                        placeholder={pdvCodeLoading ? "Calculando..." : "Ex: 102"}
                         value={form.pdvCode}
-                        onChange={e => set("pdvCode", e.target.value.replace(/\D/g, "").slice(0, 20))}
-                        className="h-10 rounded-xl pl-8 font-mono tracking-wider"
+                        onChange={e => {
+                          set("pdvCode", e.target.value.replace(/\D/g, "").slice(0, 20));
+                          if (errors.pdvCode) setErrors(prev => ({ ...prev, pdvCode: undefined }));
+                        }}
+                        className={`h-10 rounded-xl pl-8 font-mono tracking-wider${errors.pdvCode ? " border-destructive focus-visible:ring-destructive" : ""}`}
                         inputMode="numeric"
+                        disabled={pdvCodeLoading}
                       />
+                      {pdvCodeLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-1">Único por loja</p>
+                    {errors.pdvCode
+                      ? <p className="text-[10px] text-destructive mt-1">{errors.pdvCode}</p>
+                      : <p className="text-[10px] text-muted-foreground mt-1">Único por loja · preenchido automaticamente</p>
+                    }
                   </Field>
                 </div>
               </div>

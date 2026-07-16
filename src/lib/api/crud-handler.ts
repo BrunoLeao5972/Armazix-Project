@@ -1553,3 +1553,118 @@ export async function checkCustomerByPhoneHandler(request: Request): Promise<Res
     });
   }
 }
+
+// ─── Get Next PDV Code ───────────────────────────────────────────
+// Retorna o próximo código numérico disponível para a loja autenticada.
+// Só considera codes que sejam exclusivamente dígitos; strings não-numéricas são ignoradas.
+export async function getNextPdvCodeHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = await createTenantDb(dbUrl, storeId);
+
+  try {
+    const [row] = await db
+      .select({
+        maxCode: sql<number | null>`MAX(
+          CASE WHEN ${products.pdvCode} ~ '^[0-9]+$'
+               THEN CAST(${products.pdvCode} AS INTEGER)
+               ELSE NULL
+          END
+        )`,
+      })
+      .from(products)
+      .where(eq(products.storeId, storeId));
+
+    return new Response(JSON.stringify({ nextPdvCode: (row?.maxCode ?? 0) + 1 }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  } catch (error) {
+    console.error("getNextPdvCode error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500, headers: { "content-type": "application/json" },
+    });
+  }
+}
+
+// ─── Backfill PDV Codes ──────────────────────────────────────────
+// Preenche pdv_code de todos os produtos que estão sem código, de forma
+// sequencial a partir do maior código numérico atual da loja + 1.
+// Roda dentro de uma transação — ou tudo ou nada.
+export async function backfillPdvCodesHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const dbUrl = process.env.DATABASE_URL!;
+  // HTTP driver (neon-http) — não suporta .transaction(), mas um CTE UPDATE
+  // é atômico no próprio PostgreSQL e é um único round-trip HTTP para o Neon.
+  const db = await createTenantDb(dbUrl, storeId);
+
+  try {
+    // Uma única query CTE faz tudo:
+    //   1. Calcula o maior código numérico atual da loja
+    //   2. Enumera os produtos sem código com ROW_NUMBER()
+    //   3. Atualiza em lote no mesmo statement — atômico, 1 round-trip
+    const result = await db.execute(sql`
+      WITH max_code AS (
+        SELECT COALESCE(MAX(
+          CASE WHEN pdv_code ~ '^[0-9]+$'
+               THEN CAST(pdv_code AS INTEGER)
+               ELSE 0
+          END
+        ), 0) AS val
+        FROM products
+        WHERE store_id = ${storeId}
+      ),
+      ranked AS (
+        SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+        FROM products
+        WHERE store_id = ${storeId}
+          AND (pdv_code IS NULL OR pdv_code = '')
+      )
+      UPDATE products
+      SET pdv_code = ((SELECT val FROM max_code) + ranked.rn)::text
+      FROM ranked
+      WHERE products.id = ranked.id
+      RETURNING products.id
+    `);
+
+    const filled: number = Array.isArray(result.rows) ? result.rows.length : 0;
+
+    if (filled === 0) {
+      return new Response(
+        JSON.stringify({ filled: 0, message: "Nenhum produto sem código PDV encontrado." }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    waitUntil(request, invalidateStoreCache(storeId));
+
+    return new Response(
+      JSON.stringify({ filled }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  } catch (error) {
+    console.error("backfillPdvCodes error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500, headers: { "content-type": "application/json" },
+    });
+  }
+}

@@ -47,6 +47,8 @@ import {
   updateCustomerHandler,
   validatePublicCouponHandler,
   checkCustomerByPhoneHandler,
+  getNextPdvCodeHandler,
+  backfillPdvCodesHandler,
 } from "./api/crud-handler";
 import { loginPasswordlessHandler, getCustomerOrdersHandler, requestOtpHandler, verifyOtpHandler, patchCustomerProfileHandler } from "./api/customer-handler";
 import { saveBannersHandler } from "./api/banners-handler";
@@ -176,6 +178,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/products/create": createProductHandler,
   "/api/products/update": updateProductHandler,
   "/api/products/delete": deleteProductHandler,
+  "/api/products/backfill-pdv-codes": backfillPdvCodesHandler,
   "/api/categories/create": createCategoryHandler,
   "/api/categories/update": updateCategoryHandler,
   "/api/categories/delete": deleteCategoryHandler,
@@ -230,6 +233,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/store/user": getUserStoreHandler,
+  "/api/products/next-pdv-code": getNextPdvCodeHandler,
   "/api/dashboard/stats": (req, auth) => getDashboardStatsHandler(req, auth),
   "/api/stock/stats": getStockStatsHandler,
   "/api/reports/stats": getReportsStatsHandler,
