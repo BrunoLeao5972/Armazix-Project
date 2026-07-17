@@ -58,7 +58,10 @@ export async function getStoreHandler(request: Request): Promise<Response> {
 
     return new Response(JSON.stringify({ store: publicStoreData }), {
       status: 200,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+      },
     });
   } catch (error) {
     console.error("Error fetching store:", error);

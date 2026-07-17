@@ -28,6 +28,7 @@ export function ProductCard({
 
   const lowStock =
     highlightLowStock &&
+    product.trackStock === true &&
     typeof product.stock === "number" &&
     typeof product.lowStockThreshold === "number" &&
     product.stock <= product.lowStockThreshold;
@@ -123,16 +124,14 @@ export function ProductCard({
     >
       {/* Image Section */}
       <div className="relative aspect-square bg-slate-50 overflow-hidden group">
-        <img
-          src={product.imageUrl || ""}
-          alt={product.name}
-          className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            target.src = "";
-          }}
-        />
-        {!product.imageUrl && (
+        {product.imageUrl ? (
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+        ) : (
           <div className="w-full h-full flex items-center justify-center text-5xl">
             {product.emoji || "📦"}
           </div>

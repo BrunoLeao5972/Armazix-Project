@@ -41,6 +41,18 @@ const SECURITY_HEADERS = {
   "X-Powered-By": "",
 };
 
+// Add short-lived edge cache to public storefront HTML responses.
+// Only applies when the request came from a store subdomain (storeSlug set)
+// and the response is 200 HTML — never caches admin pages or API errors.
+function addStoreCacheHeaders(response: Response, isStorePage: boolean): Response {
+  if (!isStorePage || response.status !== 200) return response;
+  const ct = response.headers.get("content-type") ?? "";
+  if (!ct.includes("text/html")) return response;
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=59");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 // Add security headers to any response
 function addSecurityHeaders(response: Response): Response {
   const newHeaders = new Headers(response.headers);
@@ -203,7 +215,8 @@ export default {
       const handler = await getServerEntry();
       const response = await handler.fetch(resolvedRequest, env, ctx);
       const normalizedResponse = await normalizeCatastrophicSsrResponse(response);
-      return IS_DEV ? normalizedResponse : addSecurityHeaders(normalizedResponse);
+      const cachedResponse = addStoreCacheHeaders(normalizedResponse, !!storeSlug);
+      return IS_DEV ? cachedResponse : addSecurityHeaders(cachedResponse);
     } catch (error) {
       console.error(error);
       return IS_DEV ? brandedErrorResponse() : addSecurityHeaders(brandedErrorResponse());

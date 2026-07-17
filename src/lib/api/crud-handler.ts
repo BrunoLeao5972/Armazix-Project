@@ -188,6 +188,8 @@ export async function listProductsHandler(request: Request): Promise<Response> {
                 rating:            products.rating,
                 reviewCount:       products.reviewCount,
                 allowObservation:  products.allowObservation,
+                variationGroups:   products.variationGroups,
+                trackStock:        products.trackStock,
               })
               .from(products)
               .where(where)
@@ -203,7 +205,11 @@ export async function listProductsHandler(request: Request): Promise<Response> {
       );
 
       return new Response(JSON.stringify(result), {
-        status: 200, headers: { "content-type": "application/json" },
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+        },
       });
     } catch (error) {
       console.error("List products (public) error:", error);
@@ -489,7 +495,11 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
       );
 
       return new Response(JSON.stringify(result), {
-        status: 200, headers: { "content-type": "application/json" },
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+        },
       });
     } catch (error) {
       console.error("List categories (public) error:", error);

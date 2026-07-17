@@ -142,6 +142,7 @@ function calcMargin(price: string, cost: string) {
 }
 
 function getStockStatus(p: Product) {
+  if (!p.trackStock) return "ok"; // estoque não controlado = infinito
   const stock = p.stock ?? 0;
   const threshold = p.lowStockThreshold ?? 5;
   if (stock <= 0) return "out";

@@ -208,7 +208,18 @@ export interface StoreProduct {
   rating: string | null;
   reviewCount: number | null;
   allowObservation: boolean | null;
+  trackStock: boolean | null;
   promoConfig: PromoConfig | null;
+  variationGroups: Array<{
+    id: string;
+    groupName: string;
+    options: Array<{
+      id: string;
+      name: string;
+      price: string;
+      images?: Array<{ url: string; isPrimary: boolean }>;
+    }>;
+  }> | null;
 }
 
 export interface StoreCategory {

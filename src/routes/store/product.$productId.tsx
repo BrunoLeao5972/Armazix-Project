@@ -17,6 +17,13 @@ interface ProductAddition {
   id: string; name: string; price: string; active: boolean | null;
 }
 
+type VarImage  = { url: string; isPrimary: boolean };
+type VarOption = { id: string; name: string; price: string; images?: VarImage[] };
+type VGroup    = { id: string; groupName: string; options: VarOption[] };
+
+const isValidImg = (v: unknown): v is string =>
+  typeof v === "string" && v.trim() !== "";
+
 function ProductPage() {
   const { productId } = Route.useParams();
   const [product,    setProduct]    = useState<StoreProduct | null>(null);
@@ -26,13 +33,13 @@ function ProductPage() {
   const [activeImg,  setActiveImg]  = useState(0);
   const [qty,        setQty]        = useState(1);
   const [obs,        setObs]        = useState("");
-  const [selectedAdditions, setSelectedAdditions] = useState<string[]>([]);
+  const [selectedAdditions,  setSelectedAdditions]  = useState<string[]>([]);
+  const [selectedVariations, setSelectedVariations] = useState<Record<string, string>>({});
 
-  // ── Calculadora de CEP ──────────────────────────────────────────
-  const [cep,         setCep]         = useState("");
-  const [cepLoading,  setCepLoading]  = useState(false);
-  const [cepResult,   setCepResult]   = useState<{ fee: number | null; bairro: string; free: boolean } | null>(null);
-  const [cepError,    setCepError]    = useState("");
+  const [cep,        setCep]        = useState("");
+  const [cepLoading, setCepLoading] = useState(false);
+  const [cepResult,  setCepResult]  = useState<{ fee: number | null; bairro: string; free: boolean } | null>(null);
+  const [cepError,   setCepError]   = useState("");
   const cepInputRef = useRef<HTMLInputElement>(null);
 
   const { store, addToCart, favorites, toggleFavorite } = useStore();
@@ -57,6 +64,20 @@ function ProductPage() {
       .finally(() => setLoading(false));
   }, [productId, store?.id]);
 
+  // Quando uma variação com imagens é selecionada, salta para a primeira posição
+  // da galeria onde as imagens dessa variação ficam (índice 0).
+  useEffect(() => {
+    if (!product) return;
+    const groups = (product.variationGroups ?? []) as VGroup[];
+    for (const g of groups) {
+      const opt = g.options.find(o => o.id === selectedVariations[g.id]);
+      if (opt?.images?.some(img => isValidImg(img.url))) {
+        setActiveImg(0);
+        return;
+      }
+    }
+  }, [selectedVariations, product]);
+
   const toggleAddition = (id: string) =>
     setSelectedAdditions(prev =>
       prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
@@ -76,10 +97,9 @@ function ProductPage() {
       const freeAbove    = store?.freeShippingAbove ? parseFloat(store.freeShippingAbove) : null;
       const rules        = store?.deliveryRules ?? [];
 
-      // Busca regra correspondente ao bairro
       const matched = rules.find(r => r.bairro.toLowerCase().trim() === bairroViaCep);
       const fee     = matched ? matched.taxa : baseFee;
-      const free    = freeAbove !== null ? false : fee === 0; // freeAbove é exibido separado
+      const free    = freeAbove !== null ? false : fee === 0;
 
       setCepResult({ fee, bairro: data.bairro || data.localidade, free });
     } catch {
@@ -110,48 +130,88 @@ function ProductPage() {
     );
   }
 
-  // ── Galeria de imagens ──────────────────────────────────────────
-  const extraImgs = product.images ?? [];
-  const allImages: string[] = [
-    ...(product.imageUrl ? [product.imageUrl] : []),
-    ...extraImgs.filter(img => img !== product.imageUrl),
-  ];
-  const currentImg = allImages[activeImg] ?? null;
+  // ── Variações ─────────────────────────────────────────────────────────────
+  const variationGroups = (product.variationGroups ?? []) as VGroup[];
 
-  // ── Preço (com suporte a promoConfig) ──────────────────────────
+  // ── Galeria de imagens ────────────────────────────────────────────────────
+  // Imagens base do produto (filtragem estrita: sem nulos, strings vazias ou inválidas)
+  const baseImages: string[] = [
+    ...(product.imageUrl ? [product.imageUrl] : []),
+    ...(product.images ?? []),
+  ].filter(isValidImg);
+
+  // Imagens da(s) opção(ões) atualmente selecionadas, em ordem (primária primeiro)
+  const selectedOptionImages: string[] = variationGroups.flatMap(g => {
+    const opt = g.options.find(o => o.id === selectedVariations[g.id]);
+    if (!opt?.images?.length) return [];
+    const sorted = [...opt.images].sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0));
+    return sorted.map(img => img.url).filter(isValidImg);
+  });
+
+  // Galeria final: imagens de variação na frente (para que idx 0 = imagem da cor/opção selecionada),
+  // seguidas pelas imagens base, sem duplicatas.
+  const seen = new Set<string>();
+  const allImages: string[] = [...selectedOptionImages, ...baseImages].filter(url => {
+    if (seen.has(url)) return false;
+    seen.add(url);
+    return true;
+  });
+
+  const safeIdx    = Math.max(0, Math.min(activeImg, Math.max(0, allImages.length - 1)));
+  const currentImg = allImages[safeIdx] ?? null;
+
+  // ── Preço (com suporte a promoConfig) ────────────────────────────────────
   const { effectivePrice, originalPrice, promoActive } = getEffectivePrice(
     product.price, product.promoConfig, "store"
   );
-  const compareAt     = product.compareAtPrice ? parseFloat(product.compareAtPrice) : null;
-  const displayPrice  = promoActive ? effectivePrice : parseFloat(product.price);
-  const displayOld    = promoActive ? originalPrice : compareAt;
-  const discountPct   = displayOld && displayOld > displayPrice
+  const compareAt    = product.compareAtPrice ? parseFloat(product.compareAtPrice) : null;
+  const displayPrice = promoActive ? effectivePrice : parseFloat(product.price);
+  const displayOld   = promoActive ? originalPrice : compareAt;
+  const discountPct  = displayOld && displayOld > displayPrice
     ? Math.round(((displayOld - displayPrice) / displayOld) * 100) : 0;
 
-  // ── Adicionais ─────────────────────────────────────────────────
-  const activeAdditions  = additions.filter(a => a.active !== false);
-  const additionsTotal   = activeAdditions
+  // ── Adicionais ────────────────────────────────────────────────────────────
+  const activeAdditions = additions.filter(a => a.active !== false);
+  const additionsTotal  = activeAdditions
     .filter(a => selectedAdditions.includes(a.id))
     .reduce((s, a) => s + parseFloat(a.price), 0);
-  const totalItem        = (displayPrice + additionsTotal) * qty;
 
-  // ── Estado do estoque ──────────────────────────────────────────
+  // ── Variações (preço total) ───────────────────────────────────────────────
+  const variationsTotal = variationGroups.reduce((sum, g) => {
+    const opt = g.options.find(o => o.id === selectedVariations[g.id]);
+    return sum + (opt ? parseFloat(opt.price || "0") : 0);
+  }, 0);
+  const allGroupsSelected = variationGroups.every(
+    g => g.options.length === 0 || !!selectedVariations[g.id]
+  );
+  const totalItem = (displayPrice + additionsTotal + variationsTotal) * qty;
+
+  // ── Estado do estoque ─────────────────────────────────────────────────────
   const isFavorite = favorites.includes(productId);
-  const outOfStock = product.stock !== null && product.stock !== undefined && product.stock <= 0;
-  const lowStock   = !outOfStock && product.stock !== null && product.stock !== undefined && product.stock <= 5;
+  // trackStock=false significa estoque infinito — nunca bloquear a venda
+  const isTracked  = product.trackStock === true;
+  const outOfStock = isTracked && product.stock !== null && product.stock !== undefined && product.stock <= 0;
+  const lowStock   = isTracked && !outOfStock && product.stock !== null && product.stock !== undefined
+    && typeof product.lowStockThreshold === "number" && product.stock <= product.lowStockThreshold;
 
   const handleAdd = () => {
-    if (outOfStock) return;
+    if (outOfStock || !allGroupsSelected) return;
+    const chosenVariations = variationGroups.flatMap(g => {
+      const opt = g.options.find(o => o.id === selectedVariations[g.id]);
+      return opt ? [{ name: `${g.groupName}: ${opt.name}`, price: parseFloat(opt.price || "0") }] : [];
+    });
     const chosenAdditions = activeAdditions
       .filter(a => selectedAdditions.includes(a.id))
       .map(a => ({ name: a.name, price: parseFloat(a.price) }));
+    const allExtras = [...chosenVariations, ...chosenAdditions];
     addToCart({
-      id: product.id, name: product.name,
-      price: displayPrice + additionsTotal,
-      image: product.imageUrl || null,
-      emoji: product.emoji || "📦",
-      obs:   obs || undefined,
-      additions: chosenAdditions.length > 0 ? chosenAdditions : undefined,
+      id:        product.id,
+      name:      product.name,
+      price:     displayPrice + additionsTotal + variationsTotal,
+      image:     product.imageUrl || null,
+      emoji:     product.emoji || "📦",
+      obs:       obs || undefined,
+      additions: allExtras.length > 0 ? allExtras : undefined,
     });
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
@@ -163,10 +223,9 @@ function ProductPage() {
     }
   };
 
-  // ── Barra de ações (reutilizada em mobile e desktop) ───────────
+  // ── Barra de ações ────────────────────────────────────────────────────────
   const ActionBar = ({ compact = false }: { compact?: boolean }) => (
     <div className={`flex items-center gap-3 ${compact ? "" : "pt-1"}`}>
-      {/* Seletor de quantidade */}
       <div className="flex items-center rounded-xl border border-border/60 overflow-hidden shrink-0">
         <button
           onClick={() => setQty(Math.max(1, qty - 1))}
@@ -185,14 +244,13 @@ function ProductPage() {
         </button>
       </div>
 
-      {/* Botão adicionar */}
       <motion.button
         onClick={handleAdd}
-        disabled={outOfStock}
+        disabled={outOfStock || !allGroupsSelected}
         animate={added ? { scale: [1, 0.96, 1] } : {}}
         transition={{ duration: 0.15 }}
         className={`flex-1 h-11 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all ${
-          outOfStock
+          outOfStock || !allGroupsSelected
             ? "bg-secondary text-muted-foreground cursor-not-allowed"
             : added
               ? "bg-emerald-500 text-white shadow-lg shadow-emerald-200"
@@ -224,21 +282,17 @@ function ProductPage() {
   return (
     <div className="animate-in fade-in duration-300 pb-32 lg:pb-12">
 
-      {/* ── Back — mobile ── */}
+      {/* Back — mobile */}
       <div className="px-4 pt-4 lg:hidden">
         <Link to="/store" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ChevronLeft className="w-4 h-4" /> Voltar
         </Link>
       </div>
 
-      {/* ══════════════════════════════════════════════════════
-          GRID PRINCIPAL — 1 col mobile / 2 col desktop
-      ══════════════════════════════════════════════════════ */}
+      {/* Grid principal */}
       <div className="lg:grid lg:grid-cols-2 lg:gap-10 lg:max-w-5xl lg:mx-auto lg:px-8 lg:pt-8 lg:items-start">
 
-        {/* ╔══════════════════════════════╗
-            ║  COLUNA ESQUERDA — Galeria  ║
-            ╚══════════════════════════════╝ */}
+        {/* ── Coluna esquerda: Galeria ── */}
         <div className="space-y-3 px-4 mt-4 lg:px-0 lg:mt-0 lg:sticky lg:top-6">
 
           {/* Imagem principal */}
@@ -255,13 +309,11 @@ function ProductPage() {
                 <span className="text-8xl select-none">{product.emoji || "📦"}</span>
               </div>
             )}
-            {/* Badge desconto */}
             {discountPct > 0 && (
               <span className="absolute top-3 left-3 text-[11px] font-bold px-2 py-1 rounded-lg bg-red-500 text-white shadow-sm">
                 -{discountPct}%
               </span>
             )}
-            {/* Badge produto */}
             {product.badge && (
               <span className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded-lg bg-primary text-primary-foreground shadow-sm">
                 {product.badge}
@@ -269,7 +321,7 @@ function ProductPage() {
             )}
           </div>
 
-          {/* Thumbnails */}
+          {/* Thumbnails — só renderiza se há mais de 1 imagem válida */}
           {allImages.length > 1 && (
             <div className="flex gap-2 overflow-x-auto no-scrollbar">
               {allImages.map((img, i) => (
@@ -278,7 +330,7 @@ function ProductPage() {
                   onClick={() => setActiveImg(i)}
                   aria-label={`Imagem ${i + 1}`}
                   className={`shrink-0 w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all duration-150 bg-slate-50 ${
-                    activeImg === i
+                    safeIdx === i
                       ? "border-primary shadow-sm shadow-primary/15 scale-[1.04]"
                       : "border-slate-100 hover:border-slate-300"
                   }`}
@@ -294,9 +346,7 @@ function ProductPage() {
           )}
         </div>
 
-        {/* ╔═══════════════════════════════════════╗
-            ║  COLUNA DIREITA — Info e compra       ║
-            ╚═══════════════════════════════════════╝ */}
+        {/* ── Coluna direita: Info e compra ── */}
         <div className="px-4 lg:px-0 mt-5 lg:mt-0 space-y-5">
 
           {/* Back — desktop */}
@@ -346,7 +396,7 @@ function ProductPage() {
             <p className="text-sm text-muted-foreground leading-relaxed">{product.description}</p>
           )}
 
-          {/* ── Bloco de preço ── */}
+          {/* Preço */}
           <div className="flex items-end gap-2.5">
             <span className="text-[2rem] font-black text-emerald-600 tabular-nums leading-none">
               R$ {formatPrice(displayPrice)}
@@ -358,7 +408,7 @@ function ProductPage() {
             )}
           </div>
 
-          {/* ── Badges de apoio ── */}
+          {/* Badges de apoio */}
           <div className="flex flex-wrap gap-2">
             {store?.deliveryEstimate && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-xs font-medium">
@@ -370,7 +420,7 @@ function ProductPage() {
             </span>
           </div>
 
-          {/* ── Calculadora de frete ── */}
+          {/* Calculadora de frete */}
           {store?.deliveryEnabled && (
             <div className="rounded-2xl border border-border/60 bg-secondary/30 p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -385,7 +435,6 @@ function ProductPage() {
                   </p>
                 </div>
               </div>
-
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -416,11 +465,9 @@ function ProductPage() {
                   Calcular
                 </button>
               </div>
-
               {cepError && (
                 <p className="text-xs text-red-500 flex items-center gap-1">⚠ {cepError}</p>
               )}
-
               {cepResult && (
                 <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium ${
                   cepResult.free || cepResult.fee === 0
@@ -441,7 +488,7 @@ function ProductPage() {
             </div>
           )}
 
-          {/* ── Alerta de estoque ── */}
+          {/* Alerta de estoque */}
           {outOfStock ? (
             <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm font-medium">
               <Package className="w-4 h-4 shrink-0" />
@@ -453,7 +500,92 @@ function ProductPage() {
             </div>
           ) : null}
 
-          {/* ── Adicionais ── */}
+          {/* ── Variações ── */}
+          {variationGroups.length > 0 && (
+            <div className="space-y-4">
+              {variationGroups.map(group => {
+                // Verifica se alguma opção deste grupo tem imagem válida
+                const groupHasImages = group.options.some(
+                  o => o.images?.some(img => isValidImg(img.url))
+                );
+                return (
+                  <div key={group.id}>
+                    <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                      {group.groupName} <span className="text-destructive">*</span>
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {group.options.map(option => {
+                        const sel      = selectedVariations[group.id] === option.id;
+                        const optPrice = parseFloat(option.price || "0");
+
+                        // Determina thumbnail: primeira imagem válida (primária preferida)
+                        const validImgs = (option.images ?? []).filter(img => isValidImg(img.url));
+                        const thumb     = (validImgs.find(i => i.isPrimary) ?? validImgs[0])?.url;
+                        const hasThumb  = groupHasImages && isValidImg(thumb);
+
+                        return hasThumb ? (
+                          // Swatch com imagem (ex: variação de cor)
+                          <button
+                            key={option.id}
+                            onClick={() => setSelectedVariations(prev => ({ ...prev, [group.id]: option.id }))}
+                            title={option.name}
+                            className={`relative w-[72px] h-[72px] rounded-xl overflow-hidden border-2 transition-all duration-150 ${
+                              sel
+                                ? "border-primary scale-[1.06] shadow-sm shadow-primary/20"
+                                : "border-border/60 hover:border-border"
+                            }`}
+                          >
+                            <img
+                              src={thumb}
+                              alt={option.name}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className={`absolute bottom-0 inset-x-0 text-[9px] font-bold text-center py-0.5 px-1 truncate leading-tight ${
+                              sel
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-black/50 text-white"
+                            }`}>
+                              {option.name}
+                            </div>
+                            {optPrice > 0 && (
+                              <div className="absolute top-0.5 right-0.5 bg-emerald-500 text-white text-[8px] font-bold px-1 rounded leading-tight">
+                                +{formatPrice(optPrice)}
+                              </div>
+                            )}
+                          </button>
+                        ) : (
+                          // Pill de texto (ex: variação de tamanho)
+                          <button
+                            key={option.id}
+                            onClick={() => setSelectedVariations(prev => ({ ...prev, [group.id]: option.id }))}
+                            className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all ${
+                              sel
+                                ? "border-primary bg-primary/5 text-primary"
+                                : "border-border/60 text-foreground hover:border-border"
+                            }`}
+                          >
+                            {option.name}
+                            {optPrice > 0 && (
+                              <span className="ml-1 text-[11px] font-semibold text-emerald-600">
+                                +R$ {formatPrice(optPrice)}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              {!allGroupsSelected && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  ⚠ Selecione uma opção para cada variação antes de adicionar ao carrinho
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Adicionais */}
           {activeAdditions.length > 0 && (
             <div>
               <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Adicionais</p>
@@ -486,7 +618,7 @@ function ProductPage() {
             </div>
           )}
 
-          {/* ── Observação ── */}
+          {/* Observação */}
           {product.allowObservation === true && (
             <div>
               <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block mb-1.5">
@@ -503,16 +635,14 @@ function ProductPage() {
             </div>
           )}
 
-          {/* ── Barra de ações DESKTOP (inline, dentro da coluna) ── */}
+          {/* Barra de ações — desktop (inline) */}
           <div className="hidden lg:block">
             <ActionBar />
           </div>
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════
-          BARRA DE AÇÕES MOBILE — sticky no rodapé
-      ══════════════════════════════════════════════════════ */}
+      {/* Barra de ações — mobile (sticky no rodapé) */}
       <div className="lg:hidden fixed bottom-16 left-0 right-0 bg-background/95 backdrop-blur-md border-t border-border/40 px-4 py-3 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
         <ActionBar compact />
       </div>
