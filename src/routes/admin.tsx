@@ -45,6 +45,7 @@ import {
   BarChart2,
   Lock,
   MonitorCheck,
+  Settings2,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -139,6 +140,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "DRE",                  icon: BarChart2,   href: "/admin/financial/dre"         },
       { label: "Históricos",           icon: History,     href: "/admin/financial/history"     },
       { label: "Sessões de Caixa",     icon: Lock,        href: "/admin/financial/sessions"    },
+      { label: "Gerais",               icon: Settings2,   href: "/admin/financial/settings"    },
     ],
   },
   {

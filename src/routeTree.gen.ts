@@ -56,6 +56,7 @@ import { Route as AdminStockEntriesRouteImport } from './routes/admin/stock/entr
 import { Route as AdminStockBalanceteRouteImport } from './routes/admin/stock/balancete'
 import { Route as AdminStockBalanceRouteImport } from './routes/admin/stock/balance'
 import { Route as AdminStockAdjustmentsRouteImport } from './routes/admin/stock/adjustments'
+import { Route as AdminFinancialSettingsRouteImport } from './routes/admin/financial/settings'
 import { Route as AdminFinancialSessionsRouteImport } from './routes/admin/financial/sessions'
 import { Route as AdminFinancialReceivablesRouteImport } from './routes/admin/financial/receivables'
 import { Route as AdminFinancialPayablesRouteImport } from './routes/admin/financial/payables'
@@ -299,6 +300,11 @@ const AdminStockAdjustmentsRoute = AdminStockAdjustmentsRouteImport.update({
   path: '/adjustments',
   getParentRoute: () => AdminStockRoute,
 } as any)
+const AdminFinancialSettingsRoute = AdminFinancialSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminFinancialRoute,
+} as any)
 const AdminFinancialSessionsRoute = AdminFinancialSessionsRouteImport.update({
   id: '/sessions',
   path: '/sessions',
@@ -379,6 +385,7 @@ export interface FileRoutesByFullPath {
   '/admin/financial/payables': typeof AdminFinancialPayablesRoute
   '/admin/financial/receivables': typeof AdminFinancialReceivablesRoute
   '/admin/financial/sessions': typeof AdminFinancialSessionsRoute
+  '/admin/financial/settings': typeof AdminFinancialSettingsRoute
   '/admin/stock/adjustments': typeof AdminStockAdjustmentsRoute
   '/admin/stock/balance': typeof AdminStockBalanceRoute
   '/admin/stock/balancete': typeof AdminStockBalanceteRoute
@@ -431,6 +438,7 @@ export interface FileRoutesByTo {
   '/admin/financial/payables': typeof AdminFinancialPayablesRoute
   '/admin/financial/receivables': typeof AdminFinancialReceivablesRoute
   '/admin/financial/sessions': typeof AdminFinancialSessionsRoute
+  '/admin/financial/settings': typeof AdminFinancialSettingsRoute
   '/admin/stock/adjustments': typeof AdminStockAdjustmentsRoute
   '/admin/stock/balance': typeof AdminStockBalanceRoute
   '/admin/stock/balancete': typeof AdminStockBalanceteRoute
@@ -488,6 +496,7 @@ export interface FileRoutesById {
   '/admin/financial/payables': typeof AdminFinancialPayablesRoute
   '/admin/financial/receivables': typeof AdminFinancialReceivablesRoute
   '/admin/financial/sessions': typeof AdminFinancialSessionsRoute
+  '/admin/financial/settings': typeof AdminFinancialSettingsRoute
   '/admin/stock/adjustments': typeof AdminStockAdjustmentsRoute
   '/admin/stock/balance': typeof AdminStockBalanceRoute
   '/admin/stock/balancete': typeof AdminStockBalanceteRoute
@@ -546,6 +555,7 @@ export interface FileRouteTypes {
     | '/admin/financial/payables'
     | '/admin/financial/receivables'
     | '/admin/financial/sessions'
+    | '/admin/financial/settings'
     | '/admin/stock/adjustments'
     | '/admin/stock/balance'
     | '/admin/stock/balancete'
@@ -598,6 +608,7 @@ export interface FileRouteTypes {
     | '/admin/financial/payables'
     | '/admin/financial/receivables'
     | '/admin/financial/sessions'
+    | '/admin/financial/settings'
     | '/admin/stock/adjustments'
     | '/admin/stock/balance'
     | '/admin/stock/balancete'
@@ -654,6 +665,7 @@ export interface FileRouteTypes {
     | '/admin/financial/payables'
     | '/admin/financial/receivables'
     | '/admin/financial/sessions'
+    | '/admin/financial/settings'
     | '/admin/stock/adjustments'
     | '/admin/stock/balance'
     | '/admin/stock/balancete'
@@ -1011,6 +1023,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminStockAdjustmentsRouteImport
       parentRoute: typeof AdminStockRoute
     }
+    '/admin/financial/settings': {
+      id: '/admin/financial/settings'
+      path: '/settings'
+      fullPath: '/admin/financial/settings'
+      preLoaderRoute: typeof AdminFinancialSettingsRouteImport
+      parentRoute: typeof AdminFinancialRoute
+    }
     '/admin/financial/sessions': {
       id: '/admin/financial/sessions'
       path: '/sessions'
@@ -1071,6 +1090,7 @@ interface AdminFinancialRouteChildren {
   AdminFinancialPayablesRoute: typeof AdminFinancialPayablesRoute
   AdminFinancialReceivablesRoute: typeof AdminFinancialReceivablesRoute
   AdminFinancialSessionsRoute: typeof AdminFinancialSessionsRoute
+  AdminFinancialSettingsRoute: typeof AdminFinancialSettingsRoute
   AdminFinancialIndexRoute: typeof AdminFinancialIndexRoute
 }
 
@@ -1082,6 +1102,7 @@ const AdminFinancialRouteChildren: AdminFinancialRouteChildren = {
   AdminFinancialPayablesRoute: AdminFinancialPayablesRoute,
   AdminFinancialReceivablesRoute: AdminFinancialReceivablesRoute,
   AdminFinancialSessionsRoute: AdminFinancialSessionsRoute,
+  AdminFinancialSettingsRoute: AdminFinancialSettingsRoute,
   AdminFinancialIndexRoute: AdminFinancialIndexRoute,
 }
 

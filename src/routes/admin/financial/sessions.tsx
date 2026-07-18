@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SecaoCaixaSessoes } from "@/routes/admin/financial";
+import { SecaoCaixaSessoes } from "./-sec-sessions";
 
 export const Route = createFileRoute("/admin/financial/sessions")({
   component: SecaoCaixaSessoes,

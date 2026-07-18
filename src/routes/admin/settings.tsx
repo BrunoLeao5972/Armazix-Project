@@ -60,8 +60,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ImageUploadCrop } from "@/components/armazix/ImageUploadCrop";
-import { PaymentMethodEditor } from "@/components/admin/PaymentMethodEditor";
-import type { PaymentMethodConfig } from "@/lib/store-context";
 import { DeliveryPricingConfig, DEFAULT_DELIVERY_MODEL_CONFIG } from "@/components/admin/DeliveryPricingConfig";
 import type { DeliveryModelConfig } from "@/components/admin/DeliveryPricingConfig";
 import { PermissionsTab } from "@/components/admin/PermissionsTab";
@@ -119,7 +117,6 @@ const NAV_ITEMS = [
   { value: "geral",          label: "Geral",           icon: Store },
   { value: "horarios",       label: "Horários",        icon: Clock },
   { value: "personalizacao", label: "Personalização",  icon: Palette },
-  { value: "pagamentos",     label: "Pagamentos",      icon: CreditCard },
   { value: "entrega",        label: "Entrega",         icon: Truck },
   { value: "permissoes",     label: "Permissões",      icon: Shield },
   { value: "perfil",         label: "Perfil",          icon: User },
@@ -186,21 +183,6 @@ function SettingsPage() {
   const [hoursSaving, setHoursSaving] = useState(false);
   const [hoursSuccess, setHoursSuccess] = useState(false);
 
-  // Mercado Pago states
-
-  // Payment methods config
-  const [paymentMethodsConfig, setPaymentMethodsConfig] = useState<PaymentMethodConfig[]>([
-    { key: "cash",        label: "Dinheiro",          enabled: true,  maxInstallments: 1,  payAtDelivery: true,  especie: "dinheiro"                                  },
-    { key: "pix",         label: "PIX",               enabled: true,  maxInstallments: 1,  payAtDelivery: true,  especie: "pix"                                       },
-    { key: "card",        label: "Cartão de Crédito", enabled: true,  maxInstallments: 12, payAtDelivery: true,  especie: "cartao",      operacao: "credito"           },
-    { key: "debit",       label: "Cartão de Débito",  enabled: true,  maxInstallments: 1,  payAtDelivery: true,  especie: "cartao",      operacao: "debito"            },
-    { key: "mercadopago", label: "Mercado Pago",       enabled: false, maxInstallments: 1,                       especie: "mercadopago"                               },
-  ]);
-  const [deliveryPaymentEnabled, setDeliveryPaymentEnabled] = useState(true);
-  const [newMethodLabel, setNewMethodLabel] = useState("");
-  const [pmcSaving, setPmcSaving] = useState(false);
-  const [pmcSuccess, setPmcSuccess] = useState(false);
-
   // User profile states
   const [profileName, setProfileName] = useState("");
   const [profileAvatar, setProfileAvatar] = useState("");
@@ -265,19 +247,6 @@ function SettingsPage() {
     }
   };
 
-  const savePaymentConfig = async () => {
-    if (!store) return;
-    setPmcSaving(true);
-    setPmcSuccess(false);
-    try {
-      const res = await api.post("/api/store/update", { paymentMethodsConfig, deliveryPaymentEnabled });
-      if (res.ok) {
-        setPmcSuccess(true);
-        setTimeout(() => setPmcSuccess(false), 3000);
-      }
-    } catch {} finally { setPmcSaving(false); }
-  };
-
   useEffect(() => {
     const storeId = localStorage.getItem("storeId");
     if (storeId) {
@@ -326,8 +295,6 @@ function SettingsPage() {
         setHighlightLowStock(data.store.highlightLowStock === true);
         setAllowNegativeStock(data.store.allowNegativeStock !== false);
         setLayoutType((data.store.layoutType as 'grid' | 'list') || 'grid');
-        if (data.store.paymentMethodsConfig?.length) setPaymentMethodsConfig(data.store.paymentMethodsConfig);
-        if (data.store.deliveryPaymentEnabled !== undefined) setDeliveryPaymentEnabled(data.store.deliveryPaymentEnabled !== false);
         if (data.store.freeShippingAbove != null) {
           setFreeShippingEnabled(true);
           setFreeShippingAbove(data.store.freeShippingAbove);
@@ -1227,34 +1194,6 @@ function SettingsPage() {
               >
                 {vitrineSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar personalização"}
               </Button>
-            </CardContent>
-          </Card>
-
-        </TabsContent>
-
-        {/* ── Formas de Pagamento ────────────────────────────────────── */}
-        <TabsContent value="pagamentos" className="mt-0 space-y-6">
-
-          <Card className="rounded-2xl border-border/50 shadow-soft">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <CreditCard className="w-4 h-4" />
-                Formas de Pagamento
-              </CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Configure espécie, operação, taxas de parcelamento, repasse ao cliente e dados do PIX.
-              </p>
-            </CardHeader>
-            <CardContent className="pb-5">
-              <PaymentMethodEditor
-                methods={paymentMethodsConfig}
-                deliveryPaymentEnabled={deliveryPaymentEnabled}
-                saving={pmcSaving}
-                success={pmcSuccess}
-                onMethodsChange={setPaymentMethodsConfig}
-                onDeliveryPaymentChange={setDeliveryPaymentEnabled}
-                onSave={savePaymentConfig}
-              />
             </CardContent>
           </Card>
 
