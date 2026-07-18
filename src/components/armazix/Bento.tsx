@@ -4,10 +4,10 @@ export function Bento() {
   return (
     <section id="funcionalidades" className="py-16 lg:py-24 bg-secondary/40">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="max-w-2xl mb-12">
+        <div className="text-center max-w-2xl mx-auto mb-12">
           <span className="text-sm font-semibold text-primary">Funcionalidades</span>
           <h2 className="mt-2 text-3xl sm:text-4xl font-bold tracking-tight">
-            Tudo o que você precisa para organizar e vender melhor.
+            Tudo o que você precisa para organizar e vender melhor
           </h2>
         </div>
 
@@ -22,7 +22,7 @@ export function Bento() {
               <h3 className="mt-5 text-2xl lg:text-3xl font-bold">Gestão em Tempo Real</h3>
               <p className="mt-3 text-muted-foreground max-w-md">
                 Acompanhe vendas, produtos e estoque em um painel único, com a clareza
-                que faltava na sua operação.
+                que faltava na sua operação
               </p>
             </div>
             <ChartPreview />
@@ -34,7 +34,7 @@ export function Bento() {
             <div>
               <h3 className="text-xl font-bold">Integração com WhatsApp</h3>
               <p className="text-sm opacity-90 mt-1">
-                Receba pedidos e fale com seus clientes direto pelo canal que eles já usam.
+                Receba pedidos e fale com seus clientes direto pelo canal que eles já usam
               </p>
             </div>
           </div>
@@ -47,7 +47,7 @@ export function Bento() {
             <div>
               <h3 className="text-xl font-bold">Controle de Estoque</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Atualização automática a cada venda. Saia das planilhas de uma vez por todas.
+                Atualização automática a cada venda — saia das planilhas de uma vez por todas
               </p>
             </div>
           </div>
@@ -58,7 +58,7 @@ export function Bento() {
             <div>
               <h3 className="text-xl font-bold">Alertas de Estoque Baixo</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Saiba na hora certa quais produtos precisam ser repostos.
+                Saiba na hora certa quais produtos precisam ser repostos
               </p>
             </div>
           </div>
@@ -70,10 +70,10 @@ export function Bento() {
                 <LineChart className="w-3.5 h-3.5" />
                 Decisões com dados
               </div>
-              <h3 className="mt-3 text-2xl font-bold">Visão clara do seu negócio.</h3>
+              <h3 className="mt-3 text-2xl font-bold">Visão clara do seu negócio</h3>
               <p className="text-sm text-background/70 mt-1">
                 Relatórios diretos ao ponto para entender o que está vendendo, o que parou
-                e onde focar a sua próxima ação.
+                e onde focar a sua próxima ação
               </p>
             </div>
           </div>

@@ -10,10 +10,10 @@ export function CTA() {
           <div className="relative max-w-2xl mx-auto">
             <h2 className="text-3xl sm:text-5xl font-bold tracking-tight">
               Seu negócio merece o{" "}
-              <span className="text-gradient-primary">próximo nível.</span>
+              <span className="text-gradient-primary">próximo nível</span>
             </h2>
             <p className="mt-5 text-background/70 text-lg">
-              Comece grátis hoje. Em 2 minutos sua loja está no ar.
+              Comece grátis hoje — em 2 minutos sua loja está no ar
             </p>
             <div className="mt-8 flex justify-center">
               <a
@@ -25,7 +25,7 @@ export function CTA() {
               </a>
             </div>
             <p className="mt-4 text-xs text-background/50">
-              Planos recorrentes com cartão de crédito ou mensalidades via PIX. Sem taxas de adesão.
+              Planos recorrentes com cartão de crédito ou mensalidades via PIX — sem taxas de adesão
             </p>
           </div>
         </div>

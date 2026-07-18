@@ -7,11 +7,11 @@ export function Reports() {
         <div className="max-w-2xl mb-12">
           <span className="text-sm font-semibold text-primary">Relatórios</span>
           <h2 className="mt-2 text-3xl sm:text-4xl font-bold tracking-tight">
-            Decisões com clareza, não com achismo.
+            Decisões com clareza, não com achismo
           </h2>
           <p className="mt-3 text-muted-foreground">
             Visualize o que importa: vendas, produtos, estoque e desempenho — em um painel
-            simples e direto.
+            simples e direto
           </p>
         </div>
 

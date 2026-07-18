@@ -11,7 +11,7 @@ export function Footer() {
               ARMAZIX
             </a>
             <p className="mt-4 text-sm text-muted-foreground max-w-sm">
-              O ecossistema brasileiro para lojas digitais e marketplaces locais.
+              O ecossistema brasileiro para lojas digitais e marketplaces locais
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <span className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-secondary text-foreground/80">

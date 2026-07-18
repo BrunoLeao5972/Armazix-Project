@@ -20,11 +20,11 @@ export function Hero() {
           </span>
           <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
             Sua loja digital com a{" "}
-            <span className="text-gradient-primary">velocidade de um clique.</span>
+            <span className="text-gradient-primary">velocidade de um clique</span>
           </h1>
           <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
-            O ecossistema brasileiro para lojas digitais e marketplaces locais.
-            Pensado por quem vive o varejo, desenvolvido para quem quer crescer.
+            O ecossistema brasileiro para lojas digitais e marketplaces locais
+            — pensado por quem vive o varejo, desenvolvido para quem quer crescer
           </p>
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
             <a
@@ -43,7 +43,7 @@ export function Hero() {
             </div>
             <span>
               <strong className="text-foreground">4,8/5</strong> por mais de{" "}
-              <strong className="text-foreground">300 lojistas</strong>.
+              <strong className="text-foreground">300 lojistas</strong>
             </span>
           </div>
         </motion.div>

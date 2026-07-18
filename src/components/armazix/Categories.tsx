@@ -64,7 +64,7 @@ export function Categories() {
             Feita para qualquer tipo de negócio
           </h2>
           <p className="text-muted-foreground mt-2 max-w-md mx-auto">
-            Organize seu catálogo e comece a vender em segundos.
+            Organize seu catálogo e comece a vender em segundos
           </p>
         </div>
 

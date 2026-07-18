@@ -18,12 +18,12 @@ const plans: Plan[] = [
   {
     name: "Experimente",
     badge: "",
-    tagline: "Sem necessidade de cartão de crédito.",
+    tagline: "Sem necessidade de cartão de crédito",
     price: "R$ 0",
     period: "/ 14 dias",
     capacity: "Todas as funcionalidades",
     description:
-      "Teste todas as funcionalidades sem compromisso e configure sua loja em minutos.",
+      "Teste todas as funcionalidades sem compromisso e configure sua loja em minutos",
     features: [
       "Acesso completo por 14 dias",
       "Integração com WhatsApp",
@@ -42,7 +42,7 @@ const plans: Plan[] = [
     period: "/mês",
     capacity: "Até 20 produtos",
     description:
-      "Ideal para pequenos lojistas que precisam ganhar tempo, evitar erros no estoque e profissionalizar a operação.",
+      "Ideal para pequenos lojistas que precisam ganhar tempo, evitar erros no estoque e profissionalizar a operação",
     features: [
       "Catálogo com até 20 produtos",
       "Integração com WhatsApp",
@@ -52,7 +52,7 @@ const plans: Plan[] = [
       "Suporte normal",
     ],
     cta: "Assinar agora",
-    footer: "Menos de R$ 2,70 por dia para profissionalizar o seu delivery.",
+    footer: "Menos de R$ 2,70 por dia para profissionalizar o seu delivery",
   },
   {
     name: "Pro",
@@ -62,7 +62,7 @@ const plans: Plan[] = [
     period: "/mês",
     capacity: "Até 70 produtos",
     description:
-      "O plano principal para quem quer ter controle total do negócio, evitar perder vendas e crescer com previsibilidade.",
+      "O plano principal para quem quer ter controle total do negócio, evitar perder vendas e crescer com previsibilidade",
     features: [
       "Catálogo com até 70 produtos",
       "Integração com WhatsApp",
@@ -74,7 +74,7 @@ const plans: Plan[] = [
       "Suporte prioritário",
     ],
     cta: "Assinar agora",
-    footer: "Melhor equilíbrio entre preço, automação e controle.",
+    footer: "Melhor equilíbrio entre preço, automação e controle",
     highlighted: true,
   },
   {
@@ -85,7 +85,7 @@ const plans: Plan[] = [
     period: "/mês",
     capacity: "Produtos ilimitados",
     description:
-      "Para operações mais robustas que precisam de liberdade total, equipe colaborando e visão completa do negócio.",
+      "Para operações mais robustas que precisam de liberdade total, equipe colaborando e visão completa do negócio",
     features: [
       "Produtos ilimitados",
       "Integração com WhatsApp",
@@ -97,7 +97,7 @@ const plans: Plan[] = [
       "Suporte prioritário VIP",
     ],
     cta: "Assinar agora",
-    footer: "A estrutura definitiva para quem vende muito todos os dias.",
+    footer: "A estrutura definitiva para quem vende muito todos os dias",
   },
 ];
 
@@ -108,11 +108,11 @@ export function Pricing() {
         <div className="max-w-2xl mb-12">
           <span className="text-sm font-semibold text-primary">Preços</span>
           <h2 className="mt-2 text-3xl sm:text-4xl font-bold tracking-tight">
-            Um plano para cada estágio do seu negócio.
+            Um plano para cada estágio do seu negócio
           </h2>
           <p className="mt-3 text-muted-foreground">
             Comece grátis e evolua conforme sua operação cresce. Sem fidelidade, sem
-            surpresas.
+            surpresas
           </p>
         </div>
 

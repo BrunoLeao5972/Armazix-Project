@@ -3,8 +3,11 @@ import { Navbar } from "@/components/armazix/Navbar";
 import { Hero } from "@/components/armazix/Hero";
 import { Categories } from "@/components/armazix/Categories";
 import { Bento } from "@/components/armazix/Bento";
+import { Modules } from "@/components/armazix/Modules";
+import { Features } from "@/components/armazix/Features";
 import { Reports } from "@/components/armazix/Reports";
 import { Steps } from "@/components/armazix/Steps";
+import { FAQ } from "@/components/armazix/FAQ";
 import { Pricing } from "@/components/armazix/Pricing";
 import { CTA } from "@/components/armazix/CTA";
 import { Footer } from "@/components/armazix/Footer";
@@ -58,8 +61,11 @@ function Index() {
         <Hero />
         <Categories />
         <Bento />
+        <Modules />
+        <Features />
         <Reports />
         <Steps />
+        <FAQ />
         <Pricing />
         <CTA />
       </main>

@@ -667,7 +667,7 @@ export async function listStockProductBalancesHandler(
       where: and(...conds),
       with: {
         product: {
-          columns: { id: true, name: true, sku: true, costPrice: true, price: true, unit: true, lowStockThreshold: true, active: true },
+          columns: { id: true, name: true, sku: true, costPrice: true, price: true, unit: true, lowStockThreshold: true, active: true, trackStock: true, pdvCode: true, categoryId: true },
         },
       },
     });

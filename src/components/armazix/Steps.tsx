@@ -4,17 +4,17 @@ const steps = [
   {
     icon: UserPlus,
     title: "Cadastre",
-    desc: "Crie sua conta em 30 segundos. Sem cartão, sem burocracia.",
+    desc: "Crie sua conta em 30 segundos — sem cartão, sem burocracia",
   },
   {
     icon: LayoutGrid,
     title: "Personalize",
-    desc: "Arraste e solte seus produtos, fotos e cores. Pronto para vender.",
+    desc: "Arraste e solte seus produtos, fotos e cores — pronto para vender",
   },
   {
     icon: Wallet,
     title: "Venda",
-    desc: "Receba pagamentos e gerencie entregas direto pelo celular.",
+    desc: "Receba pagamentos e gerencie entregas direto pelo celular",
   },
 ];
 
@@ -25,7 +25,7 @@ export function Steps() {
         <div className="max-w-2xl mb-12">
           <span className="text-sm font-semibold text-primary">Como funciona</span>
           <h2 className="mt-2 text-3xl sm:text-4xl font-bold tracking-tight">
-            Em 3 passos você está vendendo.
+            Em 3 passos você está vendendo
           </h2>
         </div>
         <ol className="grid md:grid-cols-3 gap-6">
