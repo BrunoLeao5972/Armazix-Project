@@ -14,13 +14,21 @@ import { Switch }    from "@/components/ui/switch";
 import { Badge }     from "@/components/ui/badge";
 import {
   Plus, Settings2, Trash2, Upload, X, Info, Loader2, ChevronRight,
-  CreditCard, Banknote, QrCode, Smartphone, FileText,
+  CreditCard, Banknote, QrCode, Smartphone, FileText, ReceiptText,
   CheckCircle2, AlertTriangle, SlidersHorizontal, KeyRound, Eye, EyeOff,
+  Zap, Link2, Unlink,
 } from "lucide-react";
 import type {
   PaymentMethodConfig, EspeciePagamento, OperacaoCartao,
   TipoChavePix, TaxaParcela,
 } from "@/lib/store-context";
+import { Checkbox } from "@/components/ui/checkbox";
+
+export interface PaymentPlanOption {
+  id: string;
+  nome: string;
+  tipo: "avista" | "dia" | "mes";
+}
 
 // ─── Lookup tables ────────────────────────────────────────────────────────────
 
@@ -33,6 +41,7 @@ const ESPECIES: {
   { value: "boleto",      label: "Boleto",       icon: FileText,   color: "text-orange-600",  bg: "bg-orange-50 dark:bg-orange-950/40"  },
   { value: "pix",         label: "PIX",          icon: QrCode,     color: "text-cyan-600",    bg: "bg-cyan-50 dark:bg-cyan-950/40"      },
   { value: "mercadopago", label: "Mercado Pago", icon: Smartphone, color: "text-indigo-600",  bg: "bg-indigo-50 dark:bg-indigo-950/40"  },
+  { value: "appmax",      label: "Appmax",       icon: Zap,        color: "text-violet-600",  bg: "bg-violet-50 dark:bg-violet-950/40"  },
   { value: "outros",      label: "Outros",       icon: CreditCard, color: "text-slate-500",   bg: "bg-slate-100 dark:bg-slate-800/60"   },
 ];
 
@@ -113,12 +122,19 @@ function maskPixKey(raw: string, type: TipoChavePix): string {
 // ─── Component props ──────────────────────────────────────────────────────────
 interface PaymentMethodEditorProps {
   methods:                  PaymentMethodConfig[];
+  plans:                    PaymentPlanOption[];
   deliveryPaymentEnabled:   boolean;
   saving:                   boolean;
   success:                  boolean;
   onMethodsChange:          (m: PaymentMethodConfig[]) => void;
   onDeliveryPaymentChange:  (v: boolean) => void;
   onSave:                   () => void;
+  // ── Appmax — conexão via instalação de app (não é um token colado manualmente) ──
+  appmaxConnected:    boolean;
+  appmaxConnectedAt:  string | null;
+  appmaxConnecting:   boolean;
+  onAppmaxConnect:    () => void;
+  onAppmaxDisconnect: () => void;
 }
 
 // ─── Section header ───────────────────────────────────────────────────────────
@@ -140,12 +156,18 @@ function SectionHeader({ icon: Icon, title }: { icon: React.ElementType; title: 
 // ─────────────────────────────────────────────────────────────────────────────
 export function PaymentMethodEditor({
   methods,
+  plans,
   deliveryPaymentEnabled,
   saving,
   success,
   onMethodsChange,
   onDeliveryPaymentChange,
   onSave,
+  appmaxConnected,
+  appmaxConnectedAt,
+  appmaxConnecting,
+  onAppmaxConnect,
+  onAppmaxDisconnect,
 }: PaymentMethodEditorProps) {
 
   // ── Sheet state ────────────────────────────────────────────────────────────
@@ -182,9 +204,21 @@ export function PaymentMethodEditor({
       especie: "outros", operacao: null,
       maxInstallments: 1, payAtDelivery: true,
       parcelamentoAtivo: false, taxasPorParcela: [], repassarTaxaCliente: false,
+      allowedPlanIds: [],
     });
     setEditingIdx(null);
     setSheetOpen(true);
+  };
+
+  const togglePlan = (planId: string, checked: boolean) => {
+    setLocalMethod(prev => {
+      if (!prev) return prev;
+      const current = prev.allowedPlanIds ?? [];
+      const next = checked
+        ? [...current, planId]
+        : current.filter(id => id !== planId);
+      return { ...prev, allowedPlanIds: next };
+    });
   };
 
   const closeSheet = () => { setSheetOpen(false); setLocalMethod(null); };
@@ -264,6 +298,7 @@ export function PaymentMethodEditor({
   const isCartaoCredito  = localMethod?.especie === "cartao" && localMethod?.operacao === "credito";
   const isPix            = localMethod?.especie === "pix";
   const isMercadoPago    = localMethod?.especie === "mercadopago";
+  const isAppmax         = localMethod?.especie === "appmax";
   const showParcelas     = isCartaoCredito && localMethod?.parcelamentoAtivo;
 
   const configuredCount = localMethod?.taxasPorParcela?.filter(t => t.taxa > 0).length ?? 0;
@@ -322,6 +357,14 @@ export function PaymentMethodEditor({
                   )}
                   {m.key === "mercadopago" && (
                     <span className="text-[10px] text-muted-foreground">Online — requer credenciais</span>
+                  )}
+                  {m.key === "appmax" && (
+                    <>
+                      <span className="text-[10px] text-muted-foreground">·</span>
+                      <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                        <AlertTriangle className="w-2.5 h-2.5" /> Em desenvolvimento
+                      </span>
+                    </>
                   )}
                 </div>
               </div>
@@ -510,7 +553,7 @@ export function PaymentMethodEditor({
                       </div>
                     )}
 
-                    {!isMercadoPago && (
+                    {!isMercadoPago && !isAppmax && (
                       <div className="flex items-center justify-between h-10 px-3 rounded-xl border border-border/50 bg-muted/30">
                         <span className="text-sm">Aceita pagamento na entrega</span>
                         <Switch
@@ -521,6 +564,37 @@ export function PaymentMethodEditor({
                     )}
                   </div>
                 </div>
+
+                {/* ── Seção 2.5: Planos de Pagamento Permitidos ───────────
+                    Formas intermediadas por gateway externo (Mercado Pago,
+                    Appmax) não escolhem plano aqui — o parcelamento é
+                    decidido no checkout do próprio gateway. O Armazix só
+                    recebe de volta se foi pago e em quantas parcelas. */}
+                {!isMercadoPago && !isAppmax && (
+                  <div>
+                    <SectionHeader icon={ReceiptText} title="Planos de Pagamento Permitidos" />
+                    {plans.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Nenhum plano cadastrado ainda. Crie planos em Gerais → Planos de Pagamento.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {plans.map(plan => {
+                          const checked = (localMethod.allowedPlanIds ?? []).includes(plan.id);
+                          return (
+                            <label
+                              key={plan.id}
+                              className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-border/50 bg-muted/20 hover:bg-muted/40 cursor-pointer transition-colors"
+                            >
+                              <Checkbox checked={checked} onCheckedChange={v => togglePlan(plan.id, v === true)} />
+                              <span className="text-sm">{plan.nome}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* ── Seção 3: Credenciais Mercado Pago ─────────────────── */}
                 {isMercadoPago && (
@@ -602,6 +676,62 @@ export function PaymentMethodEditor({
                           </button>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Seção 3.5: Conexão Appmax ─────────────────────────── */}
+                {isAppmax && (
+                  <div>
+                    <SectionHeader icon={Zap} title="Conexão com a Appmax" />
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/20 p-3 flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Em desenvolvimento</p>
+                          <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                            Essa integração ainda está em homologação com a Appmax e a conexão está
+                            temporariamente indisponível. Em breve você poderá ativá-la por aqui.
+                          </p>
+                        </div>
+                      </div>
+
+                      {appmaxConnected ? (
+                        <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/60 dark:bg-emerald-950/20">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center shrink-0">
+                              <Link2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Conectado</p>
+                              {appmaxConnectedAt && (
+                                <p className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">
+                                  desde {new Date(appmaxConnectedAt).toLocaleDateString("pt-BR")}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={onAppmaxDisconnect}
+                            className="h-8 text-xs gap-1.5"
+                          >
+                            <Unlink className="w-3 h-3" /> Desconectar
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          type="button"
+                          disabled
+                          title="Em desenvolvimento — disponível em breve"
+                          variant="outline"
+                          className="w-full h-10 rounded-xl gap-2"
+                        >
+                          <Link2 className="w-4 h-4" /> Conectar com Appmax
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}

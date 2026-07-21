@@ -50,6 +50,20 @@ export const stores = pgTable("stores", {
   layoutType: varchar("layout_type", { length: 10 }).default("grid"),
   mpAccessToken: text("mp_access_token"),
   mpPublicKey: text("mp_public_key"),
+  // ── Appmax (gateway alternativo — cartão, boleto, Pix) ────────────
+  // Credenciais do MERCHANT (por loja), obtidas via fluxo de instalação
+  // de app da Appmax (OAuth2 client_credentials + hash de autorização).
+  // Sempre criptografadas com lib/crypto.ts, nunca em texto plano.
+  appmaxClientId:       text("appmax_client_id"),
+  appmaxClientSecret:   text("appmax_client_secret"),
+  appmaxAccessToken:    text("appmax_access_token"),     // bearer token de curta duração (cache)
+  appmaxTokenExpiresAt: timestamp("appmax_token_expires_at"),
+  appmaxConnectedAt:    timestamp("appmax_connected_at"),
+  // external_id: gerado por NÓS (não pela Appmax), único por instalação —
+  // devolvido pela URL de validação/health-check no painel da Appmax para
+  // confirmar que a instalação foi concluída. Não é sensível (não precisa
+  // criptografia), mas precisa ser único — gerado assim que a conexão começa.
+  appmaxExternalId:     uuid("appmax_external_id"),
   paymentMethodsConfig: jsonb("payment_methods_config").$type<
     import("@/lib/store-context").PaymentMethodConfig[]
   >(),
@@ -76,6 +90,7 @@ export const stores = pgTable("stores", {
 }, (t) => [
   index("stores_slug_idx").on(t.slug),
   index("stores_active_idx").on(t.active),
+  uniqueIndex("stores_appmax_external_id_idx").on(t.appmaxExternalId),
 ]);
 
 export const storesRelations = relations(stores, ({ many }) => ({
@@ -86,6 +101,8 @@ export const storesRelations = relations(stores, ({ many }) => ({
   banners: many(banners),
   storeUsers: many(storeUsers),
   roleProfiles: many(roleProfiles),
+  paymentMethods: many(paymentMethods),
+  paymentPlans: many(paymentPlans),
 }));
 
 // ─── BANNERS ────────────────────────────────────────────────────
@@ -316,6 +333,9 @@ export const orders = pgTable("orders", {
   cancelReason: text("cancel_reason"),
   installments:   integer("installments").default(1),
   cardFeeAmount:  numeric("card_fee_amount", { precision: 10, scale: 2 }),  // taxa da maquineta calculada
+  // Referência do pedido no gateway externo (Appmax não aceita external_id na criação
+  // do pedido — precisamos guardar o id numérico deles para casar com o webhook).
+  appmaxOrderId:  varchar("appmax_order_id", { length: 40 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -324,6 +344,7 @@ export const orders = pgTable("orders", {
   index("orders_status_idx").on(t.status),
   index("orders_number_idx").on(t.number),
   index("orders_created_idx").on(t.createdAt),
+  index("orders_appmax_order_idx").on(t.appmaxOrderId),
 ]);
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
@@ -850,4 +871,79 @@ export const printEnvironmentsRelations = relations(printEnvironments, ({ one })
   store:    one(stores,     { fields: [printEnvironments.storeId],    references: [stores.id] }),
   category: one(categories, { fields: [printEnvironments.categoryId], references: [categories.id] }),
   printer:  one(printers,   { fields: [printEnvironments.printerId],  references: [printers.id] }),
+}));
+
+// ─── PAYMENT METHODS (Formas de Pagamento) ──────────────────────
+// Normaliza o antigo jsonb stores.payment_methods_config em tabela própria,
+// permitindo FK real com payment_plans via tabela pivô abaixo.
+export const paymentMethods = pgTable("payment_methods", {
+  id:                  uuid("id").defaultRandom().primaryKey(),
+  storeId:             uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  key:                 varchar("key", { length: 40 }).notNull(), // "cash" | "pix" | "card" | "debit" | "mercadopago" | "custom_*"
+  label:               varchar("label", { length: 120 }).notNull(),
+  sigla:               varchar("sigla", { length: 8 }),
+  enabled:             boolean("enabled").default(true).notNull(),
+  especie:             varchar("especie", { length: 20 }),
+  operacao:            varchar("operacao", { length: 20 }),
+  maxInstallments:     integer("max_installments").default(1).notNull(),
+  payAtDelivery:       boolean("pay_at_delivery").default(true),
+  parcelamentoAtivo:   boolean("parcelamento_ativo").default(false),
+  taxasPorParcela:     jsonb("taxas_por_parcela").$type<Array<{ parcela: number; taxa: number }>>().default([]),
+  repassarTaxaCliente: boolean("repassar_taxa_cliente").default(false),
+  pixKeyType:          varchar("pix_key_type", { length: 20 }),
+  pixKey:              varchar("pix_key", { length: 100 }),
+  pixQrCodeUrl:        text("pix_qr_code_url"),
+  mpPublicKey:         text("mp_public_key"),
+  mpAccessToken:       text("mp_access_token"),
+  position:            integer("position").default(0).notNull(),
+  createdAt:           timestamp("created_at").defaultNow().notNull(),
+  updatedAt:           timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("payment_methods_store_key_idx").on(t.storeId, t.key),
+  index("payment_methods_store_idx").on(t.storeId),
+]);
+
+export const paymentMethodsRelations = relations(paymentMethods, ({ one, many }) => ({
+  store:       one(stores, { fields: [paymentMethods.storeId], references: [stores.id] }),
+  methodPlans: many(paymentMethodsToPlans),
+}));
+
+// ─── PAYMENT PLANS (Planos de Pagamento) ────────────────────────
+export const paymentPlans = pgTable("payment_plans", {
+  id:         uuid("id").defaultRandom().primaryKey(),
+  storeId:    uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  codigo:     integer("codigo").notNull(),
+  nome:       varchar("nome", { length: 80 }).notNull(),
+  ativo:      boolean("ativo").default(true).notNull(),
+  parcelas:   integer("parcelas").default(1).notNull(),
+  tipo:       varchar("tipo", { length: 10 }).notNull(), // avista | dia | mes
+  quantidade: integer("quantidade").default(0).notNull(),
+  createdAt:  timestamp("created_at").defaultNow().notNull(),
+  updatedAt:  timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("payment_plans_store_idx").on(t.storeId),
+  uniqueIndex("payment_plans_store_codigo_idx").on(t.storeId, t.codigo),
+]);
+
+export const paymentPlansRelations = relations(paymentPlans, ({ one, many }) => ({
+  store:       one(stores, { fields: [paymentPlans.storeId], references: [stores.id] }),
+  methodPlans: many(paymentMethodsToPlans),
+}));
+
+// ─── PAYMENT METHODS ↔ PLANS (pivô N:N) ─────────────────────────
+// Define quais planos de pagamento (À Vista, 30/60/90...) cada forma de
+// pagamento aceita no caixa do PDV. onDelete cascade em ambos os lados:
+// remover uma forma ou um plano limpa os vínculos automaticamente.
+export const paymentMethodsToPlans = pgTable("payment_methods_to_plans", {
+  paymentMethodId: uuid("payment_method_id").references(() => paymentMethods.id, { onDelete: "cascade" }).notNull(),
+  paymentPlanId:   uuid("payment_plan_id").references(() => paymentPlans.id, { onDelete: "cascade" }).notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.paymentMethodId, t.paymentPlanId] }),
+  index("payment_methods_to_plans_method_idx").on(t.paymentMethodId),
+  index("payment_methods_to_plans_plan_idx").on(t.paymentPlanId),
+]);
+
+export const paymentMethodsToPlansRelations = relations(paymentMethodsToPlans, ({ one }) => ({
+  method: one(paymentMethods, { fields: [paymentMethodsToPlans.paymentMethodId], references: [paymentMethods.id] }),
+  plan:   one(paymentPlans,   { fields: [paymentMethodsToPlans.paymentPlanId],   references: [paymentPlans.id] }),
 }));

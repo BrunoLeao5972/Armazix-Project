@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PaymentMethodConfig } from "@/lib/store-context";
+import type { PaymentPlanOption } from "@/components/admin/PaymentMethodEditor";
+import { api } from "@/lib/api-client";
 
 const LazyPaymentMethodEditor = lazy(() =>
   import("@/components/admin/PaymentMethodEditor").then(m => ({ default: m.PaymentMethodEditor }))
@@ -31,54 +33,116 @@ const DEFAULT_PMC: PaymentMethodConfig[] = [
   { key: "card",        label: "Cartão de Crédito", enabled: true,  maxInstallments: 12, payAtDelivery: true,  especie: "cartao",   operacao: "credito"      },
   { key: "debit",       label: "Cartão de Débito",  enabled: true,  maxInstallments: 1,  payAtDelivery: true,  especie: "cartao",   operacao: "debito"       },
   { key: "mercadopago", label: "Mercado Pago",       enabled: false, maxInstallments: 1,                       especie: "mercadopago"                       },
+  { key: "appmax",      label: "Pagamento via App Max", enabled: false, maxInstallments: 12,                  especie: "appmax"                            },
 ];
 
 function PainelFormasPagamento() {
   const [methods, setMethods]     = useState<PaymentMethodConfig[]>(DEFAULT_PMC);
+  const [plans, setPlans]         = useState<PaymentPlanOption[]>([]);
   const [deliveryEnabled, setDeliveryEnabled] = useState(true);
   const [saving, setSaving]       = useState(false);
   const [success, setSuccess]     = useState(false);
 
+  const [appmaxConnected, setAppmaxConnected]     = useState(false);
+  const [appmaxConnectedAt, setAppmaxConnectedAt] = useState<string | null>(null);
+  const [appmaxConnecting, setAppmaxConnecting]   = useState(false);
+
+  const refreshAppmaxStatus = () => {
+    api.get("/api/payments/appmax-status").then(r => r.json())
+      .then((data: { connected?: boolean; connectedAt?: string | null }) => {
+        setAppmaxConnected(!!data.connected);
+        setAppmaxConnectedAt(data.connectedAt ?? null);
+      }).catch(() => {});
+  };
+
   useEffect(() => {
     const storeId = localStorage.getItem("storeId");
     if (!storeId) return;
+
+    api.get("/api/payment-methods/list").then(r => r.json())
+      .then((data: { methods?: PaymentMethodConfig[] }) => {
+        if (data.methods?.length) setMethods(data.methods);
+      }).catch(() => {});
+
+    api.get("/api/payment-plans/list").then(r => r.json())
+      .then((data: { plans?: Array<{ id: string; nome: string; tipo: "avista" | "dia" | "mes" }> }) => {
+        if (data.plans) setPlans(data.plans.map(p => ({ id: p.id, nome: p.nome, tipo: p.tipo })));
+      }).catch(() => {});
+
     fetch(`/api/store/get?id=${storeId}`)
       .then(r => r.json())
-      .then((data: { store?: { paymentMethodsConfig?: PaymentMethodConfig[]; deliveryPaymentEnabled?: boolean } }) => {
-        if (data.store?.paymentMethodsConfig?.length) setMethods(data.store.paymentMethodsConfig);
+      .then((data: { store?: { deliveryPaymentEnabled?: boolean } }) => {
         if (data.store?.deliveryPaymentEnabled !== undefined)
           setDeliveryEnabled(data.store.deliveryPaymentEnabled !== false);
       })
       .catch(() => {});
+
+    refreshAppmaxStatus();
+
+    // Appmax redireciona o navegador de volta para cá após o lojista aprovar
+    // (ou recusar) a instalação — ver appmaxConnectCallbackHandler.
+    const params = new URLSearchParams(window.location.search);
+    const appmaxResult = params.get("appmax");
+    if (appmaxResult) {
+      params.delete("appmax");
+      params.delete("appmax_reason");
+      const cleanUrl = window.location.pathname + (params.toString() ? `?${params}` : "");
+      window.history.replaceState({}, "", cleanUrl);
+      if (appmaxResult === "connected") refreshAppmaxStatus();
+    }
   }, []);
 
   const handleSave = async () => {
     setSaving(true);
     setSuccess(false);
     try {
-      const res = await fetch("/api/store/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ paymentMethodsConfig: methods, deliveryPaymentEnabled: deliveryEnabled }),
-      });
-      if (res.ok) {
+      const [methodsRes] = await Promise.all([
+        api.post("/api/payment-methods/save", { methods }),
+        api.post("/api/store/update", { deliveryPaymentEnabled: deliveryEnabled }),
+      ]);
+      if (methodsRes.ok) {
+        const data = await methodsRes.json() as { methods?: PaymentMethodConfig[] };
+        if (data.methods) setMethods(data.methods);
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
       }
     } catch {} finally { setSaving(false); }
   };
 
+  const handleAppmaxConnect = async () => {
+    setAppmaxConnecting(true);
+    try {
+      const res = await api.post("/api/payments/appmax-connect", {});
+      if (res.ok) {
+        const data = await res.json() as { redirectUrl?: string };
+        if (data.redirectUrl) window.location.href = data.redirectUrl;
+      }
+    } finally {
+      setAppmaxConnecting(false);
+    }
+  };
+
+  const handleAppmaxDisconnect = async () => {
+    const res = await api.post("/api/payments/appmax-disconnect", {});
+    if (res.ok) { setAppmaxConnected(false); setAppmaxConnectedAt(null); }
+  };
+
   return (
     <Suspense fallback={<div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>}>
       <LazyPaymentMethodEditor
         methods={methods}
+        plans={plans}
         deliveryPaymentEnabled={deliveryEnabled}
         saving={saving}
         success={success}
         onMethodsChange={setMethods}
         onDeliveryPaymentChange={setDeliveryEnabled}
         onSave={handleSave}
+        appmaxConnected={appmaxConnected}
+        appmaxConnectedAt={appmaxConnectedAt}
+        appmaxConnecting={appmaxConnecting}
+        onAppmaxConnect={handleAppmaxConnect}
+        onAppmaxDisconnect={handleAppmaxDisconnect}
       />
     </Suspense>
   );
@@ -98,7 +162,6 @@ interface PlanoPagamento {
   id: string;
   codigo: number;
   nome: string;
-  favorito: boolean;
   ativo: boolean;
   parcelas: number;
   tipo: TipoPlano;
@@ -114,20 +177,25 @@ interface FormPlano {
   quantidade: string;
 }
 
-const PLANOS_INICIAIS: PlanoPagamento[] = [
-  { id: "p1", codigo: 1, nome: "À Vista",          favorito: true,  ativo: true, parcelas: 1,  tipo: "avista", quantidade: 0  },
-  { id: "p2", codigo: 2, nome: "A Prazo 1 vez",    favorito: false, ativo: true, parcelas: 1,  tipo: "dia",    quantidade: 30 },
-  { id: "p3", codigo: 3, nome: "A Prazo 12 vezes", favorito: false, ativo: true, parcelas: 12, tipo: "mes",    quantidade: 1  },
-];
-
 const FORM_PLANO_VAZIO: FormPlano = { nome: "", parcelas: "1", tipo: "avista", quantidade: "0" };
 
 function PainelPlanosPagamento() {
-  const [planos, setPlanos]         = useState<PlanoPagamento[]>(PLANOS_INICIAIS);
+  const [planos, setPlanos]         = useState<PlanoPagamento[]>([]);
+  const [loading, setLoading]       = useState(true);
   const [busca, setBusca]           = useState("");
   const [modo, setModo]             = useState<ModoFormPlano | null>(null);
   const [selecionado, setSelecionado] = useState<PlanoPagamento | null>(null);
   const [form, setForm]             = useState<FormPlano>(FORM_PLANO_VAZIO);
+  const [salvando, setSalvando]     = useState(false);
+
+  useEffect(() => {
+    api.get("/api/payment-plans/list").then(r => r.json())
+      .then((data: { plans?: PlanoPagamento[] }) => {
+        if (data.plans) setPlanos(data.plans);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   const proximoCodigo = useMemo(
     () => (planos.length > 0 ? Math.max(...planos.map(p => p.codigo)) + 1 : 1),
@@ -153,31 +221,42 @@ function PainelPlanosPagamento() {
 
   const cancelar = () => { setModo(null); setSelecionado(null); };
 
-  const toggleAtivo = (id: string) => {
-    setPlanos(prev => prev.map(p => p.id === id ? { ...p, ativo: !p.ativo } : p));
-    if (selecionado?.id === id) setSelecionado(prev => prev ? { ...prev, ativo: !prev.ativo } : prev);
+  const toggleAtivo = async (id: string) => {
+    const alvo = planos.find(p => p.id === id);
+    if (!alvo) return;
+    const res = await api.post("/api/payment-plans/update", { planId: id, ativo: !alvo.ativo });
+    if (!res.ok) return;
+    const { plan } = await res.json() as { plan: PlanoPagamento };
+    setPlanos(prev => prev.map(p => p.id === id ? plan : p));
+    if (selecionado?.id === id) setSelecionado(plan);
   };
 
-  const salvar = () => {
-    if (!form.nome.trim()) return;
+  const salvar = async () => {
+    if (!form.nome.trim() || salvando) return;
     const parcelas   = Math.max(1, parseInt(form.parcelas)  || 1);
     const quantidade = form.tipo === "avista" ? 0 : Math.max(0, parseInt(form.quantidade) || 0);
 
-    if (modo === "novo") {
-      setPlanos(prev => [
-        ...prev,
-        { id: crypto.randomUUID(), codigo: proximoCodigo, nome: form.nome.trim(),
-          favorito: false, ativo: true, parcelas, tipo: form.tipo, quantidade },
-      ]);
-    } else if (modo === "editar" && selecionado) {
-      setPlanos(prev =>
-        prev.map(p => p.id === selecionado.id
-          ? { ...p, nome: form.nome.trim(), parcelas, tipo: form.tipo, quantidade }
-          : p
-        )
-      );
+    setSalvando(true);
+    try {
+      if (modo === "novo") {
+        const res = await api.post("/api/payment-plans/create", {
+          nome: form.nome.trim(), tipo: form.tipo, parcelas, quantidade,
+        });
+        if (!res.ok) return;
+        const { plan } = await res.json() as { plan: PlanoPagamento };
+        setPlanos(prev => [...prev, plan]);
+      } else if (modo === "editar" && selecionado) {
+        const res = await api.post("/api/payment-plans/update", {
+          planId: selecionado.id, nome: form.nome.trim(), tipo: form.tipo, parcelas, quantidade,
+        });
+        if (!res.ok) return;
+        const { plan } = await res.json() as { plan: PlanoPagamento };
+        setPlanos(prev => prev.map(p => p.id === plan.id ? plan : p));
+      }
+      cancelar();
+    } finally {
+      setSalvando(false);
     }
-    cancelar();
   };
 
   // onChange handlers — strictly integers only
@@ -234,7 +313,11 @@ function PainelPlanosPagamento() {
 
           {/* Linhas */}
           <div className="flex-1 overflow-y-auto divide-y divide-border/30">
-            {planosFiltrados.length === 0 ? (
+            {loading ? (
+              <div className="flex justify-center py-10">
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : planosFiltrados.length === 0 ? (
               <div className="py-10 text-center text-xs text-muted-foreground">
                 Nenhum plano encontrado
               </div>
@@ -433,7 +516,8 @@ function PainelPlanosPagamento() {
                   <Button variant="outline" size="sm" onClick={cancelar} className="h-8 text-xs">
                     Cancelar
                   </Button>
-                  <Button size="sm" onClick={salvar} disabled={!form.nome.trim()} className="h-8 text-xs">
+                  <Button size="sm" onClick={salvar} disabled={!form.nome.trim() || salvando} className="h-8 text-xs gap-1.5">
+                    {salvando && <Loader2 className="w-3 h-3 animate-spin" />}
                     {modo === "novo" ? "Criar Plano" : "Salvar Alterações"}
                   </Button>
                 </div>

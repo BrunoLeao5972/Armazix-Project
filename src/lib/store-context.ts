@@ -12,6 +12,7 @@ export type EspeciePagamento =
   | "boleto"
   | "pix"
   | "mercadopago"
+  | "appmax"
   | "outros";
 
 export type OperacaoCartao = "credito" | "debito" | "carteira_digital";
@@ -46,6 +47,8 @@ export interface PaymentMethodConfig {
       accessToken: string;
     };
   };
+  // ── Planos de pagamento permitidos (IDs de payment_plans) ───────
+  allowedPlanIds?: string[];
 }
 
 export const DEFAULT_PAYMENT_METHODS: PaymentMethodConfig[] = [

@@ -22,6 +22,27 @@
       "when": 1783976373461,
       "tag": "0002_dashing_gravity",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784569698991,
+      "tag": "0003_medical_nighthawk",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784589689871,
+      "tag": "0004_fresh_marten_broadcloak",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784591648288,
+      "tag": "0005_smart_bloodstorm",
+      "breakpoints": true
     }
   ]
 }

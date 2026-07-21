@@ -91,6 +91,16 @@ import {
 } from "./api/whatsapp-handler";
 import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
 import {
+  startAppmaxConnectHandler,
+  appmaxConnectCallbackHandler,
+  getAppmaxStatusHandler,
+  disconnectAppmaxHandler,
+  createAppmaxCheckoutHandler,
+  appmaxWebhookHandler,
+  appmaxHealthHandler,
+  appmaxDiagnoseHandler, // TEMPORÁRIO — remover junto da rota depois de resolver o /app/authorize
+} from "./api/appmax-handler";
+import {
   getCaixaAtualHandler,
   abrirCaixaHandler,
   fecharCaixaHandler,
@@ -125,6 +135,16 @@ import {
   updatePrintEnvironmentHandler,
   deletePrintEnvironmentHandler,
 } from "./api/print-environments-handler";
+import {
+  listPaymentMethodsHandler,
+  savePaymentMethodsHandler,
+  listPaymentMethodsForPdvHandler,
+} from "./api/payment-methods-handler";
+import {
+  listPaymentPlansHandler,
+  createPaymentPlanHandler,
+  updatePaymentPlanHandler,
+} from "./api/payment-plans-handler";
 import { requireAuth, AuthContext } from "./middleware/auth";
 import { rateLimit, createRateLimitResponse } from "./middleware/rate-limit";
 import { withSecurityHeaders } from "./middleware/security-headers";
@@ -149,6 +169,8 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/payments/mp-webhook": mpWebhookHandler, // Webhook do MercadoPago
   "/api/subscriptions/mp-webhook": subscriptionWebhookHandler, // Webhook de assinaturas
   "/api/subscriptions/pix-webhook": pixWebhookHandler, // Webhook PIX avulso
+  "/api/payments/appmax-webhook": appmaxWebhookHandler, // Webhook da Appmax (URL única p/ toda a plataforma)
+  "/api/payments/appmax-checkout": createAppmaxCheckoutHandler, // Público para checkout da loja (cliente anônimo)
 };
 
 const publicGetRoutes: Record<string, ApiHandler> = {
@@ -162,6 +184,8 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/coupons/validate": validatePublicCouponHandler, // Público para vitrine
   "/api/customer/check": checkCustomerByPhoneHandler,  // Pré-preenchimento checkout
   "/api/customer/orders": getCustomerOrdersHandler,     // Central do cliente (auth própria via Bearer)
+  "/api/payments/appmax-callback": appmaxConnectCallbackHandler, // Appmax redireciona o navegador do lojista pra cá
+  "/api/payments/appmax-health": appmaxHealthHandler, // "URL de validação" da tela de Configuração de URLs no painel Appmax
 };
 
 // Rotas protegidas (requerem autenticação)
@@ -196,6 +220,8 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/stock/adjustment": stockAdjustmentHandler,
   "/api/payments/mp-checkout": createMpCheckoutHandler,
   "/api/payments/mp-token": saveMpTokenHandler,
+  "/api/payments/appmax-connect": startAppmaxConnectHandler,
+  "/api/payments/appmax-disconnect": disconnectAppmaxHandler,
   "/api/store/payment-config": savePaymentConfigHandler,
   "/api/banners/save": saveBannersHandler,
   "/api/whatsapp/connect": connectWhatsAppHandler,
@@ -229,10 +255,15 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/print-environments/create":   createPrintEnvironmentHandler,
   "/api/print-environments/update":   updatePrintEnvironmentHandler,
   "/api/print-environments/delete":   deletePrintEnvironmentHandler,
+  "/api/payment-methods/save":        savePaymentMethodsHandler,
+  "/api/payment-plans/create":        createPaymentPlanHandler,
+  "/api/payment-plans/update":        updatePaymentPlanHandler,
 };
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/store/user": getUserStoreHandler,
+  "/api/payments/appmax-status": getAppmaxStatusHandler,
+  "/api/payments/appmax-diagnose": appmaxDiagnoseHandler, // TEMPORÁRIO — remover depois
   "/api/products/next-pdv-code": getNextPdvCodeHandler,
   "/api/dashboard/stats": (req, auth) => getDashboardStatsHandler(req, auth),
   "/api/stock/stats": getStockStatsHandler,
@@ -265,6 +296,9 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/stock/balances-by-sector":      listStockProductBalancesHandler,
   "/api/print-environments/list":       listPrintEnvironmentsHandler,
   "/api/print-environments/form-data":  getPrintEnvironmentFormDataHandler,
+  "/api/payment-methods/list":          listPaymentMethodsHandler,
+  "/api/payment-methods/for-pdv":       listPaymentMethodsForPdvHandler,
+  "/api/payment-plans/list":            listPaymentPlansHandler,
 };
 
 // Mapeamento de rotas para configurações de rate limit
@@ -277,6 +311,7 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/payments/mp-webhook": "webhook",
   "/api/subscriptions/mp-webhook": "webhook",
   "/api/subscriptions/pix-webhook": "webhook",
+  "/api/payments/appmax-webhook": "webhook",
 };
 
 async function getRequestBodyStoreId(_request: Request): Promise<string | null> {

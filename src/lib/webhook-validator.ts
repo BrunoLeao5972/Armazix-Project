@@ -98,9 +98,9 @@ export function validateWebhookApiKey(
   request: Request,
   apiKey: string
 ): WebhookSignatureResult {
-  const providedKey = request.headers.get("x-api-key") || 
+  const providedKey = request.headers.get("x-api-key") ||
                     request.headers.get("X-Api-Key");
-  
+
   if (!providedKey) {
     return { valid: false, error: "Missing API key" };
   }
@@ -109,14 +109,49 @@ export function validateWebhookApiKey(
   if (providedKey.length !== apiKey.length) {
     return { valid: false, error: "Invalid API key" };
   }
-  
+
   let result = 0;
   for (let i = 0; i < providedKey.length; i++) {
     result |= providedKey.charCodeAt(i) ^ apiKey.charCodeAt(i);
   }
-  
+
   if (result !== 0) {
     return { valid: false, error: "Invalid API key" };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Query-string key validation for webhooks whose provider only lets you
+ * configure a single fixed callback URL (no custom headers) — e.g. Appmax,
+ * whose webhook host is set once when the platform app is created, not per
+ * merchant. The secret is embedded in the registered URL itself:
+ *   https://.../webhook?key=<WEBHOOK_API_KEY>
+ */
+export function validateWebhookQueryKey(
+  request: Request,
+  expectedKey: string,
+  paramName: string = "key"
+): WebhookSignatureResult {
+  const url = new URL(request.url);
+  const providedKey = url.searchParams.get(paramName);
+
+  if (!providedKey) {
+    return { valid: false, error: `Missing ${paramName} query param` };
+  }
+
+  if (providedKey.length !== expectedKey.length) {
+    return { valid: false, error: "Invalid key" };
+  }
+
+  let result = 0;
+  for (let i = 0; i < providedKey.length; i++) {
+    result |= providedKey.charCodeAt(i) ^ expectedKey.charCodeAt(i);
+  }
+
+  if (result !== 0) {
+    return { valid: false, error: "Invalid key" };
   }
 
   return { valid: true };

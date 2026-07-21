@@ -18,6 +18,10 @@
   //   ENCRYPTION_KEY            — AES-256 encryption key for sensitive data (mpAccessToken)
   //   WEBHOOK_API_KEY           — Secret for validating webhook requests (optional)
   //   PLATFORM_MP_ACCESS_TOKEN  — Mercado Pago token for Armazix platform subscriptions
+  //   APPMAX_APP_ID             — Appmax app_id (Armazix's own app, from "Criar App")
+  //   APPMAX_CLIENT_ID          — Appmax client_id of the Armazix platform app (not per-store)
+  //   APPMAX_CLIENT_SECRET      — Appmax client_secret of the Armazix platform app
+  //   APPMAX_ENV                — "production" to use api.appmax.com.br; anything else = sandbox
   //   UPSTASH_REDIS_REST_URL    — https://<id>.upstash.io  (Dashboard › REST API)
   //   UPSTASH_REDIS_REST_TOKEN  — token do Upstash (Dashboard › REST API)
   //

@@ -9,7 +9,6 @@ import {
   AlertCircle, LockKeyhole, Unlock, ReceiptText, Filter,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { type PaymentMethodConfig, DEFAULT_PAYMENT_METHODS } from "@/lib/store-context";
 import { type PromoConfig, getEffectivePrice } from "@/lib/promo-engine";
 
 export const Route = createFileRoute("/admin/pdv")({
@@ -46,6 +45,23 @@ interface CaixaMovimento {
 }
 type ModalType = "payment" | "abrir-caixa" | "fechar-caixa" | "movimentar" | "sessoes" | null;
 type PdvMode  = "catalog" | "map";
+
+// ─── Formas de pagamento + planos (vínculo N:N) ───────────────────
+interface PdvPaymentPlan {
+  id: string; codigo: number; nome: string;
+  tipo: "avista" | "dia" | "mes"; parcelas: number; quantidade: number;
+}
+interface PdvPaymentMethod {
+  id: string; key: string; label: string;
+  sigla?: string | null; especie?: string | null;
+  maxInstallments: number; plans: PdvPaymentPlan[];
+}
+const DEFAULT_PDV_METHODS: PdvPaymentMethod[] = [
+  { id: "cash", key: "cash", label: "Dinheiro",          maxInstallments: 1,  plans: [] },
+  { id: "pix",  key: "pix",  label: "PIX",               maxInstallments: 1,  plans: [] },
+  { id: "card", key: "card", label: "Cartão de Crédito", maxInstallments: 12, plans: [] },
+  { id: "debit",key: "debit",label: "Cartão de Débito",  maxInstallments: 1,  plans: [] },
+];
 
 // ─── helpers ─────────────────────────────────────────────────────
 const fmtBRL = (v: number | string) => {
@@ -537,16 +553,19 @@ function ModalPagamento({
 }: {
   total: number; subtotal: number; discountValue: number; discount: number;
   submitting: boolean; orderNumber: number | null;
-  paymentConfig: PaymentMethodConfig[]; mesaLabel: string | null;
+  paymentConfig: PdvPaymentMethod[]; mesaLabel: string | null;
   onClose: () => void;
   onFinalize: (method: string, installments: number) => void;
   onNovaNota: () => void;
 }) {
-  const [method, setMethod]         = useState<string | null>(null);
-  const [installments, setInstallments] = useState(1);
-  const [troco, setTroco]           = useState("");
-  const methods        = paymentConfig.filter(m => m.enabled && m.key !== "mercadopago");
+  const [method, setMethod]   = useState<string | null>(null);
+  const [planId, setPlanId]   = useState<string | null>(null);
+  const [troco, setTroco]     = useState("");
+  const methods        = paymentConfig.filter(m => m.key !== "mercadopago" && m.key !== "appmax");
   const selectedConfig = paymentConfig.find(m => m.key === method);
+  const selectedPlan   = selectedConfig?.plans.find(p => p.id === planId) ?? null;
+  const installments    = selectedPlan?.parcelas ?? 1;
+  const precisaEscolherPlano = !!selectedConfig && selectedConfig.plans.length > 0 && !selectedPlan;
   const trocoCalc      = method === "cash" && troco
     ? Math.max(parseFloat(troco.replace(",", ".")) - total, 0) : null;
 
@@ -611,7 +630,7 @@ function ModalPagamento({
                     const Icon = METHOD_ICONS[m.key] ?? CreditCard;
                     return (
                       <button key={m.key}
-                        onClick={() => { setMethod(m.key); setInstallments(1); setTroco(""); }}
+                        onClick={() => { setMethod(m.key); setPlanId(null); setTroco(""); }}
                         className={`flex flex-col items-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-all ${
                           method === m.key
                             ? "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-100"
@@ -625,18 +644,20 @@ function ModalPagamento({
               )}
           </div>
 
-          {method && selectedConfig && selectedConfig.maxInstallments > 1 && (
+          {method && selectedConfig && selectedConfig.plans.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Parcelamento</p>
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Plano de Pagamento</p>
               <div className="grid grid-cols-2 gap-1.5">
-                {Array.from({ length: selectedConfig.maxInstallments }, (_, i) => i + 1).map(n => (
-                  <button key={n} onClick={() => setInstallments(n)}
+                {selectedConfig.plans.map(plan => (
+                  <button key={plan.id} onClick={() => setPlanId(plan.id)}
                     className={`py-2 rounded-lg text-xs font-semibold border transition-all ${
-                      installments === n
+                      planId === plan.id
                         ? "bg-emerald-500 text-white border-emerald-500"
                         : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
                     }`}>
-                    {n === 1 ? `À vista — ${fmtBRL(total)}` : `${n}x — ${fmtBRL(total / n)}`}
+                    {plan.parcelas <= 1
+                      ? `${plan.nome} — ${fmtBRL(total)}`
+                      : `${plan.nome} — ${plan.parcelas}x ${fmtBRL(total / plan.parcelas)}`}
                   </button>
                 ))}
               </div>
@@ -656,7 +677,7 @@ function ModalPagamento({
         <div className="px-5 pb-5">
           <button
             onClick={() => method && onFinalize(method, installments)}
-            disabled={!method || submitting || (method === "cash" && !!troco && parseFloat(troco.replace(",", ".")) < total)}
+            disabled={!method || submitting || precisaEscolherPlano || (method === "cash" && !!troco && parseFloat(troco.replace(",", ".")) < total)}
             className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-base flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-100">
             {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CreditCard className="w-5 h-5" />CONFIRMAR PAGAMENTO [F2]</>}
           </button>
@@ -934,7 +955,7 @@ function PDVPage() {
   const [orderNumber, setOrderNumber]     = useState<number | null>(null);
   const [lancando, setLancando]           = useState(false);
   const [lancadoOk, setLancadoOk]        = useState(false);
-  const [paymentConfig, setPaymentConfig] = useState<PaymentMethodConfig[]>(DEFAULT_PAYMENT_METHODS);
+  const [paymentConfig, setPaymentConfig] = useState<PdvPaymentMethod[]>(DEFAULT_PDV_METHODS);
   const [storeId, setStoreId]             = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -946,13 +967,13 @@ function PDVPage() {
     Promise.all([
       fetch(`/api/products/list?storeId=${sid}&scope=pdv`).then(r => r.json()),
       fetch(`/api/categories/list?storeId=${sid}`).then(r => r.json()),
-      fetch(`/api/store/get?id=${sid}`).then(r => r.json()),
+      fetch(`/api/payment-methods/for-pdv`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/pdv/mesas?storeId=${sid}`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/pdv/caixa`).then(r => r.json()).catch(() => ({})),
-    ]).then(([pd, cd, sd, md, cx]) => {
+    ]).then(([pd, cd, pmd, md, cx]) => {
       if (pd.products)  setProducts(pd.products);
       if (cd.categories) setCategories(cd.categories);
-      if (sd.store?.paymentMethodsConfig?.length) setPaymentConfig(sd.store.paymentMethodsConfig);
+      if (pmd.methods?.length) setPaymentConfig(pmd.methods);
       if (md.mesas)     setMesasList(md.mesas);
       if (cx.sessao)    { setSessao(cx.sessao); setMovimentos(cx.movimentos || []); }
     }).catch(() => {});
