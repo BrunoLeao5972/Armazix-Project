@@ -29,6 +29,9 @@ dist-ssr
 # Drizzle
 .drizzle/
 
+# Claude Code agent worktrees (temporary, per-task checkouts — never repo content)
+.claude/worktrees/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
