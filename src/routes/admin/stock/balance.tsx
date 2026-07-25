@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SecaoInventario } from "@/routes/admin/stock";
+import { SecaoInventario } from "./-sec-inventario";
 
 export const Route = createFileRoute("/admin/stock/balance")({
   component: SecaoInventario,

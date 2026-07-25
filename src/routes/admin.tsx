@@ -43,6 +43,9 @@ import {
   TrendingUp,
   ArrowUpDown,
   BarChart2,
+  Mail,
+  AlertTriangle,
+  Clock,
   Lock,
   MonitorCheck,
   Settings2,
@@ -361,6 +364,21 @@ function AdminLayout() {
   const [userAvatar,   setUserAvatar]   = useState<string | null>(null);
   const [userPlan,     setUserPlan]     = useState("Free");
 
+  // ── Lembrete de email não verificado ──────────────────────────────────────
+  // Começa "true" (some) até a resposta chegar — evita um flash do banner pra
+  // quem já verificou. "Dispensar" some só na sessão atual (sessionStorage);
+  // continua reaparecendo enquanto o email não for verificado de fato.
+  const [emailVerified, setEmailVerified] = useState(true);
+  const [userEmail,     setUserEmail]     = useState("");
+  const [bannerDismissed, setBannerDismissed] = useState(
+    typeof window !== "undefined" && sessionStorage.getItem("armazix:emailBannerDismissed") === "true"
+  );
+
+  // ── Alerta de expiração de plano (teste grátis ou assinatura paga) ────────
+  // Não é dispensável — se sumisse, o lojista podia perder acesso sem perceber.
+  const [planId,        setPlanId]        = useState("free");
+  const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
+
   useEffect(() => {
     setMounted(true);
 
@@ -373,7 +391,7 @@ function AdminLayout() {
           return;
         }
         if (res.ok) {
-          const data = (await res.json()) as { user?: { name?: string; avatarUrl?: string } };
+          const data = (await res.json()) as { user?: { name?: string; avatarUrl?: string; email?: string; emailVerified?: boolean } };
           const name = data.user?.name || "";
           if (name) {
             setUserName(name);
@@ -384,6 +402,8 @@ function AdminLayout() {
             setUserInitials(initials.toUpperCase());
           }
           if (data.user?.avatarUrl) setUserAvatar(data.user.avatarUrl);
+          if (data.user?.email) setUserEmail(data.user.email);
+          setEmailVerified(data.user?.emailVerified !== false);
         }
       })
       .catch(() => {});
@@ -403,9 +423,11 @@ function AdminLayout() {
       if (storeId) {
         fetch(`/api/subscriptions/status?storeId=${storeId}`)
           .then(r => r.json())
-          .then((data: { plan?: string }) => {
+          .then((data: { plan?: string; planExpiresAt?: string | null }) => {
             const labels: Record<string, string> = { free: "Free", start: "Start", pro: "Pro", full: "Full" };
             if (data.plan) setUserPlan(labels[data.plan] || "Free");
+            if (data.plan) setPlanId(data.plan);
+            setPlanExpiresAt(data.planExpiresAt ?? null);
           })
           .catch(() => {});
       }
@@ -423,6 +445,19 @@ function AdminLayout() {
   const handleSidebarAction = (action: string) => {
     if (action === "whatsapp") setWppModalOpen(true);
   };
+
+  const dismissEmailBanner = () => {
+    setBannerDismissed(true);
+    sessionStorage.setItem("armazix:emailBannerDismissed", "true");
+  };
+
+  const planDaysRemaining = planExpiresAt
+    ? Math.ceil((new Date(planExpiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+    : null;
+  const showPlanExpiryBanner = planDaysRemaining !== null && planDaysRemaining <= 5;
+  const planDaysLabel = planDaysRemaining !== null
+    ? (planDaysRemaining <= 0 ? "hoje" : `${planDaysRemaining} dia${planDaysRemaining === 1 ? "" : "s"}`)
+    : "";
 
   // SSR guard — prevents SSR-incompatible libs from running in Cloudflare Worker
   if (!mounted) {
@@ -620,6 +655,49 @@ function AdminLayout() {
             </DropdownMenu>
           </div>
         </header>
+
+        {/* Lembrete de email não verificado — discreto, sempre volta a aparecer
+            em novas sessões enquanto o email não for confirmado de fato */}
+        {!emailVerified && !bannerDismissed && (
+          <div className="shrink-0 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800/60 px-4 sm:px-6 py-2 flex items-center gap-2.5 text-xs sm:text-sm">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="text-amber-800 dark:text-amber-300 flex-1 min-w-0 truncate">
+              Seu email ainda não foi verificado.
+            </span>
+            <button
+              onClick={() => navigate({ to: "/verify-email", search: { email: userEmail, next: "admin" } })}
+              className="flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 transition-colors shrink-0"
+            >
+              <Mail className="w-3.5 h-3.5" /> Verificar agora
+            </button>
+            <button
+              onClick={dismissEmailBanner}
+              title="Dispensar por agora"
+              className="w-6 h-6 rounded-lg flex items-center justify-center text-amber-600/70 dark:text-amber-400/70 hover:bg-amber-500/10 hover:text-amber-800 dark:hover:text-amber-200 transition-colors shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Alerta de expiração de plano — teste grátis ou assinatura paga a
+            <= 5 dias de vencer. Sem botão de dispensar de propósito. */}
+        {showPlanExpiryBanner && (
+          <div className="shrink-0 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800/60 px-4 sm:px-6 py-2 flex items-center gap-2.5 text-xs sm:text-sm">
+            <Clock className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+            <span className="text-red-800 dark:text-red-300 flex-1 min-w-0 truncate">
+              {planId === "free"
+                ? `Seu período de teste vence em ${planDaysLabel}. Assine um plano para não perder o acesso ao sistema.`
+                : `Plano atual vence em ${planDaysLabel}. Assine um plano para não perder o acesso ao sistema.`}
+            </span>
+            <button
+              onClick={() => navigate({ to: "/admin/settings", search: { tab: "planos" } })}
+              className="flex items-center gap-1 font-semibold text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 transition-colors shrink-0"
+            >
+              <ArrowUpCircle className="w-3.5 h-3.5" /> {planId === "free" ? "Renovar / Assinar Plano" : "Renovar / Fazer Upgrade"}
+            </button>
+          </div>
+        )}
 
         {/* Page content */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">

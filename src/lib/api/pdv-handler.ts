@@ -5,7 +5,7 @@ import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-a
 
 const {
   caixaSessoes, caixaMovimentos, financeiroLancamentos,
-  mesas, orders, products, stockMovements,
+  mesas, orders, products, stockMovements, stores,
 } = schema;
 
 const JSON_HDR = { "content-type": "application/json" };
@@ -18,6 +18,21 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Garante que a loja contratou e está com o pagamento em dia do add-on PDV. */
+async function requirePdvAccess(storeId: string): Promise<Response | null> {
+  const db = createDb(process.env.DATABASE_URL!);
+  const [store] = await db
+    .select({ pdvEnabled: stores.pdvEnabled, planStatus: stores.planStatus })
+    .from(stores)
+    .where(eq(stores.id, storeId))
+    .limit(1);
+
+  if (!store?.pdvEnabled || store.planStatus !== "active") {
+    return err("PDV não contratado para esta loja. Ative o add-on em Configurações → Planos.", 402);
+  }
+  return null;
+}
+
 // ─── GET /api/pdv/caixa — sessão aberta atual ─────────────────────
 export async function getCaixaAtualHandler(
   request: Request, auth?: AuthContext,
@@ -25,6 +40,9 @@ export async function getCaixaAtualHandler(
   let storeId: string;
   try { ({ storeId } = await requireStoreAccess(auth)); }
   catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
+
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
 
   const db = createDb(process.env.DATABASE_URL!);
   const [sessao] = await db
@@ -50,6 +68,9 @@ export async function abrirCaixaHandler(
   let storeId: string;
   try { ({ storeId } = await requireStoreAccess(auth)); }
   catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
+
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
 
   const body = await request.json() as {
     saldoInicial: string;
@@ -83,6 +104,9 @@ export async function fecharCaixaHandler(
   let storeId: string;
   try { ({ storeId } = await requireStoreAccess(auth)); }
   catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
+
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
 
   const body = await request.json() as {
     sessaoId: string;
@@ -129,6 +153,9 @@ export async function movimentarCaixaHandler(
   try { ({ storeId } = await requireStoreAccess(auth)); }
   catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
 
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
+
   const body = await request.json() as {
     sessaoId: string;
     tipo: "sangria" | "suprimento";
@@ -169,6 +196,9 @@ export async function listCaixaSessoesHandler(
   try { ({ storeId } = await requireStoreAccess(auth)); }
   catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
 
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
+
   const url       = new URL(request.url);
   const status    = url.searchParams.get("status");   // aberta | encerrada | all
   const dateFrom  = url.searchParams.get("dateFrom"); // YYYY-MM-DD
@@ -205,6 +235,9 @@ export async function listMesasHandler(
   try { ({ storeId } = await requireStoreAccess(auth)); }
   catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
 
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
+
   const db = createDb(process.env.DATABASE_URL!);
 
   const mesasList = await db
@@ -229,6 +262,9 @@ export async function salvarMesasHandler(
   let storeId: string;
   try { ({ storeId } = await requireStoreAccess(auth)); }
   catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
+
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
 
   const body = await request.json() as {
     mesas: Array<{
@@ -263,6 +299,9 @@ export async function finalizarVendaPdvHandler(
   let storeId: string;
   try { ({ storeId } = await requireStoreAccess(auth)); }
   catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
+
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
 
   const body = await request.json() as {
     sessaoId: string;
@@ -411,6 +450,9 @@ export async function listFinanceiroLancamentosHandler(
   let storeId: string;
   try { ({ storeId } = await requireStoreAccess(auth)); }
   catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
+
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
 
   const url      = new URL(request.url);
   const sessaoId = url.searchParams.get("sessaoId");

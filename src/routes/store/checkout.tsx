@@ -1,10 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   MapPin, Truck, Package, CreditCard, Banknote,
   CheckCircle2, ChevronRight, ChevronLeft, Loader2, ShoppingBag,
   Tag, X, QrCode, User, Phone, Building2, MessageCircle,
-  Smartphone, Globe, PlusCircle, Clock,
+  Smartphone, Globe, PlusCircle, Clock, Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
@@ -145,8 +145,12 @@ const DELIVERY_PM_KEY: Record<string, string> = {
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════════════════════
 function CheckoutPage() {
-  const { store, cart, cartTotal, clearCart, configuracaoVitrine, setActiveCustomer } = useStore();
+  const { store, cart, cartTotal, clearCart, configuracaoVitrine, setActiveCustomer, customerToken, customerName } = useStore();
   const [step, setStep] = useState(0);
+
+  // Repassado nas chamadas de criação de pedido — o backend verifica o JWT e
+  // vincula o customerId real, em vez de confiar só em nome/telefone digitados.
+  const customerAuthHeaders = customerToken ? { Authorization: `Bearer ${customerToken}` } : undefined;
 
   // ── Fase de identificação por telefone (pré-etapa) ────────────────────────
   // "input" → aguardando telefone | "loading" → consultando API | "done" → liberado
@@ -160,6 +164,12 @@ function CheckoutPage() {
   // ── Identificação ─────────────────────────────────────────────────────────
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
+
+  // ── Cliente logado (header/OTP) — pula a pré-etapa manual de telefone ─────
+  const [profileLoading, setProfileLoading] = useState(!!customerToken);
+  // true = dados vieram do perfil logado → mostra resumo com opção de editar
+  const [fromLoggedProfile, setFromLoggedProfile] = useState(false);
+  const [editingContact, setEditingContact] = useState(false);
 
   // ── Modalidade de entrega ─────────────────────────────────────────────────
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">(
@@ -233,6 +243,37 @@ function CheckoutPage() {
       state: addr.state,
     });
   };
+
+  // ── Pré-preenche a partir do perfil do cliente logado (header/OTP) ────────
+  // Se autenticado, busca nome/telefone/endereços salvos e pula direto
+  // pra tela de checkout — sem pedir pra digitar o WhatsApp de novo.
+  useEffect(() => {
+    if (!customerToken) { setProfileLoading(false); return; }
+    let cancelled = false;
+    setProfileLoading(true);
+    fetch("/api/customer/profile", { headers: { Authorization: `Bearer ${customerToken}` } })
+      .then(r => r.json())
+      .then((d: { customer?: { id: string; name: string; phone: string | null }; addresses?: SavedAddress[] }) => {
+        if (cancelled || !d.customer) return;
+        setNome(d.customer.name || customerName || "");
+        setTelefone(d.customer.phone ? maskPhone(d.customer.phone) : "");
+        setActiveCustomer({ id: d.customer.id, name: d.customer.name, phone: (d.customer.phone || "").replace(/\D/g, "") });
+        if (d.addresses?.length) {
+          setSavedAddresses(d.addresses);
+          const def = d.addresses.find(a => a.isDefault) ?? d.addresses[0];
+          setSelectedAddressId(def.id);
+          applyAddress(def);
+        }
+        setIsReturningCustomer(true);
+        setFromLoggedProfile(true);
+        // Já sabemos quem é — pula a tela de "qual é o seu WhatsApp?".
+        setPhonePhase("done");
+      })
+      .catch(() => { /* falha silenciosa — cai no fluxo manual normal */ })
+      .finally(() => { if (!cancelled) setProfileLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerToken]);
 
   // ── Consulta API ao confirmar telefone ────────────────────────────────────
   const handlePhoneContinue = async () => {
@@ -339,7 +380,7 @@ function CheckoutPage() {
         addressSnapshot, couponCode: couponApplied || undefined, estimatedDelivery,
       };
       if (paymentMethod.startsWith("mp_")) {
-        const res = await api.post("/api/payments/mp-checkout", { ...basePayload, mpMethod: MP_METHOD_KEY[paymentMethod] }, { skipCsrf: true });
+        const res = await api.post("/api/payments/mp-checkout", { ...basePayload, mpMethod: MP_METHOD_KEY[paymentMethod] }, { skipCsrf: true, headers: customerAuthHeaders });
         const data = await res.json() as { init_point?: string; error?: string };
         if (res.ok && data.init_point) { clearCart(); window.location.href = data.init_point; return; }
         setOrderError(data.error || "Erro ao iniciar pagamento no Mercado Pago"); return;
@@ -352,7 +393,7 @@ function CheckoutPage() {
         paymentMethod: DELIVERY_PM_KEY[paymentMethod] ?? paymentMethod,
         installments: paymentMethod === "delivery_credit" && installments > 1 ? installments : undefined,
         change: changeInfo,
-      }, { skipCsrf: true });
+      }, { skipCsrf: true, headers: customerAuthHeaders });
       const data = await res.json() as { success?: boolean; order?: { number: number; customerId?: string | null }; error?: string };
       if (res.ok && data.success) {
         setOrderNumber(data.order?.number ?? null);
@@ -400,7 +441,7 @@ function CheckoutPage() {
 
       // MP payments: redirect to payment page (WhatsApp step is skipped)
       if (paymentMethod.startsWith("mp_")) {
-        const res = await api.post("/api/payments/mp-checkout", { ...basePayload, mpMethod: MP_METHOD_KEY[paymentMethod] }, { skipCsrf: true });
+        const res = await api.post("/api/payments/mp-checkout", { ...basePayload, mpMethod: MP_METHOD_KEY[paymentMethod] }, { skipCsrf: true, headers: customerAuthHeaders });
         const data = await res.json() as { init_point?: string; error?: string };
         if (res.ok && data.init_point) { clearCart(); window.location.href = data.init_point; return; }
         setOrderError(data.error || "Erro ao iniciar pagamento no Mercado Pago"); return;
@@ -414,7 +455,7 @@ function CheckoutPage() {
         paymentMethod: DELIVERY_PM_KEY[paymentMethod] ?? paymentMethod,
         installments: paymentMethod === "delivery_credit" && installments > 1 ? installments : undefined,
         change: changeInfo,
-      }, { skipCsrf: true });
+      }, { skipCsrf: true, headers: customerAuthHeaders });
       const data = await res.json() as { success?: boolean; order?: { number: number; customerId?: string | null }; error?: string };
       if (!res.ok || !data.success) { setOrderError(data.error || "Erro ao criar pedido"); return; }
 
@@ -539,9 +580,17 @@ function CheckoutPage() {
     );
   }
 
+  // Verificando se há cliente logado antes de decidir se mostra a pré-etapa
+  // manual de telefone — evita o "flash" da tela de WhatsApp pra quem já
+  // está autenticado.
+  if (profileLoading) {
+    return <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // PRÉ-ETAPA — Tela de identificação por telefone
   // Bloqueia todo o restante do checkout enquanto phonePhase !== "done"
+  // Pulada inteiramente quando o cliente já está logado (ver useEffect acima).
   // ══════════════════════════════════════════════════════════════════════════
   if (phonePhase !== "done") {
     return (
@@ -643,36 +692,74 @@ function CheckoutPage() {
               Seus dados
             </h2>
 
-            {/* Badge de cliente recorrente */}
-            {isReturningCustomer && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-semibold mb-3 animate-in fade-in duration-300">
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                Olá, {nome.split(" ")[0]}! Encontramos seu cadastro.
-              </div>
-            )}
-
-            <div className="space-y-3">
-              {/* Telefone — somente leitura, com botão para voltar */}
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Telefone / WhatsApp</label>
-                <div className="mt-1 flex items-center gap-2">
-                  <div className="flex-1 h-11 rounded-xl border border-border/30 bg-muted/40 px-3 text-sm flex items-center gap-2 text-muted-foreground">
-                    <Phone className="w-3.5 h-3.5 shrink-0" />
-                    <span className="font-medium text-foreground">{telefone}</span>
-                  </div>
-                  <button
-                    onClick={() => { setPhonePhase("input"); setIsReturningCustomer(false); setSavedAddresses([]); setNome(""); setAddress({ zip:"",street:"",number:"",complement:"",neighborhood:"",city:"",state:"" }); }}
-                    className="h-11 px-3 rounded-xl border border-border/50 text-xs text-muted-foreground hover:bg-accent/30 transition-colors shrink-0"
-                  >
-                    Trocar
-                  </button>
+            {fromLoggedProfile && !editingContact ? (
+              /* ── Cliente logado — resumo/confirmação, sem re-digitar nada ── */
+              <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-2.5 animate-in fade-in duration-300">
+                <div className="flex items-center gap-2 text-xs font-semibold text-primary mb-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Você está logado
                 </div>
+                <div className="flex items-center gap-2.5 text-sm">
+                  <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="font-medium">{nome}</span>
+                </div>
+                <div className="flex items-center gap-2.5 text-sm">
+                  <Phone className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span>{telefone || "—"}</span>
+                </div>
+                <button
+                  onClick={() => setEditingContact(true)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-primary mt-1"
+                >
+                  <Pencil className="w-3 h-3" /> Usar outro contato para este pedido
+                </button>
               </div>
+            ) : (
+              <>
+                {/* Badge de cliente recorrente — fluxo manual por telefone */}
+                {isReturningCustomer && !fromLoggedProfile && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 text-xs font-semibold mb-3 animate-in fade-in duration-300">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    Olá, {nome.split(" ")[0]}! Encontramos seu cadastro.
+                  </div>
+                )}
 
-              <Field label="Nome completo *">
-                <input value={nome} onChange={e => setNome(e.target.value)} placeholder="João da Silva" autoComplete="name" className={inputCls} />
-              </Field>
-            </div>
+                <div className="space-y-3">
+                  {fromLoggedProfile ? (
+                    /* Editando pra este pedido — não mexe no cadastro, só no envio */
+                    <Field label="Telefone / WhatsApp">
+                      <input value={telefone} onChange={e => setTelefone(maskPhone(e.target.value))} placeholder="(11) 99999-9999" autoComplete="tel" inputMode="numeric" className={inputCls} />
+                    </Field>
+                  ) : (
+                    /* Telefone — somente leitura, com botão para voltar à pré-etapa */
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground">Telefone / WhatsApp</label>
+                      <div className="mt-1 flex items-center gap-2">
+                        <div className="flex-1 h-11 rounded-xl border border-border/30 bg-muted/40 px-3 text-sm flex items-center gap-2 text-muted-foreground">
+                          <Phone className="w-3.5 h-3.5 shrink-0" />
+                          <span className="font-medium text-foreground">{telefone}</span>
+                        </div>
+                        <button
+                          onClick={() => { setPhonePhase("input"); setIsReturningCustomer(false); setSavedAddresses([]); setNome(""); setAddress({ zip:"",street:"",number:"",complement:"",neighborhood:"",city:"",state:"" }); }}
+                          className="h-11 px-3 rounded-xl border border-border/50 text-xs text-muted-foreground hover:bg-accent/30 transition-colors shrink-0"
+                        >
+                          Trocar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <Field label="Nome completo *">
+                    <input value={nome} onChange={e => setNome(e.target.value)} placeholder="João da Silva" autoComplete="name" className={inputCls} />
+                  </Field>
+
+                  {fromLoggedProfile && editingContact && (
+                    <button onClick={() => setEditingContact(false)} className="text-xs font-medium text-muted-foreground hover:text-foreground">
+                      Cancelar edição
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           {/* ── Modalidade ─────────────────────────────────────────── */}

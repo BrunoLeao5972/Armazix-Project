@@ -10,6 +10,7 @@ import {
   Building2,
 } from "lucide-react";
 import { type PromoConfig, DEFAULT_PROMO_CONFIG, isPromoActive, getEffectivePrice } from "@/lib/promo-engine";
+import { escapeHtml } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1488,8 +1489,8 @@ function ProductsPage() {
       if (!storeId) { setLoading(false); return; }
       try {
         const [pData, cData] = await Promise.all([
-          fetch(`/api/products/list?storeId=${storeId}`).then(r => r.json()),
-          fetch(`/api/categories/list?storeId=${storeId}`).then(r => r.json()),
+          fetch(`/api/products/list-admin?storeId=${storeId}`).then(r => r.json()),
+          fetch(`/api/categories/list-admin?storeId=${storeId}`).then(r => r.json()),
         ]);
         setProducts((pData as { products?: Product[] }).products || []);
         setCategories((cData as { categories?: Category[] }).categories || []);
@@ -1535,12 +1536,12 @@ function ProductsPage() {
   const exportPDF = () => {
     const rows = filtered.map(p => `
       <tr>
-        <td>${p.name}</td>
-        <td>${p.sku || "—"}</td>
-        <td>${p.barcode || "—"}</td>
+        <td>${escapeHtml(p.name)}</td>
+        <td>${escapeHtml(p.sku) || "—"}</td>
+        <td>${escapeHtml(p.barcode) || "—"}</td>
         <td>${fmt(p.price)}</td>
         <td>—</td>
-        <td>${p.stock ?? 0} ${p.unit || "un"}</td>
+        <td>${p.stock ?? 0} ${escapeHtml(p.unit) || "un"}</td>
       </tr>`).join("");
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
       <title>Relatório de Produtos — ARMAZIX</title>
@@ -1564,7 +1565,7 @@ function ProductsPage() {
       </table>
       <div class="footer">ARMAZIX</div>
     </body></html>`;
-    const w = window.open("", "_blank");
+    const w = window.open("", "_blank", "noopener");
     if (!w) return;
     w.document.write(html);
     w.document.close();
@@ -1617,7 +1618,7 @@ function ProductsPage() {
                 } catch { /* ignore */ }
               }
               if (!s) { setLoading(false); return; }
-              fetch(`/api/products/list?storeId=${s}`).then(r => r.json()).then(d => setProducts((d as { products?: Product[] }).products || [])).finally(() => setLoading(false));
+              fetch(`/api/products/list-admin?storeId=${s}`).then(r => r.json()).then(d => setProducts((d as { products?: Product[] }).products || [])).finally(() => setLoading(false));
             }}>
             <RefreshCw className="w-3.5 h-3.5" />
           </Button>

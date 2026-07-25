@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SecaoExtrato } from "@/routes/admin/stock";
+import { SecaoExtrato } from "./-sec-extrato";
 
 export const Route = createFileRoute("/admin/stock/extract")({
   component: SecaoExtrato,

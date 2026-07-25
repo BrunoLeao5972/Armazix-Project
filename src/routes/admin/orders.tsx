@@ -4,7 +4,7 @@ import { api } from "@/lib/api-client";
 import {
   Search, Filter, Clock, ChefHat, Truck, CheckCircle2, XCircle,
   Loader2, Package, ShoppingBag, QrCode, Banknote, CreditCard,
-  MapPin, User, Printer, Send, Eye, Check, Zap, Settings, RotateCcw, ChevronDown,
+  MapPin, User, Printer, Send, Eye, Check, X, Zap, Settings, RotateCcw, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -104,6 +104,15 @@ const COLUMN_CANCELLED: ColumnConfig = {
   border: "border-destructive/20",
   dot: "bg-destructive",
   headerBg: "bg-destructive/8",
+};
+
+// As 3 colunas do fluxo (análise/preparando/entrega) devem ocupar 100% da
+// largura; só "encolhem" para dar espaço quando Concluídos e/ou Cancelados
+// são ativados nos filtros e entram no grid.
+const KANBAN_GRID_COLS: Record<number, string> = {
+  3: "sm:grid-cols-2 lg:grid-cols-3",
+  4: "sm:grid-cols-2 lg:grid-cols-4",
+  5: "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
 };
 
 // ── Status display ────────────────────────────────────────────────────────────
@@ -243,12 +252,17 @@ function buildBrowserText(order: Order, layout: "production" | "ficha"): string 
   ].join("\n");
 }
 
-async function autoPrint(order: Order, layout: "production" | "ficha"): Promise<void> {
+// `onFallback` avisa a UI sempre que a impressão automática não sai direto
+// pela impressora configurada e cai para o preview do navegador — sem isso,
+// uma impressora de rede offline (ou o agente local fechado) falhava
+// completamente em silêncio, sem imprimir nada e sem qualquer aviso.
+async function autoPrint(order: Order, layout: "production" | "ficha", onFallback?: (reason: string) => void): Promise<void> {
   try {
     const listData = await fetch("/api/printers/list").then(r => r.json()) as { printers?: PrinterRecord[] };
     const printer  = listData.printers?.[0];
 
     if (!printer) {
+      onFallback?.("Nenhuma impressora cadastrada — abrindo impressão no navegador");
       printViaIframe(buildPrintHtml(buildBrowserText(order, layout)));
       return;
     }
@@ -259,19 +273,44 @@ async function autoPrint(order: Order, layout: "production" | "ficha"): Promise<
       layout,
       send:      isNetworkPath(printer.path ?? ""),
     });
-    const data = await res.json() as { sent?: boolean; escposB64?: string };
+    const data = await res.json() as { sent?: boolean; escposB64?: string; error?: string };
 
     if (data.sent) return;
+
     if (!isNetworkPath(printer.path ?? "") && data.escposB64) {
       await sendViaAgent(printer.path!, data.escposB64);
+      return;
     }
+
+    // Impressora de rede configurada mas o envio TCP falhou (offline/IP
+    // errado) — ou nenhuma via de envio disponível. Sem este fallback o
+    // pedido não imprimia nada e não avisava ninguém.
+    onFallback?.(data.error || "Não foi possível enviar para a impressora — abrindo impressão no navegador");
+    printViaIframe(buildPrintHtml(buildBrowserText(order, layout)));
   } catch {
+    onFallback?.("Agente de impressão não encontrado — abrindo impressão no navegador");
     printViaIframe(buildPrintHtml(buildBrowserText(order, layout)));
   }
 }
 
-function imprimirComandaProducao(order: Order) { autoPrint(order, "production").catch(() => {}); }
-function imprimirFichaEntrega(order: Order)    { autoPrint(order, "ficha").catch(() => {}); }
+function imprimirComandaProducao(order: Order, onFallback?: (reason: string) => void) {
+  autoPrint(order, "production", onFallback).catch(() => {});
+}
+function imprimirFichaEntrega(order: Order, onFallback?: (reason: string) => void) {
+  autoPrint(order, "ficha", onFallback).catch(() => {});
+}
+
+// ─── Toast (mesmo padrão usado nas demais páginas admin) ────────────────────
+function Toast({ msg, type }: { msg: string; type: "success" | "error" }) {
+  return (
+    <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-lg text-sm font-medium animate-in slide-in-from-bottom-4 duration-200 ${
+      type === "success" ? "bg-emerald-600 text-white" : "bg-destructive text-white"
+    }`}>
+      {type === "success" ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+      {msg}
+    </div>
+  );
+}
 
 // ── PrintOrderDialog ──────────────────────────────────────────────────────────
 type PrintLayout = "production" | "caixa" | "delivery" | "ficha";
@@ -511,12 +550,13 @@ const PAY_OPTIONS = [
 ] as const;
 
 function OrderCard({
-  order, onAdvance, onCancel, onPrint, isAdvancing, hasPdv,
+  order, onAdvance, onCancel, onPrint, onPrintFallback, isAdvancing, hasPdv,
 }: {
   order: Order;
   onAdvance: (id: string, next: string, paymentMethod?: string) => void;
   onCancel: (id: string) => void;
   onPrint: (id: string) => void;
+  onPrintFallback: (msg: string, type: "success" | "error") => void;
   isAdvancing: boolean;
   hasPdv: boolean;
 }) {
@@ -644,7 +684,7 @@ function OrderCard({
             {reprintOpen && (
               <div className="absolute bottom-full right-0 mb-1.5 z-50 min-w-[180px] bg-popover border border-border/60 rounded-xl shadow-lg overflow-hidden">
                 <button
-                  onClick={() => { imprimirComandaProducao(order); setReprintOpen(false); }}
+                  onClick={() => { imprimirComandaProducao(order, msg => onPrintFallback(msg, "error")); setReprintOpen(false); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] font-medium hover:bg-secondary/60 transition-colors text-left"
                 >
                   <ChefHat className="w-3.5 h-3.5 text-orange-500 shrink-0" />
@@ -652,7 +692,7 @@ function OrderCard({
                 </button>
                 <div className="h-px bg-border/40" />
                 <button
-                  onClick={() => { imprimirFichaEntrega(order); setReprintOpen(false); }}
+                  onClick={() => { imprimirFichaEntrega(order, msg => onPrintFallback(msg, "error")); setReprintOpen(false); }}
                   className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] font-medium hover:bg-secondary/60 transition-colors text-left"
                 >
                   <Truck className="w-3.5 h-3.5 text-purple-500 shrink-0" />
@@ -709,14 +749,16 @@ function OrderCard({
 
 // ── KanbanColumn ──────────────────────────────────────────────────────────────
 function KanbanColumn({
-  column, orders, onAdvance, onCancel, onPrint, advancing, hasPdv,
+  column, orders, onAdvance, onCancel, onPrint, onPrintFallback, advancing, autoAccepting, hasPdv,
 }: {
   column: ColumnConfig;
   orders: Order[];
   onAdvance: (id: string, next: string, paymentMethod?: string) => void;
   onCancel: (id: string) => void;
   onPrint: (id: string) => void;
+  onPrintFallback: (msg: string, type: "success" | "error") => void;
   advancing: string | null;
+  autoAccepting: Set<string>;
   hasPdv: boolean;
 }) {
   return (
@@ -751,7 +793,8 @@ function KanbanColumn({
               onAdvance={onAdvance}
               onCancel={onCancel}
               onPrint={onPrint}
-              isAdvancing={advancing === order.orderId}
+              onPrintFallback={onPrintFallback}
+              isAdvancing={advancing === order.orderId || autoAccepting.has(order.orderId)}
               hasPdv={hasPdv}
             />
           ))
@@ -772,6 +815,12 @@ function OrdersPage() {
   const [printOrderId, setPrintOrderId] = useState<string | null>(null);
   const [hasPdv, setHasPdv] = useState(true);
   const storeIdRef = useRef<string | null>(null);
+
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const showToast = useCallback((msg: string, type: "success" | "error") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
 
   // Detecta se a loja tem PDV com base no plano
   useEffect(() => {
@@ -799,7 +848,11 @@ function OrdersPage() {
     });
   };
 
-  // ── Auto-aceite ─────────────────────────────────────────────────────────────
+  // Config de impressão lida sem stale closure dentro do polling silencioso.
+  const printCfgRef = useRef(printCfg);
+  useEffect(() => { printCfgRef.current = printCfg; }, [printCfg]);
+
+  // ── Aceite automático ────────────────────────────────────────────────────────
   const [autoAccept, setAutoAccept] = useState(() =>
     typeof window !== "undefined" && localStorage.getItem("armazix:autoAccept") === "true"
   );
@@ -807,6 +860,11 @@ function OrdersPage() {
   useEffect(() => { autoAcceptRef.current = autoAccept; }, [autoAccept]);
 
   const seenOrderIds = useRef(new Set<string>());
+
+  // Pedidos sendo aceitos automaticamente no momento — usado para desabilitar
+  // o botão manual do card enquanto isso e evitar disparar o avanço/impressão
+  // em duplicidade se o operador clicar "Preparar" no mesmo instante.
+  const [autoAccepting, setAutoAccepting] = useState<Set<string>>(new Set());
 
   const toggleAutoAccept = () => {
     setAutoAccept(prev => {
@@ -816,12 +874,32 @@ function OrdersPage() {
     });
   };
 
-  const advanceToPreparingQuiet = useCallback(async (orderId: string) => {
+  // Avança silenciosamente pending/received → preparing e, se a "Impressão
+  // automática" (Comanda de Produção) estiver ativa, dispara a impressão em
+  // seguida — mesmo comportamento do aceite manual (handleAdvance), só que
+  // sem exigir clique do operador. Falhas agora aparecem como toast — antes
+  // eram engolidas em silêncio, dando a impressão de que o recurso não fazia nada.
+  const advanceToPreparingQuiet = useCallback(async (order: Order) => {
+    setAutoAccepting(prev => new Set(prev).add(order.orderId));
     try {
-      const res = await api.post("/api/orders/update-status", { orderId, status: "preparing" });
-      if (res.ok) setOrders(prev => prev.map(o => o.orderId === orderId ? { ...o, status: "preparing" } : o));
-    } catch { /* silent */ }
-  }, []);
+      const res = await api.post("/api/orders/update-status", { orderId: order.orderId, status: "preparing" });
+      if (res.ok) {
+        setOrders(prev => prev.map(o => o.orderId === order.orderId ? { ...o, status: "preparing" } : o));
+        showToast(`Pedido #${order.number} aceito automaticamente`, "success");
+        if (printCfgRef.current.producao) imprimirComandaProducao(order, msg => showToast(msg, "error"));
+      } else {
+        showToast(`Aceite automático falhou no pedido #${order.number}`, "error");
+      }
+    } catch {
+      showToast(`Erro de conexão no aceite automático do pedido #${order.number}`, "error");
+    } finally {
+      setAutoAccepting(prev => {
+        const next = new Set(prev);
+        next.delete(order.orderId);
+        return next;
+      });
+    }
+  }, [showToast]);
 
   // ── Normalização ─────────────────────────────────────────────────────────────
   const normalize = useCallback((o: RawOrder): Order => ({
@@ -847,11 +925,11 @@ function OrdersPage() {
       if (res.ok) {
         const mapped = (data.orders || []).map(normalize);
 
-        // Auto-aceite: avança novos pedidos pending/received para preparando
+        // Aceite automático: avança novos pedidos pending/received para preparando
         if (silent && autoAcceptRef.current) {
           for (const order of mapped) {
             if (!seenOrderIds.current.has(order.orderId) && ["pending", "received"].includes(order.status)) {
-              advanceToPreparingQuiet(order.orderId);
+              advanceToPreparingQuiet(order);
             }
           }
         }
@@ -886,11 +964,16 @@ function OrdersPage() {
             : o
         ));
         if (order) {
-          if (nextStatus === "preparing" && printCfg.producao) imprimirComandaProducao(order);
-          if (nextStatus === "delivering" && printCfg.expedicao) imprimirFichaEntrega(order);
+          if (nextStatus === "preparing" && printCfg.producao) imprimirComandaProducao(order, msg => showToast(msg, "error"));
+          if (nextStatus === "delivering" && printCfg.expedicao) imprimirFichaEntrega(order, msg => showToast(msg, "error"));
         }
+      } else {
+        const data = await res.json().catch(() => ({} as { error?: string }));
+        showToast(data.error || "Não foi possível avançar o pedido", "error");
       }
-    } catch { /* ignore */ }
+    } catch {
+      showToast("Erro de conexão ao avançar o pedido", "error");
+    }
     finally { setAdvancing(null); }
   };
 
@@ -898,8 +981,15 @@ function OrdersPage() {
     setAdvancing(orderId);
     try {
       const res = await api.post("/api/orders/update-status", { orderId, status: "cancelled" });
-      if (res.ok) setOrders(prev => prev.map(o => o.orderId === orderId ? { ...o, status: "cancelled" } : o));
-    } catch { /* ignore */ }
+      if (res.ok) {
+        setOrders(prev => prev.map(o => o.orderId === orderId ? { ...o, status: "cancelled" } : o));
+      } else {
+        const data = await res.json().catch(() => ({} as { error?: string }));
+        showToast(data.error || "Não foi possível cancelar o pedido", "error");
+      }
+    } catch {
+      showToast("Erro de conexão ao cancelar o pedido", "error");
+    }
     finally { setAdvancing(null); }
   };
 
@@ -930,6 +1020,13 @@ function OrdersPage() {
       .filter(o => statuses.includes(o.status))
       .sort((a, b) => new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime());
 
+  const visibleColumns = [
+    ...COLUMNS,
+    ...(filters.showDelivered ? [COLUMN_DELIVERED] : []),
+    ...(filters.showCancelled ? [COLUMN_CANCELLED] : []),
+  ];
+  const kanbanGridCols = KANBAN_GRID_COLS[visibleColumns.length] ?? KANBAN_GRID_COLS[3];
+
   const activeFiltersCount = [
     filters.showDelivered, filters.showCancelled,
     filters.type !== "all", filters.payment !== "all",
@@ -955,20 +1052,35 @@ function OrdersPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Auto-aceite toggle */}
-          <button
-            onClick={toggleAutoAccept}
-            title={autoAccept ? "Aceite automático ativado — clique para desativar" : "Ativar aceite automático"}
+          {/* Aceite automático — toggle estilo iOS */}
+          <div
+            title={autoAccept ? "Aceite automático ativado" : "Aceite automático desativado"}
             className={[
-              "flex items-center gap-1.5 h-10 px-3 rounded-xl border text-xs font-semibold transition-all",
+              "flex items-center gap-2 h-10 pl-3 pr-2.5 rounded-xl border transition-all",
               autoAccept
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 shadow-[0_0_0_2px_rgba(16,185,129,0.15)]"
-                : "border-border/60 bg-secondary/30 text-muted-foreground hover:border-border",
+                ? "border-emerald-500/40 bg-emerald-500/10 shadow-[0_0_0_2px_rgba(16,185,129,0.15)]"
+                : "border-border/60 bg-secondary/30",
             ].join(" ")}
           >
-            <Zap className={`w-3.5 h-3.5 ${autoAccept ? "fill-emerald-500" : ""}`} />
-            <span className="hidden sm:inline">Auto-aceite</span>
-          </button>
+            <Zap className={`w-3.5 h-3.5 ${autoAccept ? "text-emerald-600 fill-emerald-500" : "text-muted-foreground"}`} />
+            <span className={`hidden sm:inline text-xs font-semibold ${autoAccept ? "text-emerald-700" : "text-muted-foreground"}`}>
+              Aceite automático
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoAccept}
+              aria-label="Aceite automático"
+              onClick={toggleAutoAccept}
+              className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                autoAccept ? "bg-emerald-500" : "bg-muted-foreground/30"
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                autoAccept ? "translate-x-5" : "translate-x-0"
+              }`} />
+            </button>
+          </div>
 
           {/* Search */}
           <div className="relative">
@@ -1010,7 +1122,9 @@ function OrdersPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium">Comanda de Produção</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Imprime ao avançar para Preparando</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Imprime ao avançar para Preparando — inclusive pelo Aceite automático
+                    </p>
                   </div>
                   <button
                     type="button"
@@ -1185,12 +1299,8 @@ function OrdersPage() {
       </div>
 
       {/* ── Kanban ──────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {[
-          ...COLUMNS,
-          ...(filters.showDelivered ? [COLUMN_DELIVERED] : []),
-          ...(filters.showCancelled ? [COLUMN_CANCELLED] : []),
-        ].map(col => (
+      <div className={`grid grid-cols-1 ${kanbanGridCols} gap-4`}>
+        {visibleColumns.map(col => (
           <KanbanColumn
             key={col.id}
             column={col}
@@ -1198,7 +1308,9 @@ function OrdersPage() {
             onAdvance={handleAdvance}
             onCancel={handleCancel}
             onPrint={id => setPrintOrderId(id)}
+            onPrintFallback={showToast}
             advancing={advancing}
+            autoAccepting={autoAccepting}
             hasPdv={hasPdv}
           />
         ))}
@@ -1209,6 +1321,8 @@ function OrdersPage() {
         orderId={printOrderId}
         onClose={() => setPrintOrderId(null)}
       />
+
+      {toast && <Toast msg={toast.msg} type={toast.type} />}
 
     </div>
   );

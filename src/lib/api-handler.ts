@@ -8,6 +8,7 @@ import { logoutHandler } from "./api/auth/logout-handler";
 import { forgotPasswordHandler } from "./api/auth/forgot-password-handler";
 import { resetPasswordHandler } from "./api/auth/reset-password-handler";
 import { resendVerificationHandler } from "./api/auth/resend-verification-handler";
+import { changePendingEmailHandler } from "./api/auth/change-pending-email-handler";
 import { getStoreHandler, updateStoreHandler, getDashboardStatsHandler, getUserStoreHandler, savePaymentConfigHandler } from "./api/store-handler";
 import {
   getStockStatsHandler,
@@ -31,10 +32,12 @@ import {
 import {
   createProductHandler,
   listProductsHandler,
+  listProductsAdminHandler,
   updateProductHandler,
   deleteProductHandler,
   createCategoryHandler,
   listCategoriesHandler,
+  listCategoriesAdminHandler,
   updateCategoryHandler,
   deleteCategoryHandler,
   createOrderHandler,
@@ -50,7 +53,7 @@ import {
   getNextPdvCodeHandler,
   backfillPdvCodesHandler,
 } from "./api/crud-handler";
-import { loginPasswordlessHandler, getCustomerOrdersHandler, requestOtpHandler, verifyOtpHandler, patchCustomerProfileHandler } from "./api/customer-handler";
+import { getCustomerOrdersHandler, getCustomerOrderDetailHandler, getCustomerProfileHandler, requestOtpHandler, verifyOtpHandler, patchCustomerProfileHandler } from "./api/customer-handler";
 import { saveBannersHandler } from "./api/banners-handler";
 import {
   listStoreUsersHandler,
@@ -162,7 +165,6 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/auth/resend-verification": resendVerificationHandler,
   "/api/auth/mock-login": mockLoginHandler,
   "/api/orders/create": createOrderHandler, // Público para checkout da loja
-  "/api/customer/login": loginPasswordlessHandler,             // Login passwordless por telefone
   "/api/customer/auth/request-code": requestOtpHandler,       // Solicita OTP via WhatsApp
   "/api/customer/auth/verify-code": verifyOtpHandler,         // Valida OTP e retorna JWT
   "/api/customer/profile": patchCustomerProfileHandler,       // Salva nome e endereço (auth via Bearer)
@@ -184,6 +186,8 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/coupons/validate": validatePublicCouponHandler, // Público para vitrine
   "/api/customer/check": checkCustomerByPhoneHandler,  // Pré-preenchimento checkout
   "/api/customer/orders": getCustomerOrdersHandler,     // Central do cliente (auth própria via Bearer)
+  "/api/customer/order-detail": getCustomerOrderDetailHandler, // Tela de acompanhamento de um pedido (auth própria via Bearer)
+  "/api/customer/profile": getCustomerProfileHandler, // Perfil do cliente logado, pra pré-preencher o checkout (auth própria via Bearer)
   "/api/payments/appmax-callback": appmaxConnectCallbackHandler, // Appmax redireciona o navegador do lojista pra cá
   "/api/payments/appmax-health": appmaxHealthHandler, // "URL de validação" da tela de Configuração de URLs no painel Appmax
 };
@@ -191,6 +195,7 @@ const publicGetRoutes: Record<string, ApiHandler> = {
 // Rotas protegidas (requerem autenticação)
 const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/auth/logout": logoutHandler,
+  "/api/auth/change-pending-email": changePendingEmailHandler,
   "/api/store/update": updateStoreHandler,
   "/api/store/update-address": updateAddressHandler,
   "/api/store/update-business-hours": updateBusinessHoursHandler,
@@ -299,6 +304,8 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/payment-methods/list":          listPaymentMethodsHandler,
   "/api/payment-methods/for-pdv":       listPaymentMethodsForPdvHandler,
   "/api/payment-plans/list":            listPaymentPlansHandler,
+  "/api/products/list-admin":           listProductsAdminHandler,
+  "/api/categories/list-admin":         listCategoriesAdminHandler,
 };
 
 // Mapeamento de rotas para configurações de rate limit

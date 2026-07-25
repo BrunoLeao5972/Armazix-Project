@@ -5,6 +5,7 @@ import {
   Search,
   ShoppingCart,
   User,
+  UserPlus,
   Loader2,
   Store,
   MessageCircle,
@@ -1077,29 +1078,42 @@ function StoreLayout() {
               </button>
 
               {/* Perfil — desktop only */}
-              <button
-                onClick={() => setProfileOpen(true)}
-                aria-label={customerToken ? `Perfil de ${customerName}` : "Entrar"}
-                className="hidden md:flex items-center gap-2 h-9 px-3 rounded-xl hover:bg-slate-100 transition-colors"
-              >
-                {customerToken ? (
-                  <>
-                    <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
-                      <span className="text-[11px] font-bold text-primary">
-                        {customerName.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?"}
-                      </span>
-                    </div>
-                    <span className="hidden lg:inline text-sm font-medium text-slate-700 max-w-[90px] truncate">
-                      Olá, {customerName.split(" ")[0] || "você"}
+              {customerToken ? (
+                <button
+                  onClick={() => setProfileOpen(true)}
+                  aria-label={`Perfil de ${customerName}`}
+                  className="hidden md:flex items-center gap-2 h-9 px-3 rounded-xl hover:bg-slate-100 transition-colors"
+                >
+                  <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+                    <span className="text-[11px] font-bold text-primary">
+                      {customerName.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?"}
                     </span>
-                  </>
-                ) : (
-                  <>
+                  </div>
+                  <span className="hidden lg:inline text-sm font-medium text-slate-700 max-w-[90px] truncate">
+                    Olá, {customerName.split(" ")[0] || "você"}
+                  </span>
+                </button>
+              ) : (
+                <div className="hidden md:flex items-center gap-1.5">
+                  <button
+                    onClick={() => setProfileOpen(true)}
+                    aria-label="Entrar"
+                    className="flex items-center gap-2 h-9 px-3 rounded-xl hover:bg-slate-100 transition-colors"
+                  >
                     <User className="w-4 h-4 text-slate-600" />
                     <span className="text-sm font-medium text-slate-700">Entrar</span>
-                  </>
-                )}
-              </button>
+                  </button>
+                  <button
+                    onClick={() => setProfileOpen(true)}
+                    aria-label="Criar conta"
+                    className="flex items-center gap-2 h-9 px-3.5 rounded-xl text-white transition-opacity hover:opacity-90"
+                    style={{ backgroundColor: "var(--cor-primaria)" }}
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span className="text-sm font-semibold">Criar conta</span>
+                  </button>
+                </div>
+              )}
 
               {/* Cart — oculto no mobile (acessível pelo Carrinho na bottom nav) */}
               <Sheet>

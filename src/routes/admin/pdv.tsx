@@ -965,8 +965,8 @@ function PDVPage() {
     setStoreId(sid);
     if (!sid) return;
     Promise.all([
-      fetch(`/api/products/list?storeId=${sid}&scope=pdv`).then(r => r.json()),
-      fetch(`/api/categories/list?storeId=${sid}`).then(r => r.json()),
+      fetch(`/api/products/list-admin?storeId=${sid}&scope=pdv`).then(r => r.json()),
+      fetch(`/api/categories/list-admin?storeId=${sid}`).then(r => r.json()),
       fetch(`/api/payment-methods/for-pdv`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/pdv/mesas?storeId=${sid}`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/pdv/caixa`).then(r => r.json()).catch(() => ({})),

@@ -18,8 +18,8 @@ function CategoriesPage() {
   useEffect(() => {
     if (!store?.id) return;
     Promise.all([
-      fetch(`/api/categories/list?storeId=${store.id}`).then(r => r.json()),
-      fetch(`/api/products/list?storeId=${store.id}`).then(r => r.json()),
+      fetch(`/api/categories/list?storeId=${store.id}&scope=public`).then(r => r.json()),
+      fetch(`/api/products/list?storeId=${store.id}&scope=public&limit=100`).then(r => r.json()),
     ]).then(([cd, pd]) => {
       if (cd.categories) setCategories(cd.categories);
       if (pd.products) setProducts(pd.products);

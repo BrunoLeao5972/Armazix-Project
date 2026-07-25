@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { SecaoSaida } from "@/routes/admin/stock";
+import { SecaoSaida } from "./-sec-saida";
 
 export const Route = createFileRoute("/admin/stock/exits")({
   component: SecaoSaida,

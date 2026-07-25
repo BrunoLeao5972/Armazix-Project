@@ -24,7 +24,7 @@ export default function ProductCombobox({ value, onChange, error }: Props) {
   useEffect(() => {
     const storeId = localStorage.getItem("storeId");
     if (!storeId) return;
-    fetch(`/api/products/list?storeId=${storeId}`)
+    fetch(`/api/products/list-admin?storeId=${storeId}`)
       .then(r => r.json())
       .then(d => {
         const prods: Product[] = (d.products || []).filter((p: any) => p.active !== false);

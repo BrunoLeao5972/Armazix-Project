@@ -7,6 +7,20 @@ import { sendWppText, normalizePhone } from "@/lib/whatsapp-sender";
 
 const { customers, orders, orderItems, customerOtps, addresses } = schema;
 
+async function authenticateCustomer(request: Request): Promise<{ customerId: string; storeId: string } | Response> {
+  const raw = request.headers.get("Authorization");
+  const token = raw?.startsWith("Bearer ") ? raw.slice(7) : null;
+  if (!token) return json({ error: "Não autorizado" }, 401);
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return json({ error: "Configuração inválida" }, 500);
+
+  const auth = await verifyCustomerJWT(token, secret);
+  if (!auth) return json({ error: "Token inválido ou expirado" }, 401);
+
+  return auth;
+}
+
 // ── DB OTP helpers (fallback when Redis is not configured) ────────────────────
 async function storeOtpInDb(
   db: ReturnType<typeof createDb>,
@@ -42,48 +56,6 @@ async function consumeOtpFromDb(
   if (!record) return false;
   await db.delete(customerOtps).where(eq(customerOtps.id, record.id));
   return true;
-}
-
-// ─── POST /api/customer/login ─────────────────────────────────────────────────
-// Passwordless: lookup by phone+storeId, return a signed customer JWT.
-// No OTP required — phone acts as the single factor for checkout accounts.
-export async function loginPasswordlessHandler(request: Request): Promise<Response> {
-  const body = await request.json() as { phone?: string; storeId?: string };
-  const phone = body.phone?.replace(/\D/g, "");
-  const storeId = body.storeId;
-
-  if (!phone || phone.length < 10 || !storeId) {
-    return json({ error: "Telefone e loja obrigatórios" }, 400);
-  }
-
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return json({ error: "Configuração inválida" }, 500);
-
-  const db = createDb(process.env.DATABASE_URL!);
-
-  try {
-    const [customer] = await db
-      .select({ id: customers.id, name: customers.name })
-      .from(customers)
-      .where(and(
-        eq(customers.storeId, storeId),
-        sql`regexp_replace(${customers.phone}, '\D', '', 'g') = ${phone}`,
-      ))
-      .limit(1);
-
-    if (!customer) {
-      return json(
-        { error: "Telefone não encontrado. Finalize um pedido primeiro para criar sua conta." },
-        404,
-      );
-    }
-
-    const token = await signCustomerJWT({ customerId: customer.id, storeId }, secret);
-    return json({ token, customer: { id: customer.id, name: customer.name } }, 200);
-  } catch (err) {
-    console.error("[customer/login]", err);
-    return json({ error: "Internal server error" }, 500);
-  }
 }
 
 // ─── GET /api/customer/orders ─────────────────────────────────────────────────
@@ -136,6 +108,106 @@ export async function getCustomerOrdersHandler(request: Request): Promise<Respon
     return json({ orders: orderList.map(o => ({ ...o, items: byOrder[o.id] ?? [] })) }, 200);
   } catch (err) {
     console.error("[customer/orders]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── GET /api/customer/order-detail ──────────────────────────────────────────
+// Retorna um único pedido completo (para a tela de acompanhamento). Diferente
+// de getCustomerOrdersHandler (lista os últimos 20, campos resumidos), esse
+// busca o pedido específico por id, sem limite de janela, com todos os campos
+// que a tela de detalhe precisa (subtotal, deliveryFee, discount, paymentMethod).
+// Auth: Bearer <customerJWT> em Authorization. Escopo: customerId + storeId do
+// próprio token — nunca confia em nada vindo da query além do orderId.
+export async function getCustomerOrderDetailHandler(request: Request): Promise<Response> {
+  const raw = request.headers.get("Authorization");
+  const token = raw?.startsWith("Bearer ") ? raw.slice(7) : null;
+  if (!token) return json({ error: "Não autorizado" }, 401);
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) return json({ error: "Configuração inválida" }, 500);
+
+  const auth = await verifyCustomerJWT(token, secret);
+  if (!auth) return json({ error: "Token inválido ou expirado" }, 401);
+
+  const url = new URL(request.url);
+  const orderId = url.searchParams.get("orderId");
+  if (!orderId) return json({ error: "orderId obrigatório" }, 400);
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const order = await db.query.orders.findFirst({
+      where: and(
+        eq(orders.id, orderId),
+        eq(orders.customerId, auth.customerId),
+        eq(orders.storeId, auth.storeId),
+      ),
+      with: { items: true },
+    });
+
+    if (!order) return json({ error: "Pedido não encontrado" }, 404);
+
+    return json({
+      order: {
+        id: order.id,
+        number: order.number,
+        status: order.status,
+        type: order.type,
+        paymentMethod: order.paymentMethod,
+        subtotal: order.subtotal,
+        deliveryFee: order.deliveryFee,
+        discount: order.discount,
+        total: order.total,
+        createdAt: order.createdAt,
+        items: order.items.map(i => ({
+          productName: i.productName,
+          productEmoji: i.productEmoji,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          total: i.total,
+        })),
+      },
+    }, 200);
+  } catch (err) {
+    console.error("[customer/order-detail]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── GET /api/customer/profile ────────────────────────────────────────────────
+// Retorna os dados de contato do cliente autenticado (nome, telefone) +
+// endereços salvos — usado pelo checkout para pré-preencher automaticamente
+// quando o cliente já está logado, sem pedir pra digitar telefone de novo.
+// Auth: Bearer <customerJWT>.
+export async function getCustomerProfileHandler(request: Request): Promise<Response> {
+  const auth = await authenticateCustomer(request);
+  if (auth instanceof Response) return auth;
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const [customer] = await db
+      .select({ id: customers.id, name: customers.name, phone: customers.phone })
+      .from(customers)
+      .where(and(eq(customers.id, auth.customerId), eq(customers.storeId, auth.storeId)))
+      .limit(1);
+
+    if (!customer) return json({ error: "Cliente não encontrado" }, 404);
+
+    const customerAddresses = await db
+      .select({
+        id: addresses.id, label: addresses.label, street: addresses.street, number: addresses.number,
+        complement: addresses.complement, neighborhood: addresses.neighborhood, city: addresses.city,
+        state: addresses.state, zip: addresses.zip, isDefault: addresses.isDefault,
+      })
+      .from(addresses)
+      .where(eq(addresses.customerId, customer.id))
+      .orderBy(addresses.isDefault, addresses.createdAt);
+
+    return json({ customer, addresses: customerAddresses }, 200);
+  } catch (err) {
+    console.error("[customer/profile]", err);
     return json({ error: "Internal server error" }, 500);
   }
 }

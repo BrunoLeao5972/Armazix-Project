@@ -3,9 +3,11 @@ import type { PromoConfig } from "@/lib/promo-engine";
 import { schema } from "@/lib/db";
 import { eq, desc, sql, and, ne, isNotNull, inArray } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
+import { verifyCustomerJWT } from "@/lib/auth";
 import { notifyOwnerNewOrder, notifyCustomerStatus, normalizePhone, DEFAULT_WPP_CONFIG, migrateWppConfig } from "@/lib/whatsapp-sender";
 import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey, customersCacheKey, deleteKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
+import { canCreateProduct } from "@/lib/api/plan-limits";
 
 const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements, addresses, financeiroLancamentos, orderTimeline } = schema;
 
@@ -62,6 +64,20 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
   const primaryUrl = imagesArr.find(i => i.isPrimary)?.url ?? imagesArr[0]?.url ?? body.imageUrl ?? null;
 
   try {
+    // Valida limite de produtos do plano atual antes de qualquer outra coisa
+    const limitCheck = await canCreateProduct(db, storeId);
+    if (!limitCheck.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: `Limite de produtos do plano ${limitCheck.planName} atingido (${limitCheck.current}/${limitCheck.limit}). Faça upgrade do seu plano para cadastrar mais produtos.`,
+          limitReached: true,
+          current: limitCheck.current,
+          limit: limitCheck.limit,
+        }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      );
+    }
+
     // Valida unicidade do Código PDV dentro da loja
     if (body.pdvCode) {
       const [pdvConflict] = await db
@@ -141,10 +157,15 @@ export async function listProductsHandler(request: Request): Promise<Response> {
     }
   }
 
-  // scope=public  → loja pública / vitrine (paginado, projeção mínima)
-  // scope=pdv     → active=true OR active=null (suspenso aparece no PDV)
-  // default       → all products (admin retaguarda)
+  // Esta rota é pública (vitrine) — só serve o modo scope=public, projeção
+  // mínima e paginada. O modo admin/PDV (SELECT * com costPrice etc.) foi
+  // movido para listProductsAdminHandler, que exige autenticação.
   const scope = url.searchParams.get("scope");
+  if (scope !== "public") {
+    return new Response(JSON.stringify({ error: "Autenticação necessária para este escopo" }), {
+      status: 401, headers: { "content-type": "application/json" },
+    });
+  }
 
   // ── Vitrine pública: projeção mínima + paginação ─────────────────
   if (scope === "public") {
@@ -217,7 +238,34 @@ export async function listProductsHandler(request: Request): Promise<Response> {
     }
   }
 
-  // ── Admin / PDV: comportamento existente (sem paginação) ─────────
+  // scope !== "public" já retornou 401 acima — este ponto é inalcançável,
+  // mas o TS exige um retorno em todo caminho.
+  return new Response(JSON.stringify({ error: "Autenticação necessária para este escopo" }), {
+    status: 401, headers: { "content-type": "application/json" },
+  });
+}
+
+// ─── List Products (admin / PDV) ──────────────────────────────────
+// SELECT * completo (custo, sku, barcode, promoConfig, produtos inativos) —
+// exige autenticação real. storeId vem só de requireStoreAccess, nunca do
+// client, mesmo que ?storeId= seja passado na URL.
+export async function listProductsAdminHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const url = new URL(request.url);
+  const scope = url.searchParams.get("scope"); // "pdv" | undefined (retaguarda admin)
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+
   try {
     const baseWhere = eq(products.storeId, storeId);
     const where =
@@ -229,7 +277,7 @@ export async function listProductsHandler(request: Request): Promise<Response> {
       status: 200, headers: { "content-type": "application/json" },
     });
   } catch (error) {
-    console.error("List products error:", error);
+    console.error("List products (admin) error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
   }
 }
@@ -470,44 +518,69 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
   const db = createDb(dbUrl);
   const scope = url.searchParams.get("scope");
 
-  // ── Vitrine pública: projeção mínima, sem N+1 de contagem ────────
-  if (scope === "public") {
-    try {
-      const result = await getCached(
-        categoriesCacheKey(storeId),
-        async () => {
-          const rows = await db
-            .select({
-              id:       categories.id,
-              name:     categories.name,
-              emoji:    categories.emoji,
-              icon:     categories.icon,
-              imageUrl: categories.imageUrl,
-              parentId: categories.parentId,
-              position: categories.position,
-            })
-            .from(categories)
-            .where(and(eq(categories.storeId, storeId), eq(categories.active, true)))
-            .orderBy(categories.position, categories.createdAt);
-          return { categories: rows };
-        },
-        { ttl: 3_600, storeId },
-      );
-
-      return new Response(JSON.stringify(result), {
-        status: 200,
-        headers: {
-          "content-type": "application/json",
-          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
-        },
-      });
-    } catch (error) {
-      console.error("List categories (public) error:", error);
-      return new Response(JSON.stringify({ error: "Serviço temporariamente indisponível" }), { status: 503, headers: { "content-type": "application/json", "Retry-After": "3" } });
-    }
+  // Esta rota é pública (vitrine) — só serve scope=public. A listagem
+  // completa (categorias inativas + contagem de produtos) exige autenticação
+  // e vive em listCategoriesAdminHandler.
+  if (scope !== "public") {
+    return new Response(JSON.stringify({ error: "Autenticação necessária para este escopo" }), {
+      status: 401, headers: { "content-type": "application/json" },
+    });
   }
 
-  // ── Admin: categoria list + contagem em 2 queries paralelas (era N+1) ──────
+  // ── Vitrine pública: projeção mínima, sem N+1 de contagem ────────
+  try {
+    const result = await getCached(
+      categoriesCacheKey(storeId),
+      async () => {
+        const rows = await db
+          .select({
+            id:       categories.id,
+            name:     categories.name,
+            emoji:    categories.emoji,
+            icon:     categories.icon,
+            imageUrl: categories.imageUrl,
+            parentId: categories.parentId,
+            position: categories.position,
+          })
+          .from(categories)
+          .where(and(eq(categories.storeId, storeId), eq(categories.active, true)))
+          .orderBy(categories.position, categories.createdAt);
+        return { categories: rows };
+      },
+      { ttl: 3_600, storeId },
+    );
+
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+      },
+    });
+  } catch (error) {
+    console.error("List categories (public) error:", error);
+    return new Response(JSON.stringify({ error: "Serviço temporariamente indisponível" }), { status: 503, headers: { "content-type": "application/json", "Retry-After": "3" } });
+  }
+}
+
+// ─── List Categories (admin) ──────────────────────────────────────
+// Inclui categorias inativas + contagem de produtos — exige autenticação.
+// storeId vem só de requireStoreAccess, nunca do client.
+export async function listCategoriesAdminHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+
   try {
     const [storeCategories, countRows] = await Promise.all([
       db.select().from(categories)
@@ -530,7 +603,7 @@ export async function listCategoriesHandler(request: Request): Promise<Response>
 
     return new Response(JSON.stringify({ categories: catsWithCount }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
-    console.error("List categories error:", error);
+    console.error("List categories (admin) error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
   }
 }
@@ -668,6 +741,21 @@ export async function createOrderHandler(request: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: "storeId, items e total obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
   }
 
+  // Cliente logado (checkout público) → id verificado pelo próprio JWT, não
+  // pelo que vier solto no body (body.customerId nunca é confiável sozinho).
+  let verifiedCustomerId: string | null = null;
+  const authHeader = request.headers.get("Authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (bearerToken) {
+    const jwtSecret = process.env.JWT_SECRET;
+    if (jwtSecret) {
+      const customerAuth = await verifyCustomerJWT(bearerToken, jwtSecret);
+      if (customerAuth && customerAuth.storeId === body.storeId) {
+        verifiedCustomerId = customerAuth.customerId;
+      }
+    }
+  }
+
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
@@ -743,7 +831,7 @@ export async function createOrderHandler(request: Request): Promise<Response> {
     // ── 3. Inserir pedido ─────────────────────────────────────────────────────
     const [order] = await db.insert(orders).values({
       storeId:           body.storeId,
-      customerId:        body.customerId || null,
+      customerId:        verifiedCustomerId || body.customerId || null,
       number:            nextNumber,
       status:            "received",
       type:              body.type || "delivery",
@@ -791,7 +879,9 @@ export async function createOrderHandler(request: Request): Promise<Response> {
     // ── 5. Upsert do cliente + vínculo ao pedido ──────────────────────────────
     // Roda de forma síncrona (precisa do customerId para a resposta), mas
     // envolto em try/catch para não derrubar a confirmação ao cliente.
-    let resolvedCustomerId: string | null = body.customerId || null;
+    // Cliente já identificado (JWT verificado ou customerId confiável) → pula
+    // a busca por telefone inteiramente, evitando duplicidade/match errado.
+    let resolvedCustomerId: string | null = verifiedCustomerId || body.customerId || null;
     const rawPhone = body.cliente?.telefone?.replace(/\D/g, "") || null;
 
     if (rawPhone && !resolvedCustomerId) {

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Package, Clock, ChefHat, Truck, CheckCircle2, Loader2 } from "lucide-react";
+import { Package, Clock, ChefHat, Truck, CheckCircle2, Loader2, LogIn } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { useStore } from "../store";
@@ -9,50 +9,88 @@ export const Route = createFileRoute("/store/order/$orderId")({
 });
 
 interface OrderItem { productName: string; productEmoji: string | null; quantity: number; unitPrice: string; total: string; }
-interface OrderData { id: string; orderId?: string; number: number; status: string; type: string; paymentMethod: string | null; subtotal: string; deliveryFee: string; discount: string; total: string; createdAt: string; items: OrderItem[]; }
+interface OrderData { id: string; number: number; status: string; type: string; paymentMethod: string | null; subtotal: string; deliveryFee: string; discount: string; total: string; createdAt: string; items: OrderItem[]; }
 
-const STEPS = [
-  { key: "pending", label: "Pedido recebido", icon: Package },
-  { key: "preparing", label: "Preparando", icon: ChefHat },
-  { key: "delivering", label: "Saiu para entrega", icon: Truck },
-  { key: "delivered", label: "Entregue", icon: CheckCircle2 },
-];
+const STEP_ICONS = [Package, ChefHat, Truck, CheckCircle2];
 
-const statusStepMap: Record<string, number> = { pending: 0, preparing: 1, delivering: 2, delivered: 3, completed: 3, cancelled: -1 };
+function stepsFor(type: string) {
+  return type === "pickup"
+    ? [
+        { key: "received", label: "Pedido recebido" },
+        { key: "preparing", label: "Preparando" },
+        { key: "ready", label: "Pronto para retirada" },
+        { key: "delivered", label: "Retirado" },
+      ]
+    : [
+        { key: "received", label: "Pedido recebido" },
+        { key: "preparing", label: "Preparando" },
+        { key: "delivering", label: "Saiu para entrega" },
+        { key: "delivered", label: "Entregue" },
+      ];
+}
+
+// Mapeia os 7 status reais do pedido (pending, received, preparing, ready,
+// delivering, delivered, cancelled) para o índice do passo de 4 etapas exibido.
+function stepIndexFor(status: string, type: string): number {
+  if (status === "cancelled") return -1;
+  if (status === "pending" || status === "received") return 0;
+  if (status === "preparing") return 1;
+  if (status === "ready") return type === "pickup" ? 2 : 1;
+  if (status === "delivering") return 2;
+  if (status === "delivered") return 3;
+  return 0;
+}
+
 const statusLabelMap: Record<string, { label: string; color: string }> = {
   pending: { label: "Pendente", color: "bg-amber-500/15 text-amber-700" },
+  received: { label: "Recebido", color: "bg-amber-500/15 text-amber-700" },
   preparing: { label: "Preparando", color: "bg-blue-500/15 text-blue-700" },
+  ready: { label: "Pronto", color: "bg-blue-500/15 text-blue-700" },
   delivering: { label: "Em rota", color: "bg-purple-500/15 text-purple-700" },
   delivered: { label: "Entregue", color: "bg-emerald-500/15 text-emerald-700" },
-  completed: { label: "Concluído", color: "bg-primary/15 text-primary" },
   cancelled: { label: "Cancelado", color: "bg-red-500/15 text-red-700" },
 };
 
 function OrderTrackingPage() {
   const { orderId } = Route.useParams();
+  const { store, customerToken } = useStore();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { store } = useStore();
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     if (!store?.id) { setLoading(false); return; }
-    fetch(`/api/orders/list?storeId=${store.id}`)
+    if (!customerToken) { setLoading(false); return; }
+
+    setLoading(true);
+    fetch(`/api/customer/order-detail?orderId=${orderId}`, {
+      headers: { Authorization: `Bearer ${customerToken}` },
+    })
       .then(r => r.json())
       .then(d => {
-        if (d.orders) {
-          const found = d.orders.find((o: OrderData) => o.id === orderId || o.orderId === orderId);
-          setOrder(found || null);
-        }
+        if (d.order) { setOrder(d.order); setNotFound(false); }
+        else { setOrder(null); setNotFound(true); }
       })
-      .catch(() => {})
+      .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
-  }, [orderId, store?.id]);
+  }, [orderId, store?.id, customerToken]);
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
 
-  if (!order) return <div className="px-4 py-20 text-center"><p className="text-lg font-bold">Pedido não encontrado</p></div>;
+  if (!customerToken) {
+    return (
+      <div className="px-4 py-20 text-center flex flex-col items-center gap-2">
+        <LogIn className="w-8 h-8 text-muted-foreground" />
+        <p className="text-lg font-bold">Faça login para ver seu pedido</p>
+        <p className="text-sm text-muted-foreground">Entre com o telefone usado na compra pra acompanhar o status.</p>
+      </div>
+    );
+  }
 
-  const currentStep = statusStepMap[order.status] ?? 0;
+  if (!order || notFound) return <div className="px-4 py-20 text-center"><p className="text-lg font-bold">Pedido não encontrado</p></div>;
+
+  const STEPS = stepsFor(order.type);
+  const currentStep = stepIndexFor(order.status, order.type);
   const statusInfo = statusLabelMap[order.status] || { label: order.status, color: "bg-secondary text-muted-foreground" };
   const items = order.items || [];
   const subtotal = parseFloat(order.subtotal || "0");
@@ -87,13 +125,14 @@ function OrderTrackingPage() {
           <h3 className="text-sm font-bold mb-3">Acompanhamento</h3>
           <div className="space-y-0">
             {STEPS.map((step, i) => {
+              const Icon = STEP_ICONS[i] ?? Clock;
               const done = i <= currentStep;
               const current = i === currentStep;
               return (
                 <div key={step.key} className="flex gap-3">
                   <div className="flex flex-col items-center">
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${current ? "bg-primary/15 ring-2 ring-primary" : done ? "bg-primary/10" : "bg-secondary"}`}>
-                      <step.icon className={`w-4 h-4 ${done ? "text-primary" : "text-muted-foreground"}`} />
+                      <Icon className={`w-4 h-4 ${done ? "text-primary" : "text-muted-foreground"}`} />
                     </div>
                     {i < STEPS.length - 1 && <div className={`w-0.5 h-8 ${done && i < currentStep ? "bg-primary" : "bg-border"}`} />}
                   </div>

@@ -20,12 +20,13 @@ const plans: Plan[] = [
     badge: "",
     tagline: "Sem necessidade de cartão de crédito",
     price: "R$ 0",
-    period: "/ 14 dias",
-    capacity: "Todas as funcionalidades",
+    period: "/ 10 dias",
+    capacity: "Até 15 produtos",
     description:
       "Teste todas as funcionalidades sem compromisso e configure sua loja em minutos",
     features: [
-      "Acesso completo por 14 dias",
+      "Acesso completo por 10 dias",
+      "Catálogo com até 15 produtos",
       "Integração com WhatsApp",
       "Controle de estoque automático",
       "Relatórios de vendas e desempenho",
@@ -40,11 +41,11 @@ const plans: Plan[] = [
     tagline: "O essencial para crescer",
     price: "R$ 79,90",
     period: "/mês",
-    capacity: "Até 20 produtos",
+    capacity: "Até 25 produtos",
     description:
       "Ideal para pequenos lojistas que precisam ganhar tempo, evitar erros no estoque e profissionalizar a operação",
     features: [
-      "Catálogo com até 20 produtos",
+      "Catálogo com até 25 produtos",
       "Integração com WhatsApp",
       "Controle de estoque automático",
       "Alertas de estoque baixo",

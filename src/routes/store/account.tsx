@@ -219,15 +219,23 @@ function AccountPage() {
         </div>
         <h2 className="text-xl font-bold mb-2">Acesse seu Perfil</h2>
         <p className="text-sm text-muted-foreground mb-8 max-w-[260px] leading-relaxed">
-          Conecte-se para ver seus pedidos, favoritos e dados salvos.
+          Entre ou crie sua conta para ver seus pedidos, favoritos e dados salvos.
         </p>
-        <button
-          onClick={() => setAuthOpen(true)}
-          className="w-full max-w-xs h-12 rounded-2xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-primary/20 transition-transform active:scale-[0.97]"
-        >
-          <Phone className="w-4 h-4" />
-          Conectar com seu Telefone
-        </button>
+        <div className="w-full max-w-xs space-y-2.5">
+          <button
+            onClick={() => setAuthOpen(true)}
+            className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-primary/20 transition-transform active:scale-[0.97]"
+          >
+            <Phone className="w-4 h-4" />
+            Criar conta
+          </button>
+          <button
+            onClick={() => setAuthOpen(true)}
+            className="w-full h-12 rounded-2xl border border-border text-foreground font-semibold text-sm flex items-center justify-center gap-2.5 hover:bg-secondary/50 transition-transform active:scale-[0.97]"
+          >
+            Já tenho conta — Entrar
+          </button>
+        </div>
         <PhoneAuthModal
           open={authOpen}
           onOpenChange={setAuthOpen}

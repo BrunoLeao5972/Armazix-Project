@@ -91,6 +91,8 @@ export const stores = pgTable("stores", {
   index("stores_slug_idx").on(t.slug),
   index("stores_active_idx").on(t.active),
   uniqueIndex("stores_appmax_external_id_idx").on(t.appmaxExternalId),
+  // Postgres trata múltiplos NULL como distintos — não bloqueia lojas sem CNPJ.
+  uniqueIndex("stores_cnpj_idx").on(t.cnpj),
 ]);
 
 export const storesRelations = relations(stores, ({ many }) => ({
@@ -465,6 +467,8 @@ export const users = pgTable("users", {
 }, (t) => [
   index("users_email_idx").on(t.email),
   index("users_role_idx").on(t.role),
+  // Postgres trata múltiplos NULL como distintos — não bloqueia usuários sem CPF.
+  uniqueIndex("users_cpf_idx").on(t.cpf),
 ]);
 
 export const usersRelations = relations(users, ({ many }) => ({

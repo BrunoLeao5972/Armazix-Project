@@ -18,76 +18,50 @@ interface WebhookSignatureResult {
 }
 
 /**
- * Validate webhook using a simple secret-based approach
- * This is suitable for basic protection. For full signature validation,
- * you would need to implement MP's specific signing algorithm.
+ * Real MercadoPago HMAC-SHA256 webhook signature verification.
+ * https://www.mercadopago.com.br/developers/en/docs/checkout-api/webhooks
+ *
+ * Header: X-Signature: "ts=<unix>,v1=<hex>"
+ * Manifest: "id:<data.id lowercase>;request-id:<x-request-id>;ts:<ts>;"
+ * Requires MP_WEBHOOK_SECRET (configurado no painel do MP em Webhooks →
+ * chave secreta, e via `wrangler secret put MP_WEBHOOK_SECRET`).
  */
-export function validateWebhookSecret(
+export async function validateMercadoPagoSignature(
   request: Request,
-  expectedSecret: string
-): WebhookSignatureResult {
-  // Get the signature from headers
-  const signature = request.headers.get("x-signature") || 
-                   request.headers.get("X-Signature") ||
-                   request.headers.get("x-webhook-secret");
-  
-  if (!signature) {
-    return { valid: false, error: "Missing signature header" };
-  }
-
-  // Simple comparison for webhook secret
-  // In production, use timing-safe comparison
-  if (signature !== expectedSecret) {
-    return { valid: false, error: "Invalid signature" };
-  }
-
-  return { valid: true };
-}
-
-/**
- * Alternative: Validate using request ID and timestamp
- * This prevents replay attacks
- */
-export async function validateWebhookRequest(
-  request: Request,
-  secret: string
+  dataId: string,
+  secret: string,
 ): Promise<WebhookSignatureResult> {
-  const signature = request.headers.get("x-signature");
+  const signatureHeader = request.headers.get("x-signature");
   const requestId = request.headers.get("x-request-id");
-  
-  if (!signature) {
-    return { valid: false, error: "Missing X-Signature header" };
+  if (!signatureHeader || !requestId) {
+    return { valid: false, error: "Missing x-signature/x-request-id headers" };
   }
 
-  // Parse signature format: "ts=<timestamp>,v1=<signature>"
-  const parts = signature.split(",");
-  const tsPart = parts.find(p => p.startsWith("ts="));
-  const v1Part = parts.find(p => p.startsWith("v1="));
-  
-  if (!tsPart || !v1Part) {
-    return { valid: false, error: "Invalid signature format" };
-  }
+  const parts = signatureHeader.split(",").reduce<Record<string, string>>((acc, p) => {
+    const [k, v] = p.split("=");
+    if (k && v) acc[k.trim()] = v.trim();
+    return acc;
+  }, {});
+  const { ts, v1 } = parts;
+  if (!ts || !v1) return { valid: false, error: "Invalid signature format" };
 
-  const timestamp = tsPart.replace("ts=", "");
-  const receivedSig = v1Part.replace("v1=", "");
-  
-  // Check timestamp to prevent replay attacks (5 min window)
   const now = Math.floor(Date.now() / 1000);
-  const webhookTime = parseInt(timestamp, 10);
-  if (Math.abs(now - webhookTime) > 300) {
+  const webhookTs = parseInt(ts, 10);
+  if (!Number.isFinite(webhookTs) || Math.abs(now - webhookTs) > 300) {
     return { valid: false, error: "Webhook timestamp too old" };
   }
-  
-  // Get request body for signature verification
-  const body = await request.text();
-  
-  // MercadoPago signature verification would go here
-  // For now, we use a simpler secret-based approach
-  
-  // Note: Full MP signature verification requires their specific algorithm
-  // which involves: HMAC_SHA256(secret, "id:<data.id>;request-id:<x-request-id>;<secret>")
-  
-  return { valid: true };
+
+  const manifest = `id:${dataId.toLowerCase()};request-id:${requestId};ts:${ts};`;
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const sigBuf = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(manifest));
+  const computed = Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+
+  if (computed.length !== v1.length) return { valid: false, error: "Invalid signature" };
+  let diff = 0;
+  for (let i = 0; i < computed.length; i++) diff |= computed.charCodeAt(i) ^ v1.charCodeAt(i);
+  return diff === 0 ? { valid: true } : { valid: false, error: "Invalid signature" };
 }
 
 /**

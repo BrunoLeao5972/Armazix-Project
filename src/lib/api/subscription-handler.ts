@@ -1,7 +1,9 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
+import { PLANS as PLAN_DEFS } from "@/lib/plans";
+import { validateMercadoPagoSignature } from "@/lib/webhook-validator";
 
 const { stores } = schema;
 const MP_API = "https://api.mercadopago.com";
@@ -13,11 +15,13 @@ function json(data: unknown, status = 200) {
   });
 }
 
-// Plan definitions — single source of truth
+// Planos pagos (assinatura via Mercado Pago) — os dados de preço vêm de
+// src/lib/plans.ts, a fonte única de verdade compartilhada com o front.
+// "free" fica de fora aqui de propósito: não existe cobrança pro trial.
 export const PLANS: Record<string, { name: string; price: number; pixPrice: number; reason: string }> = {
-  start: { name: "Start", price: 19.90, pixPrice: 24.90, reason: "Plano Start — Armazix" },
-  pro:   { name: "Pro",   price: 39.90, pixPrice: 44.90, reason: "Plano Pro — Armazix"   },
-  full:  { name: "Full",  price: 79.90, pixPrice: 84.90, reason: "Plano Full — Armazix"  },
+  start: { name: PLAN_DEFS.start.name, price: PLAN_DEFS.start.price, pixPrice: PLAN_DEFS.start.pixPrice, reason: PLAN_DEFS.start.mpReason },
+  pro:   { name: PLAN_DEFS.pro.name,   price: PLAN_DEFS.pro.price,   pixPrice: PLAN_DEFS.pro.pixPrice,   reason: PLAN_DEFS.pro.mpReason   },
+  full:  { name: PLAN_DEFS.full.name,  price: PLAN_DEFS.full.price,  pixPrice: PLAN_DEFS.full.pixPrice,  reason: PLAN_DEFS.full.mpReason  },
 };
 
 // PDV add-on price
@@ -107,14 +111,16 @@ export async function createSubscriptionHandler(request: Request, auth?: AuthCon
 
   const preapproval = await mpRes.json() as { id: string; init_point: string };
 
-  // Store the subscription ID and payment method immediately
+  // Store the subscription ID and payment method immediately.
+  // pdvEnabled NÃO é setado aqui — a preapproval ainda não foi paga.
+  // Só o webhook (subscriptionWebhookHandler), depois de confirmar o
+  // pagamento com o Mercado Pago, libera o add-on.
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
   await db.update(stores)
     .set({
       mpSubscriptionId: preapproval.id,
       paymentMethod: "card_recurring",
-      pdvEnabled: body.withPdv ?? false,
       updatedAt: new Date(),
     })
     .where(eq(stores.id, storeId));
@@ -245,14 +251,15 @@ export async function createPixPaymentHandler(request: Request, auth?: AuthConte
     return json({ error: "Dados PIX não encontrados na resposta" }, 502);
   }
 
-  // Persist the pending payment reference
+  // Persist the pending payment reference.
+  // pdvEnabled NÃO é setado aqui — o PIX ainda não foi pago (planStatus
+  // fica "pending"). Só pixWebhookHandler, no branch "approved", libera.
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
   await db.update(stores)
     .set({
       mpPaymentId: String(payment.id),
       paymentMethod: "pix_manual",
-      pdvEnabled: body.withPdv ?? false,
       planStatus: "pending",
       amountPaid: String(totalAmount),
       paymentStatus: "pending",
@@ -292,6 +299,18 @@ export async function pixWebhookHandler(request: Request): Promise<Response> {
   // Only handle payment events
   if (topic && topic !== "payment") return new Response("ok", { status: 200 });
 
+  // Valida que a notificação veio mesmo do Mercado Pago (fail closed).
+  const webhookSecret = process.env.MP_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error("[pix-webhook] MP_WEBHOOK_SECRET não configurado — webhook bloqueado");
+    return new Response("Webhook security not configured", { status: 500 });
+  }
+  const sig = await validateMercadoPagoSignature(request, paymentId, webhookSecret);
+  if (!sig.valid) {
+    console.error("[pix-webhook] Falha na verificação de assinatura:", sig.error);
+    return new Response("Unauthorized", { status: 401 });
+  }
+
   const accessToken = process.env.PLATFORM_MP_ACCESS_TOKEN;
   if (!accessToken) return new Response("ok", { status: 200 });
 
@@ -326,7 +345,9 @@ export async function pixWebhookHandler(request: Request): Promise<Response> {
 
   if (payment.status === "approved") {
     const planExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // +30 days
-    await db.update(stores)
+    // Guarda de idempotência: só aplica se este payment.id ainda não foi
+    // processado para esta loja — evita renovação grátis por replay do webhook.
+    const [updated] = await db.update(stores)
       .set({
         plan: planId,
         planStatus: "active",
@@ -338,7 +359,15 @@ export async function pixWebhookHandler(request: Request): Promise<Response> {
         paymentStatus: "approved",
         updatedAt: new Date(),
       })
-      .where(eq(stores.id, payerStoreId));
+      .where(and(
+        eq(stores.id, payerStoreId),
+        or(isNull(stores.mpPaymentId), ne(stores.mpPaymentId, String(payment.id))),
+      ))
+      .returning({ id: stores.id });
+
+    if (!updated) {
+      console.log(`[pix-webhook] payment ${payment.id} já aplicado para a loja ${payerStoreId} — ignorando replay`);
+    }
   } else if (payment.status === "rejected" || payment.status === "cancelled") {
     await db.update(stores)
       .set({
@@ -361,16 +390,60 @@ export async function subscriptionWebhookHandler(request: Request): Promise<Resp
 
   if (!dataId) return new Response("ok", { status: 200 });
 
-  // We only care about preapproval (subscription) events
-  if (topic !== "preapproval" && topic !== "subscription_preapproval") {
+  // Duas origens de evento nos interessam:
+  // - preapproval / subscription_preapproval: mudança de status da assinatura
+  //   em si (autorizada, cancelada, pausada). data.id = id do preapproval.
+  // - subscription_authorized_payment: cada cobrança recorrente processada
+  //   com sucesso. data.id = id do "authorized payment" (a cobrança), não da
+  //   assinatura — é isso que efetivamente empurra next_payment_date pra
+  //   frente no lado do MP, então precisamos reagir a ele pra planExpiresAt
+  //   acompanhar a renovação mensal (sem isso, a assinatura "trava" na data
+  //   da primeira autorização e nunca mais é confirmada como paga).
+  const isPreapprovalStatus = topic === "preapproval" || topic === "subscription_preapproval";
+  const isAuthorizedPayment = topic === "subscription_authorized_payment";
+  if (!isPreapprovalStatus && !isAuthorizedPayment) {
     return new Response("ok", { status: 200 });
+  }
+
+  // Valida que a notificação veio mesmo do Mercado Pago (fail closed).
+  const webhookSecret = process.env.MP_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error("[mp-webhook] MP_WEBHOOK_SECRET não configurado — webhook bloqueado");
+    return new Response("Webhook security not configured", { status: 500 });
+  }
+  const sig = await validateMercadoPagoSignature(request, dataId, webhookSecret);
+  if (!sig.valid) {
+    console.error("[mp-webhook] Falha na verificação de assinatura:", sig.error);
+    return new Response("Unauthorized", { status: 401 });
   }
 
   const accessToken = process.env.PLATFORM_MP_ACCESS_TOKEN;
   if (!accessToken) return new Response("ok", { status: 200 });
 
+  // Resolve o id do preapproval — direto se o evento já é sobre a assinatura,
+  // ou buscando o authorized_payment primeiro se o evento é de uma cobrança.
+  let preapprovalId = dataId;
+  if (isAuthorizedPayment) {
+    const apRes = await fetch(`${MP_API}/authorized_payments/${dataId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!apRes.ok) {
+      console.error(`[mp-webhook] Falha ao buscar authorized_payment ${dataId}: ${apRes.status}`);
+      return new Response("ok", { status: 200 });
+    }
+    const authorizedPayment = await apRes.json() as { preapproval_id?: string; status?: string };
+    if (!authorizedPayment.preapproval_id) return new Response("ok", { status: 200 });
+    // Só renova em cobrança de fato processada — evita estender o acesso em
+    // cima de uma tentativa de cobrança que falhou/está pendente.
+    if (authorizedPayment.status && authorizedPayment.status !== "processed") {
+      console.log(`[mp-webhook] authorized_payment ${dataId} com status "${authorizedPayment.status}" — ignorando`);
+      return new Response("ok", { status: 200 });
+    }
+    preapprovalId = authorizedPayment.preapproval_id;
+  }
+
   // Fetch the preapproval from MP
-  const mpRes = await fetch(`${MP_API}/preapproval/${dataId}`, {
+  const mpRes = await fetch(`${MP_API}/preapproval/${preapprovalId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
@@ -385,8 +458,10 @@ export async function subscriptionWebhookHandler(request: Request): Promise<Resp
 
   if (!preapproval.external_reference) return new Response("ok", { status: 200 });
 
-  const [storeId, planId] = preapproval.external_reference.split("|");
+  const refParts = preapproval.external_reference.split("|");
+  const [storeId, planId] = refParts;
   if (!storeId || !planId) return new Response("ok", { status: 200 });
+  const withPdv = refParts.includes("pdv");
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -394,11 +469,15 @@ export async function subscriptionWebhookHandler(request: Request): Promise<Resp
   let planStatus: string;
   let newPlan: string;
   let planExpiresAt: Date | null = null;
+  // pdvEnabled só é liberado quando a assinatura está de fato ativa e paga —
+  // em qualquer outro status (pending/cancelled/paused) fica desligado.
+  let pdvEnabled = false;
 
   switch (preapproval.status) {
     case "authorized":
       planStatus = "active";
       newPlan = planId;
+      pdvEnabled = withPdv;
       // Set expiry to next payment date + 1 day buffer, or +31 days
       planExpiresAt = preapproval.next_payment_date
         ? new Date(new Date(preapproval.next_payment_date).getTime() + 86400000)
@@ -424,6 +503,7 @@ export async function subscriptionWebhookHandler(request: Request): Promise<Resp
       plan: newPlan,
       planStatus,
       planExpiresAt,
+      pdvEnabled,
       mpSubscriptionId: preapproval.id,
       updatedAt: new Date(),
     })

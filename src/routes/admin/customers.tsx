@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { api } from "@/lib/api-client";
+import { escapeHtml } from "@/lib/utils";
 import {
   Search, Plus, MoreHorizontal, Mail, Phone, Loader2,
   User, MapPin, FileText, Check, X, RefreshCw,
@@ -532,10 +533,10 @@ function CustomersPage() {
         x.cep ? `CEP ${x.cep}` : "",
       ].filter(Boolean).join(", "))[0] || "—";
       return `<tr>
-        <td>${c.name}</td>
-        <td>${c.phone ? maskPhone(c.phone) : "—"}</td>
-        <td>${c.email || "—"}</td>
-        <td>${addr}</td>
+        <td>${escapeHtml(c.name)}</td>
+        <td>${c.phone ? escapeHtml(maskPhone(c.phone)) : "—"}</td>
+        <td>${escapeHtml(c.email) || "—"}</td>
+        <td>${escapeHtml(addr)}</td>
       </tr>`;
     }).join("");
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -560,7 +561,7 @@ function CustomersPage() {
       </table>
       <div class="footer">ARMAZIX</div>
     </body></html>`;
-    const w = window.open("", "_blank");
+    const w = window.open("", "_blank", "noopener");
     if (!w) return;
     w.document.write(html);
     w.document.close();

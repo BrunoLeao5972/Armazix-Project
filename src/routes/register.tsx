@@ -208,7 +208,13 @@ function RegisterPage() {
     if (step > 1) setStep(step - 1);
   };
 
-  const handleFinish = async () => {
+  // Recebe o plano escolhido diretamente (não depende de state assíncrono) —
+  // cria a conta sempre no tier gratuito (upgrade real só acontece após
+  // pagamento confirmado) e decide pra onde navegar em seguida:
+  // "free" → direto pro painel; qualquer plano pago → aba de Planos em
+  // Configurações, onde o fluxo de cobrança via Mercado Pago já funciona.
+  const handleFinish = async (planId: string) => {
+    setStep(6);
     setLoading(true);
     try {
       const res = await fetch("/api/auth/register", {
@@ -231,15 +237,18 @@ function RegisterPage() {
       const data = await res.json();
       if (!res.ok) {
         alert(data.error || "Erro ao criar conta");
-        setLoading(false);
+        setStep(5);
         return;
       }
       if (data.csrfToken) {
         localStorage.setItem("csrf_token", data.csrfToken);
       }
-      navigate({ to: "/admin" });
+      // Conta criada e já logada (cookie definido pelo /api/auth/register) —
+      // falta só validar o email antes de liberar o painel de verdade.
+      navigate({ to: "/verify-email", search: { email: email.trim(), next: planId === "free" ? "admin" : "planos" } });
     } catch {
       alert("Erro de conexão. Tente novamente.");
+      setStep(5);
     } finally {
       setLoading(false);
     }
@@ -645,16 +654,17 @@ function RegisterPage() {
                 >
                   <div className="space-y-3">
                     {[
-                      { id: "free",  label: "Free",  desc: "Até 5 produtos · Gratuito",    price: "Grátis",       highlight: false },
-                      { id: "start", label: "Start", desc: "Até 30 produtos · R$ 19,90/mês", price: "R$ 19,90/mês", highlight: false },
-                      { id: "pro",   label: "Pro",   desc: "Até 70 produtos · R$ 39,90/mês", price: "R$ 39,90/mês", highlight: true  },
-                      { id: "full",  label: "Full",  desc: "Ilimitado · R$ 79,90/mês",       price: "R$ 79,90/mês", highlight: false },
+                      { id: "free",  label: "Free",  desc: "Até 15 produtos · 10 dias grátis", price: "Grátis",        highlight: false },
+                      { id: "start", label: "Start", desc: "Até 25 produtos · R$ 79,90/mês", price: "R$ 79,90/mês",  highlight: false },
+                      { id: "pro",   label: "Pro",   desc: "Até 70 produtos · R$ 149,90/mês", price: "R$ 149,90/mês", highlight: true  },
+                      { id: "full",  label: "Full",  desc: "Ilimitado · R$ 249,90/mês",       price: "R$ 249,90/mês", highlight: false },
                     ].map((plan) => (
                       <button
                         key={plan.id}
                         type="button"
-                        onClick={() => nextStep()}
-                        className={`w-full flex items-center justify-between p-4 rounded-xl border-2 text-left transition-colors hover:border-primary/60 ${
+                        disabled={loading}
+                        onClick={() => handleFinish(plan.id)}
+                        className={`w-full flex items-center justify-between p-4 rounded-xl border-2 text-left transition-colors hover:border-primary/60 disabled:opacity-50 disabled:pointer-events-none ${
                           plan.highlight ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/30"
                         }`}
                       >
@@ -670,8 +680,20 @@ function RegisterPage() {
                     ))}
                   </div>
                   <p className="text-xs text-muted-foreground text-center mt-4">
-                    Todos os planos com 30 dias grátis. Cancele quando quiser.
+                    Teste grátis por 10 dias no plano Free. Assinatura mensal nos demais. Cancele quando quiser.
                   </p>
+                </StepWrapper>
+              )}
+
+              {step === 6 && (
+                <StepWrapper
+                  title="Quase lá!"
+                  subtitle="Estamos criando sua conta e configurando sua loja"
+                >
+                  <div className="flex flex-col items-center justify-center py-14 gap-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground text-center">Isso leva só alguns segundos...</p>
+                  </div>
                 </StepWrapper>
               )}
             </motion.div>

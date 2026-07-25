@@ -367,7 +367,7 @@ function CategoriesPage() {
 
   const fetchCategories = async (storeId: string) => {
     try {
-      const res = await fetch(`/api/categories/list?storeId=${storeId}`);
+      const res = await fetch(`/api/categories/list-admin?storeId=${storeId}`);
       const data = await res.json();
       if (res.ok) setCategories(data.categories || []);
     } catch { /* noop */ } finally { setLoading(false); }
@@ -377,7 +377,7 @@ function CategoriesPage() {
     const storeId = localStorage.getItem("storeId");
     if (!storeId) return;
     try {
-      const res = await fetch(`/api/categories/list?storeId=${storeId}`);
+      const res = await fetch(`/api/categories/list-admin?storeId=${storeId}`);
       const data = await res.json();
       if (res.ok) setCategories(data.categories || []);
     } catch { /* noop */ }
