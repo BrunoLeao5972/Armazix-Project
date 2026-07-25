@@ -50,20 +50,13 @@ export const stores = pgTable("stores", {
   layoutType: varchar("layout_type", { length: 10 }).default("grid"),
   mpAccessToken: text("mp_access_token"),
   mpPublicKey: text("mp_public_key"),
-  // ── Appmax (gateway alternativo — cartão, boleto, Pix) ────────────
-  // Credenciais do MERCHANT (por loja), obtidas via fluxo de instalação
-  // de app da Appmax (OAuth2 client_credentials + hash de autorização).
-  // Sempre criptografadas com lib/crypto.ts, nunca em texto plano.
-  appmaxClientId:       text("appmax_client_id"),
-  appmaxClientSecret:   text("appmax_client_secret"),
-  appmaxAccessToken:    text("appmax_access_token"),     // bearer token de curta duração (cache)
-  appmaxTokenExpiresAt: timestamp("appmax_token_expires_at"),
-  appmaxConnectedAt:    timestamp("appmax_connected_at"),
-  // external_id: gerado por NÓS (não pela Appmax), único por instalação —
-  // devolvido pela URL de validação/health-check no painel da Appmax para
-  // confirmar que a instalação foi concluída. Não é sensível (não precisa
-  // criptografia), mas precisa ser único — gerado assim que a conexão começa.
-  appmaxExternalId:     uuid("appmax_external_id"),
+  /**
+   * ID da conta Mercado Pago do lojista (o `collector_id`). O webhook do MP
+   * identifica o destinatário por `user_id` no corpo e NÃO envia o
+   * external_reference — sem este mapeamento não há como saber com qual token
+   * consultar o pagamento. Preenchido ao salvar o token e no primeiro checkout.
+   */
+  mpUserId: varchar("mp_user_id", { length: 40 }),
   paymentMethodsConfig: jsonb("payment_methods_config").$type<
     import("@/lib/store-context").PaymentMethodConfig[]
   >(),
@@ -90,7 +83,7 @@ export const stores = pgTable("stores", {
 }, (t) => [
   index("stores_slug_idx").on(t.slug),
   index("stores_active_idx").on(t.active),
-  uniqueIndex("stores_appmax_external_id_idx").on(t.appmaxExternalId),
+  index("stores_mp_user_idx").on(t.mpUserId),
   // Postgres trata múltiplos NULL como distintos — não bloqueia lojas sem CNPJ.
   uniqueIndex("stores_cnpj_idx").on(t.cnpj),
 ]);
@@ -335,9 +328,12 @@ export const orders = pgTable("orders", {
   cancelReason: text("cancel_reason"),
   installments:   integer("installments").default(1),
   cardFeeAmount:  numeric("card_fee_amount", { precision: 10, scale: 2 }),  // taxa da maquineta calculada
-  // Referência do pedido no gateway externo (Appmax não aceita external_id na criação
-  // do pedido — precisamos guardar o id numérico deles para casar com o webhook).
-  appmaxOrderId:  varchar("appmax_order_id", { length: 40 }),
+  /**
+   * ID do pagamento no gateway que liquidou este pedido. Serve de guarda de
+   * idempotência: o webhook só aplica um evento se o id for diferente do que
+   * já está gravado, então reenvio ou replay não reprocessam nada.
+   */
+  gatewayPaymentId: varchar("gateway_payment_id", { length: 64 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -346,7 +342,6 @@ export const orders = pgTable("orders", {
   index("orders_status_idx").on(t.status),
   index("orders_number_idx").on(t.number),
   index("orders_created_idx").on(t.createdAt),
-  index("orders_appmax_order_idx").on(t.appmaxOrderId),
 ]);
 
 export const ordersRelations = relations(orders, ({ one, many }) => ({
@@ -450,6 +445,37 @@ export const storeUsersRelations = relations(storeUsers, ({ one }) => ({
   user: one(users, { fields: [storeUsers.userId], references: [users.id] }),
 }));
 
+// ─── STORE INVITES (entrada na equipe) ──────────────────────────
+// Única porta de entrada para store_users além do cadastro inicial da loja.
+// O dono nunca vincula alguém direto: emite um convite, o link vai para o
+// e-mail da pessoa, e só o portador do token entra na equipe. Isso mantém a
+// posse do e-mail como prova de identidade e impede que um lojista anexe a
+// conta de outro à sua loja para depois escrever no registro global de users.
+export const storeInvites = pgTable("store_invites", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  email: varchar("email", { length: 120 }).notNull(),
+  name: varchar("name", { length: 120 }).notNull(),
+  role: varchar("role", { length: 20 }).notNull(),
+  // SHA-256 do token, nunca o token em si — um dump do banco não permite
+  // aceitar convites pendentes.
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  revokedAt: timestamp("revoked_at"),
+  invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("store_invites_token_hash_idx").on(t.tokenHash),
+  index("store_invites_store_idx").on(t.storeId),
+  index("store_invites_email_idx").on(t.email),
+]);
+
+export const storeInvitesRelations = relations(storeInvites, ({ one }) => ({
+  store: one(stores, { fields: [storeInvites.storeId], references: [stores.id] }),
+  inviter: one(users, { fields: [storeInvites.invitedBy], references: [users.id] }),
+}));
+
 // ─── USERS (auth) ───────────────────────────────────────────────
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -499,6 +525,8 @@ export const verificationCodes = pgTable("verification_codes", {
   userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
   code: varchar("code", { length: 6 }).notNull(),
   type: varchar("type", { length: 20 }).notNull(), // "email_verification" | "password_reset"
+  /** Tentativas erradas contra este código. Ao estourar o teto, ele é queimado. */
+  attempts: integer("attempts").default(0).notNull(),
   usedAt: timestamp("used_at"),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

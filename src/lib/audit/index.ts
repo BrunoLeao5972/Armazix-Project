@@ -91,6 +91,13 @@ export const AuditActions = {
   // User
   USER_UPDATE: "USER_UPDATE",
   USER_DELETE: "USER_DELETE",
+
+  // Equipe / convites
+  TEAM_INVITE_SENT: "TEAM_INVITE_SENT",
+  TEAM_INVITE_ACCEPTED: "TEAM_INVITE_ACCEPTED",
+  TEAM_INVITE_REVOKED: "TEAM_INVITE_REVOKED",
+  /** Owner tentou escrever no registro global de um usuário que pertence a outra loja */
+  CROSS_STORE_USER_WRITE_BLOCKED: "CROSS_STORE_USER_WRITE_BLOCKED",
   
   // Store
   STORE_CREATE: "STORE_CREATE",

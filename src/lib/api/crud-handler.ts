@@ -1,4 +1,4 @@
-import { createDb, createTenantDb } from "@/lib/db";
+import { createDb, createTenantDb, createTenantDbTransactional } from "@/lib/db";
 import type { PromoConfig } from "@/lib/promo-engine";
 import { schema } from "@/lib/db";
 import { eq, desc, sql, and, ne, isNotNull, inArray } from "drizzle-orm";
@@ -8,6 +8,7 @@ import { notifyOwnerNewOrder, notifyCustomerStatus, normalizePhone, DEFAULT_WPP_
 import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey, customersCacheKey, deleteKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
 import { canCreateProduct } from "@/lib/api/plan-limits";
+import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
 
 const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements, addresses, financeiroLancamentos, orderTimeline } = schema;
 
@@ -805,28 +806,41 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       }
     }
 
-    // ── 1. Número sequencial por loja ─────────────────────────────────────────
+    // ── 1. Preço — recalculado do banco, nunca o que veio no corpo ────────────
+    // O checkout é público: subtotal, desconto e total do payload são apenas
+    // o que o navegador ACHA que deve pagar. A conta que vale é esta.
+    const priced = await priceOrder(db, {
+      storeId:         body.storeId,
+      type:            body.type,
+      items:           body.items,
+      addressSnapshot: body.addressSnapshot,
+      couponCode:      body.couponCode,
+      couponId:        body.couponId,
+      channel:         "store",
+    });
+
+    if (isPricingFailure(priced)) {
+      return new Response(JSON.stringify({ error: priced.error }), {
+        status: priced.status, headers: { "content-type": "application/json" },
+      });
+    }
+
+    // Divergência entre o que o cliente esperava e o que o servidor calculou
+    // não bloqueia o pedido (pode ser preço alterado com o carrinho aberto),
+    // mas fica registrada — é o sinal de manipulação, se houver.
+    const totalInformado = parseFloat(body.total ?? "0");
+    if (Number.isFinite(totalInformado) && Math.abs(totalInformado - parseFloat(priced.total)) > 0.01) {
+      console.warn(
+        `[createOrder] Total divergente na loja ${body.storeId}: cliente=${body.total} servidor=${priced.total}`,
+      );
+    }
+
+    // ── 2. Número sequencial por loja ─────────────────────────────────────────
     const [maxOrder] = await db
       .select({ max: sql<number>`COALESCE(MAX(${orders.number}), 0)` })
       .from(orders)
       .where(eq(orders.storeId, body.storeId));
     const nextNumber = (Number(maxOrder?.max) || 0) + 1;
-
-    // ── 2. Resolver couponId a partir do código legível enviado pelo checkout ─
-    // O checkout público envia `couponCode` (ex: "SAVE10"), não o UUID.
-    let resolvedCouponId: string | null = body.couponId || null;
-    if (!resolvedCouponId && body.couponCode) {
-      const [coupon] = await db
-        .select({ id: coupons.id })
-        .from(coupons)
-        .where(and(
-          eq(coupons.storeId, body.storeId),
-          eq(coupons.code, body.couponCode.toUpperCase()),
-          eq(coupons.active, true),
-        ))
-        .limit(1);
-      resolvedCouponId = coupon?.id ?? null;
-    }
 
     // ── 3. Inserir pedido ─────────────────────────────────────────────────────
     const [order] = await db.insert(orders).values({
@@ -839,30 +853,32 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       installments:      body.installments && body.installments > 1 ? body.installments : 1,
       cardFeeAmount:     body.cardFeeAmount || null,
       paymentStatus:     "pending",
-      subtotal:          body.subtotal,
-      deliveryFee:       body.deliveryFee || "0",
-      discount:          body.discount || "0",
-      total:             body.total,
-      couponId:          resolvedCouponId,
+      subtotal:          priced.subtotal,
+      deliveryFee:       priced.deliveryFee,
+      discount:          priced.discount,
+      total:             priced.total,
+      couponId:          priced.couponId,
       notes:             body.notes || null,
       addressSnapshot:   body.addressSnapshot || null,
       estimatedDelivery: body.estimatedDelivery ? new Date(body.estimatedDelivery) : null,
     }).returning();
 
+    const resolvedCouponId = priced.couponId;
+
     // ── 4. Itens + entrada na timeline — independentes, rodam em paralelo ─────
     await Promise.all([
-      db.insert(orderItems).values(body.items.map(item => ({
+      db.insert(orderItems).values(priced.items.map(item => ({
         orderId:           order.id,
-        productId:         item.productId || null,
+        productId:         item.productId,
         productName:       item.productName,
-        productEmoji:      item.productEmoji || null,
-        productImage:      item.productImage || null,
+        productEmoji:      item.productEmoji,
+        productImage:      item.productImage,
         quantity:          item.quantity,
         unitPrice:         item.unitPrice,
-        additionsTotal:    item.additionsTotal || "0",
+        additionsTotal:    item.additionsTotal,
         total:             item.total,
-        additionsSnapshot: item.additionsSnapshot || null,
-        notes:             item.notes || null,
+        additionsSnapshot: item.additionsSnapshot,
+        notes:             item.notes,
       }))),
       db.insert(schema.orderTimeline).values({
         orderId: order.id,
@@ -927,9 +943,7 @@ export async function createOrderHandler(request: Request): Promise<Response> {
     // tabelas inexistentes não causem 500 ao cliente.
     waitUntil(request, (async () => {
       try {
-        for (const item of body.items) {
-          if (!item.productId) continue;
-
+        for (const item of priced.items) {
           const [prod] = await db
             .select({ stock: products.stock, trackStock: products.trackStock })
             .from(products)
@@ -961,11 +975,16 @@ export async function createOrderHandler(request: Request): Promise<Response> {
           });
         }
 
-        // Incrementa uso do cupom (usa o UUID resolvido acima)
+        // Incrementa o uso do cupom. A condição no WHERE evita estourar o teto
+        // quando dois pedidos usam o último uso disponível ao mesmo tempo.
         if (resolvedCouponId) {
           await db.update(coupons)
             .set({ usedCount: sql`${coupons.usedCount} + 1` })
-            .where(and(eq(coupons.id, resolvedCouponId), eq(coupons.storeId, body.storeId)));
+            .where(and(
+              eq(coupons.id, resolvedCouponId),
+              eq(coupons.storeId, body.storeId),
+              sql`(${coupons.maxUses} IS NULL OR ${coupons.usedCount} < ${coupons.maxUses})`,
+            ));
         }
       } catch (err) {
         console.error("[createOrder] stock/coupon background task failed:", err);
@@ -1000,8 +1019,8 @@ export async function createOrderHandler(request: Request): Promise<Response> {
           : null;
         const customerName = custRow?.name ?? body.cliente?.nome ?? "Cliente";
 
-        const itemsOwner = body.items.map(i => `• ${i.productName} ×${i.quantity}`).join("\n");
-        const itemsCustomer = body.items.slice(0, 3).map(i => `• ${i.productName} ×${i.quantity}`).join("\n");
+        const itemsOwner = priced.items.map(i => `• ${i.productName} ×${i.quantity}`).join("\n");
+        const itemsCustomer = priced.items.slice(0, 3).map(i => `• ${i.productName} ×${i.quantity}`).join("\n");
 
         const entregaText = (() => {
           const t = (body.type ?? "").toLowerCase();
@@ -1023,9 +1042,9 @@ export async function createOrderHandler(request: Request): Promise<Response> {
             orderNumber:   nextNumber,
             customerName,
             customerPhone,
-            total:         body.total,
-            subtotal:      body.subtotal,
-            deliveryFee:   body.deliveryFee ?? null,
+            total:         priced.total,
+            subtotal:      priced.subtotal,
+            deliveryFee:   priced.deliveryFee,
             paymentMethod: body.paymentMethod ?? null,
             entrega:       entregaText,
             items:         itemsOwner,
@@ -1038,7 +1057,7 @@ export async function createOrderHandler(request: Request): Promise<Response> {
             orderNumber:   nextNumber,
             customerName,
             customerPhone,
-            total:         body.total,
+            total:         priced.total,
             paymentMethod: body.paymentMethod ?? null,
             items:         itemsCustomer,
             status:        "received",
@@ -1051,8 +1070,21 @@ export async function createOrderHandler(request: Request): Promise<Response> {
     })());
 
     // ── 8. Resposta — sempre atingida se order + items foram inseridos ─────────
+    // Devolve os valores calculados no servidor para o checkout exibir o que
+    // realmente foi gravado, em vez do que ele tinha na tela.
     return new Response(
-      JSON.stringify({ success: true, order: { id: order.id, number: nextNumber, customerId: resolvedCustomerId } }),
+      JSON.stringify({
+        success: true,
+        order: {
+          id:          order.id,
+          number:      nextNumber,
+          customerId:  resolvedCustomerId,
+          subtotal:    priced.subtotal,
+          deliveryFee: priced.deliveryFee,
+          discount:    priced.discount,
+          total:       priced.total,
+        },
+      }),
       { status: 201, headers: { "content-type": "application/json" } },
     );
   } catch (error) {
@@ -1133,7 +1165,10 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  // Usa o driver WebSocket (não o HTTP) porque este handler roda uma
+  // transação abaixo (status + timeline + lançamento financeiro atômicos) —
+  // o driver neon-http não suporta db.transaction().
+  const db = await createTenantDbTransactional(dbUrl, storeId);
 
   try {
     // IDOR Fix: Verify order belongs to tenant before updating

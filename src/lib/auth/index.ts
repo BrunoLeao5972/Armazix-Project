@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
-import { eq, and, gt, isNull } from "drizzle-orm";
+import { eq, and, gt, isNull, desc } from "drizzle-orm";
 import { createDb, schema } from "@/lib/db";
 
 const { users, verificationCodes } = schema;
@@ -143,8 +143,28 @@ export async function verifyJWT(
 }
 
 // ─── Verification code ────────────────────────────────────────────────────────
+//
+// Um código de 6 dígitos só é seguro se estiver amarrado a UM usuário e tiver
+// teto de tentativas. Sem o escopo de usuário, o espaço de busca deixa de ser
+// "o código deste usuário" e passa a ser "qualquer código ativo na plataforma",
+// e a chance de acerto cresce com o número de códigos pendentes.
+
+/** Tentativas erradas antes de queimar o código e exigir um novo envio. */
+const MAX_CODE_ATTEMPTS = 5;
+
 export function generateCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  // CSPRNG, não Math.random(): este código é credencial de redefinição de senha.
+  // Rejeita a cauda que não cabe num múltiplo inteiro de RANGE para o módulo
+  // não enviesar os primeiros dígitos.
+  const RANGE = 900_000;
+  const LIMIT = Math.floor(0xFFFFFFFF / RANGE) * RANGE;
+  const buf = new Uint32Array(1);
+  let value: number;
+  do {
+    crypto.getRandomValues(buf);
+    value = buf[0];
+  } while (value >= LIMIT);
+  return String(100_000 + (value % RANGE));
 }
 
 export async function createVerificationCode(
@@ -152,37 +172,78 @@ export async function createVerificationCode(
   userId: string,
   type: "email_verification" | "password_reset",
 ): Promise<string> {
+  const now = new Date();
+
+  // Só um código vivo por usuário/tipo: pedir um novo invalida o anterior,
+  // para que reenvios sucessivos não acumulem códigos válidos.
+  await db.update(verificationCodes)
+    .set({ usedAt: now })
+    .where(and(
+      eq(verificationCodes.userId, userId),
+      eq(verificationCodes.type, type),
+      isNull(verificationCodes.usedAt),
+    ));
+
   const code = generateCode();
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
   await db.insert(verificationCodes).values({ userId, code, type, expiresAt });
   return code;
 }
 
+/**
+ * Valida o código DE UM USUÁRIO específico. O userId é obrigatório e vem de
+ * quem chama (resolvido a partir do e-mail informado) — nunca do próprio código.
+ */
 export async function validateVerificationCode(
   db: ReturnType<typeof createDb>,
+  userId: string,
   code: string,
   type: "email_verification" | "password_reset",
-): Promise<{ valid: boolean; userId?: string }> {
+): Promise<{ valid: boolean }> {
   const now = new Date();
-  const results = await db
+
+  const [record] = await db
     .select()
     .from(verificationCodes)
     .where(and(
-      eq(verificationCodes.code, code),
+      eq(verificationCodes.userId, userId),
       eq(verificationCodes.type, type),
       isNull(verificationCodes.usedAt),
       gt(verificationCodes.expiresAt, now),
     ))
+    .orderBy(desc(verificationCodes.createdAt))
     .limit(1);
 
-  if (results.length === 0) return { valid: false };
+  if (!record) return { valid: false };
 
-  const record = results[0];
+  // Teto de tentativas por usuário — independe do rate limit por IP, que é
+  // contornável com rotação de endereço.
+  if (record.attempts >= MAX_CODE_ATTEMPTS) {
+    await db.update(verificationCodes)
+      .set({ usedAt: now })
+      .where(eq(verificationCodes.id, record.id));
+    return { valid: false };
+  }
+
+  if (!timingSafeEqual(record.code, code)) {
+    await db.update(verificationCodes)
+      .set({ attempts: record.attempts + 1 })
+      .where(eq(verificationCodes.id, record.id));
+    return { valid: false };
+  }
+
   await db.update(verificationCodes)
     .set({ usedAt: now })
     .where(eq(verificationCodes.id, record.id));
 
-  return { valid: true, userId: record.userId };
+  return { valid: true };
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 // ─── Customer JWT (passwordless store auth) ──────────────────────────────────

@@ -89,7 +89,7 @@ export async function createSubscriptionHandler(request: Request, auth?: AuthCon
       transaction_amount: totalAmount,
       currency_id: "BRL",
     },
-    back_url: `${origin}/admin/settings?tab=planos`,
+    back_url: `${origin}/admin/configuracoes?tab=planos`,
     payer_email: body.payerEmail,
     external_reference: `${storeId}|${body.planId}${body.withPdv ? "|pdv" : ""}`,
   };

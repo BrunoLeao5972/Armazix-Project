@@ -2,6 +2,7 @@ import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, desc, gte, sql, ne } from "drizzle-orm";
 import { requireStoreAccess, requireStoreOwner, AuthContext } from "@/lib/auth/require-store-access";
+import { requireAuth } from "@/lib/middleware/auth";
 import { generateCleanSlug } from "@/lib/slug";
 import { getCached, deleteKey, storeCacheKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
@@ -9,6 +10,65 @@ import { waitUntil } from "@/lib/execution-context";
 const { stores, storeUsers, orders, orderItems, products, customers } = schema;
 
 // ─── Get Store by ID or Slug ─────────────────────────────────────
+//
+// Rota pública — sem ela a vitrine não carrega. Também é reaproveitada pelas
+// telas de admin (configuracoes.tsx, PersonalizacaoTab.tsx, -sec-gerais.tsx)
+// que buscam a própria loja por `?id=`, sem passar por requireStoreAccess.
+//
+// Por isso a projeção é uma ALLOWLIST explícita, não uma exclusão: campos
+// como mpAccessToken, cnpj, wppConfig (que carrega o telefone do dono) e todo
+// o bloco de plano/billing nunca são montados no objeto de resposta — não
+// existe "esquecer de tirar um campo novo" quando o padrão é não incluir.
+//
+// A única exceção é `ownerName`: a tela de configurações precisa reexibi-lo
+// para edição. Só é anexado quando o cookie de sessão prova que quem pediu
+// é membro desta MESMA loja — nesse caso a resposta também deixa de ser
+// cacheável publicamente, para a borda nunca servir o nome do dono para
+// outro visitante a partir de uma resposta cacheada.
+function toPublicStoreFields(store: typeof stores.$inferSelect & { banners?: unknown }) {
+  return {
+    id:                     store.id,
+    slug:                   store.slug,
+    name:                   store.name,
+    description:            store.description,
+    logoUrl:                store.logoUrl,
+    bannerUrl:              store.bannerUrl,
+    bannerMobileUrl:        store.bannerMobileUrl,
+    bannerIntervalMs:       store.bannerIntervalMs,
+    banners:                store.banners,
+    primaryColor:           store.primaryColor,
+    backgroundColor:        store.backgroundColor,
+    textColor:              store.textColor,
+    accentColor:            store.accentColor,
+    font:                   store.font,
+    phone:                  store.phone,
+    email:                  store.email,
+    address:                store.address,
+    deliveryEnabled:        store.deliveryEnabled,
+    pickupEnabled:          store.pickupEnabled,
+    deliveryFee:            store.deliveryFee,
+    minDeliveryOrder:       store.minDeliveryOrder,
+    deliveryEstimate:       store.deliveryEstimate,
+    businessHours:          store.businessHours,
+    showPrice:              store.showPrice,
+    whatsappOrderEnabled:   store.whatsappOrderEnabled,
+    whatsappPhone:          store.whatsappPhone,
+    highlightLowStock:      store.highlightLowStock,
+    layoutType:             store.layoutType,
+    // Chave PÚBLICA do Mercado Pago — não é segredo, é usada no tokenizador
+    // do navegador do cliente (mpAccessToken, esse sim, nunca aparece aqui).
+    mpPublicKey:            store.mpPublicKey,
+    paymentMethodsConfig:   store.paymentMethodsConfig,
+    deliveryPaymentEnabled: store.deliveryPaymentEnabled,
+    deliveryRules:          store.deliveryRules,
+    freeShippingAbove:      store.freeShippingAbove,
+    paymentConfig:          store.paymentConfig,
+    deliveryConfig:         store.deliveryConfig,
+    rating:                 store.rating,
+    active:                 store.active,
+  };
+}
+
 export async function getStoreHandler(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const storeId = url.searchParams.get("id");
@@ -40,11 +100,7 @@ export async function getStoreHandler(request: Request): Promise<Response> {
         });
 
         if (!store) return null;
-
-        // SECURITY: nunca expõe campos sensíveis de pagamento/billing.
-        const { mpAccessToken: _mpToken, plan: _plan, planStatus: _planStatus,
-                planExpiresAt: _planExpiry, mpSubscriptionId: _subId, ...safe } = store;
-        return safe;
+        return toPublicStoreFields(store);
       },
       { ttl: 600 }, // 10 min — sem tracking por storeId (invalidação própria via deleteKey)
     );
@@ -56,11 +112,32 @@ export async function getStoreHandler(request: Request): Promise<Response> {
       });
     }
 
-    return new Response(JSON.stringify({ store: publicStoreData }), {
+    // Anexa ownerName só para quem prova, pelo cookie de sessão, ser membro
+    // desta loja. Nunca passa pelo cache acima — se passasse, a primeira
+    // resposta autenticada ficaria gravada e vazaria para o próximo visitante
+    // anônimo que batesse no mesmo cacheKey.
+    let responseBody: Record<string, unknown> = publicStoreData;
+    let isOwnerView = false;
+    if (storeId) {
+      const auth = await requireAuth(request);
+      if (!(auth instanceof Response) && auth.storeId === storeId) {
+        isOwnerView = true;
+        const [ownerRow] = await db
+          .select({ ownerName: stores.ownerName })
+          .from(stores)
+          .where(eq(stores.id, storeId))
+          .limit(1);
+        if (ownerRow) responseBody = { ...publicStoreData, ownerName: ownerRow.ownerName };
+      }
+    }
+
+    return new Response(JSON.stringify({ store: responseBody }), {
       status: 200,
       headers: {
         "content-type": "application/json",
-        "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600",
+        "Cache-Control": isOwnerView
+          ? "private, no-store"
+          : "public, s-maxage=300, stale-while-revalidate=600",
       },
     });
   } catch (error) {

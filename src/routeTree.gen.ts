@@ -15,6 +15,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as ConviteRouteImport } from './routes/convite'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StoreIndexRouteImport } from './routes/store/index'
@@ -26,44 +27,44 @@ import { Route as StoreCategoriesRouteImport } from './routes/store/categories'
 import { Route as StoreCartRouteImport } from './routes/store/cart'
 import { Route as StoreAccountRouteImport } from './routes/store/account'
 import { Route as LojaSlugOuIdRouteImport } from './routes/loja.$slugOuId'
-import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as AdminStockRouteImport } from './routes/admin/stock'
-import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
-import { Route as AdminSectorsRouteImport } from './routes/admin/sectors'
-import { Route as AdminReportsPreviewRouteImport } from './routes/admin/reports-preview'
-import { Route as AdminReportsDashboardRouteImport } from './routes/admin/reports-dashboard'
-import { Route as AdminReportsRouteImport } from './routes/admin/reports'
-import { Route as AdminProductsRouteImport } from './routes/admin/products'
-import { Route as AdminPrintersRouteImport } from './routes/admin/printers'
-import { Route as AdminPrintEnvironmentsRouteImport } from './routes/admin/print-environments'
+import { Route as AdminUsuariosRouteImport } from './routes/admin/usuarios'
+import { Route as AdminSetoresRouteImport } from './routes/admin/setores'
+import { Route as AdminRelatoriosPreviewRouteImport } from './routes/admin/relatorios-preview'
+import { Route as AdminRelatoriosDashboardRouteImport } from './routes/admin/relatorios-dashboard'
+import { Route as AdminRelatoriosRouteImport } from './routes/admin/relatorios'
+import { Route as AdminProdutosRouteImport } from './routes/admin/produtos'
+import { Route as AdminPedidosRouteImport } from './routes/admin/pedidos'
 import { Route as AdminPdvRouteImport } from './routes/admin/pdv'
-import { Route as AdminOrdersRouteImport } from './routes/admin/orders'
-import { Route as AdminFinancialRouteImport } from './routes/admin/financial'
-import { Route as AdminDeliveryRouteImport } from './routes/admin/delivery'
+import { Route as AdminImpressorasRouteImport } from './routes/admin/impressoras'
+import { Route as AdminFinanceiroRouteImport } from './routes/admin/financeiro'
+import { Route as AdminEstoqueRouteImport } from './routes/admin/estoque'
+import { Route as AdminEntregaRouteImport } from './routes/admin/entrega'
 import { Route as AdminDashboardRouteImport } from './routes/admin/dashboard'
-import { Route as AdminCustomersRouteImport } from './routes/admin/customers'
-import { Route as AdminCouponsRouteImport } from './routes/admin/coupons'
-import { Route as AdminCategoriesRouteImport } from './routes/admin/categories'
-import { Route as AdminStockIndexRouteImport } from './routes/admin/stock/index'
-import { Route as AdminFinancialIndexRouteImport } from './routes/admin/financial/index'
+import { Route as AdminCuponsRouteImport } from './routes/admin/cupons'
+import { Route as AdminConfiguracoesRouteImport } from './routes/admin/configuracoes'
+import { Route as AdminClientesRouteImport } from './routes/admin/clientes'
+import { Route as AdminCategoriasRouteImport } from './routes/admin/categorias'
+import { Route as AdminAmbientesImpressaoRouteImport } from './routes/admin/ambientes-impressao'
+import { Route as AdminFinanceiroIndexRouteImport } from './routes/admin/financeiro/index'
+import { Route as AdminEstoqueIndexRouteImport } from './routes/admin/estoque/index'
 import { Route as StoreProductProductIdRouteImport } from './routes/store/product.$productId'
 import { Route as StoreOrderOrderIdRouteImport } from './routes/store/order.$orderId'
-import { Route as AdminStockTransfersRouteImport } from './routes/admin/stock/transfers'
-import { Route as AdminStockHistoryRouteImport } from './routes/admin/stock/history'
-import { Route as AdminStockExtractRouteImport } from './routes/admin/stock/extract'
-import { Route as AdminStockExitsRouteImport } from './routes/admin/stock/exits'
-import { Route as AdminStockEntriesRouteImport } from './routes/admin/stock/entries'
-import { Route as AdminStockBalanceteRouteImport } from './routes/admin/stock/balancete'
-import { Route as AdminStockBalanceRouteImport } from './routes/admin/stock/balance'
-import { Route as AdminStockAdjustmentsRouteImport } from './routes/admin/stock/adjustments'
-import { Route as AdminFinancialSettingsRouteImport } from './routes/admin/financial/settings'
-import { Route as AdminFinancialSessionsRouteImport } from './routes/admin/financial/sessions'
-import { Route as AdminFinancialReceivablesRouteImport } from './routes/admin/financial/receivables'
-import { Route as AdminFinancialPayablesRouteImport } from './routes/admin/financial/payables'
-import { Route as AdminFinancialMovementsRouteImport } from './routes/admin/financial/movements'
-import { Route as AdminFinancialHistoryRouteImport } from './routes/admin/financial/history'
-import { Route as AdminFinancialDreRouteImport } from './routes/admin/financial/dre'
-import { Route as AdminFinancialCashflowRouteImport } from './routes/admin/financial/cashflow'
+import { Route as AdminFinanceiroSessoesRouteImport } from './routes/admin/financeiro/sessoes'
+import { Route as AdminFinanceiroReceberRouteImport } from './routes/admin/financeiro/receber'
+import { Route as AdminFinanceiroPagarRouteImport } from './routes/admin/financeiro/pagar'
+import { Route as AdminFinanceiroMovimentacoesRouteImport } from './routes/admin/financeiro/movimentacoes'
+import { Route as AdminFinanceiroHistoricoRouteImport } from './routes/admin/financeiro/historico'
+import { Route as AdminFinanceiroFluxoCaixaRouteImport } from './routes/admin/financeiro/fluxo-caixa'
+import { Route as AdminFinanceiroDreRouteImport } from './routes/admin/financeiro/dre'
+import { Route as AdminFinanceiroConfiguracoesRouteImport } from './routes/admin/financeiro/configuracoes'
+import { Route as AdminEstoqueTransferenciasRouteImport } from './routes/admin/estoque/transferencias'
+import { Route as AdminEstoqueSaidasRouteImport } from './routes/admin/estoque/saidas'
+import { Route as AdminEstoqueHistoricoRouteImport } from './routes/admin/estoque/historico'
+import { Route as AdminEstoqueExtratoRouteImport } from './routes/admin/estoque/extrato'
+import { Route as AdminEstoqueEntradasRouteImport } from './routes/admin/estoque/entradas'
+import { Route as AdminEstoqueBalancoRouteImport } from './routes/admin/estoque/balanco'
+import { Route as AdminEstoqueBalanceteRouteImport } from './routes/admin/estoque/balancete'
+import { Route as AdminEstoqueAjustesRouteImport } from './routes/admin/estoque/ajustes'
 
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
@@ -93,6 +94,11 @@ const LoginRoute = LoginRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConviteRoute = ConviteRouteImport.update({
+  id: '/convite',
+  path: '/convite',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -150,54 +156,40 @@ const LojaSlugOuIdRoute = LojaSlugOuIdRouteImport.update({
   path: '/loja/$slugOuId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminUsersRoute = AdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
+const AdminUsuariosRoute = AdminUsuariosRouteImport.update({
+  id: '/usuarios',
+  path: '/usuarios',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminStockRoute = AdminStockRouteImport.update({
-  id: '/stock',
-  path: '/stock',
+const AdminSetoresRoute = AdminSetoresRouteImport.update({
+  id: '/setores',
+  path: '/setores',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminSettingsRoute = AdminSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const AdminRelatoriosPreviewRoute = AdminRelatoriosPreviewRouteImport.update({
+  id: '/relatorios-preview',
+  path: '/relatorios-preview',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminSectorsRoute = AdminSectorsRouteImport.update({
-  id: '/sectors',
-  path: '/sectors',
+const AdminRelatoriosDashboardRoute =
+  AdminRelatoriosDashboardRouteImport.update({
+    id: '/relatorios-dashboard',
+    path: '/relatorios-dashboard',
+    getParentRoute: () => AdminRoute,
+  } as any)
+const AdminRelatoriosRoute = AdminRelatoriosRouteImport.update({
+  id: '/relatorios',
+  path: '/relatorios',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminReportsPreviewRoute = AdminReportsPreviewRouteImport.update({
-  id: '/reports-preview',
-  path: '/reports-preview',
+const AdminProdutosRoute = AdminProdutosRouteImport.update({
+  id: '/produtos',
+  path: '/produtos',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminReportsDashboardRoute = AdminReportsDashboardRouteImport.update({
-  id: '/reports-dashboard',
-  path: '/reports-dashboard',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminReportsRoute = AdminReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminProductsRoute = AdminProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminPrintersRoute = AdminPrintersRouteImport.update({
-  id: '/printers',
-  path: '/printers',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminPrintEnvironmentsRoute = AdminPrintEnvironmentsRouteImport.update({
-  id: '/print-environments',
-  path: '/print-environments',
+const AdminPedidosRoute = AdminPedidosRouteImport.update({
+  id: '/pedidos',
+  path: '/pedidos',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPdvRoute = AdminPdvRouteImport.update({
@@ -205,19 +197,24 @@ const AdminPdvRoute = AdminPdvRouteImport.update({
   path: '/pdv',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminOrdersRoute = AdminOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
+const AdminImpressorasRoute = AdminImpressorasRouteImport.update({
+  id: '/impressoras',
+  path: '/impressoras',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminFinancialRoute = AdminFinancialRouteImport.update({
-  id: '/financial',
-  path: '/financial',
+const AdminFinanceiroRoute = AdminFinanceiroRouteImport.update({
+  id: '/financeiro',
+  path: '/financeiro',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminDeliveryRoute = AdminDeliveryRouteImport.update({
-  id: '/delivery',
-  path: '/delivery',
+const AdminEstoqueRoute = AdminEstoqueRouteImport.update({
+  id: '/estoque',
+  path: '/estoque',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminEntregaRoute = AdminEntregaRouteImport.update({
+  id: '/entrega',
+  path: '/entrega',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminDashboardRoute = AdminDashboardRouteImport.update({
@@ -225,30 +222,40 @@ const AdminDashboardRoute = AdminDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminCustomersRoute = AdminCustomersRouteImport.update({
-  id: '/customers',
-  path: '/customers',
+const AdminCuponsRoute = AdminCuponsRouteImport.update({
+  id: '/cupons',
+  path: '/cupons',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminCouponsRoute = AdminCouponsRouteImport.update({
-  id: '/coupons',
-  path: '/coupons',
+const AdminConfiguracoesRoute = AdminConfiguracoesRouteImport.update({
+  id: '/configuracoes',
+  path: '/configuracoes',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
-  id: '/categories',
-  path: '/categories',
+const AdminClientesRoute = AdminClientesRouteImport.update({
+  id: '/clientes',
+  path: '/clientes',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminStockIndexRoute = AdminStockIndexRouteImport.update({
+const AdminCategoriasRoute = AdminCategoriasRouteImport.update({
+  id: '/categorias',
+  path: '/categorias',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAmbientesImpressaoRoute = AdminAmbientesImpressaoRouteImport.update({
+  id: '/ambientes-impressao',
+  path: '/ambientes-impressao',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFinanceiroIndexRoute = AdminFinanceiroIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AdminStockRoute,
+  getParentRoute: () => AdminFinanceiroRoute,
 } as any)
-const AdminFinancialIndexRoute = AdminFinancialIndexRouteImport.update({
+const AdminEstoqueIndexRoute = AdminEstoqueIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AdminFinancialRoute,
+  getParentRoute: () => AdminEstoqueRoute,
 } as any)
 const StoreProductProductIdRoute = StoreProductProductIdRouteImport.update({
   id: '/product/$productId',
@@ -260,115 +267,120 @@ const StoreOrderOrderIdRoute = StoreOrderOrderIdRouteImport.update({
   path: '/order/$orderId',
   getParentRoute: () => StoreRoute,
 } as any)
-const AdminStockTransfersRoute = AdminStockTransfersRouteImport.update({
-  id: '/transfers',
-  path: '/transfers',
-  getParentRoute: () => AdminStockRoute,
+const AdminFinanceiroSessoesRoute = AdminFinanceiroSessoesRouteImport.update({
+  id: '/sessoes',
+  path: '/sessoes',
+  getParentRoute: () => AdminFinanceiroRoute,
 } as any)
-const AdminStockHistoryRoute = AdminStockHistoryRouteImport.update({
-  id: '/history',
-  path: '/history',
-  getParentRoute: () => AdminStockRoute,
+const AdminFinanceiroReceberRoute = AdminFinanceiroReceberRouteImport.update({
+  id: '/receber',
+  path: '/receber',
+  getParentRoute: () => AdminFinanceiroRoute,
 } as any)
-const AdminStockExtractRoute = AdminStockExtractRouteImport.update({
-  id: '/extract',
-  path: '/extract',
-  getParentRoute: () => AdminStockRoute,
+const AdminFinanceiroPagarRoute = AdminFinanceiroPagarRouteImport.update({
+  id: '/pagar',
+  path: '/pagar',
+  getParentRoute: () => AdminFinanceiroRoute,
 } as any)
-const AdminStockExitsRoute = AdminStockExitsRouteImport.update({
-  id: '/exits',
-  path: '/exits',
-  getParentRoute: () => AdminStockRoute,
-} as any)
-const AdminStockEntriesRoute = AdminStockEntriesRouteImport.update({
-  id: '/entries',
-  path: '/entries',
-  getParentRoute: () => AdminStockRoute,
-} as any)
-const AdminStockBalanceteRoute = AdminStockBalanceteRouteImport.update({
-  id: '/balancete',
-  path: '/balancete',
-  getParentRoute: () => AdminStockRoute,
-} as any)
-const AdminStockBalanceRoute = AdminStockBalanceRouteImport.update({
-  id: '/balance',
-  path: '/balance',
-  getParentRoute: () => AdminStockRoute,
-} as any)
-const AdminStockAdjustmentsRoute = AdminStockAdjustmentsRouteImport.update({
-  id: '/adjustments',
-  path: '/adjustments',
-  getParentRoute: () => AdminStockRoute,
-} as any)
-const AdminFinancialSettingsRoute = AdminFinancialSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AdminFinancialRoute,
-} as any)
-const AdminFinancialSessionsRoute = AdminFinancialSessionsRouteImport.update({
-  id: '/sessions',
-  path: '/sessions',
-  getParentRoute: () => AdminFinancialRoute,
-} as any)
-const AdminFinancialReceivablesRoute =
-  AdminFinancialReceivablesRouteImport.update({
-    id: '/receivables',
-    path: '/receivables',
-    getParentRoute: () => AdminFinancialRoute,
+const AdminFinanceiroMovimentacoesRoute =
+  AdminFinanceiroMovimentacoesRouteImport.update({
+    id: '/movimentacoes',
+    path: '/movimentacoes',
+    getParentRoute: () => AdminFinanceiroRoute,
   } as any)
-const AdminFinancialPayablesRoute = AdminFinancialPayablesRouteImport.update({
-  id: '/payables',
-  path: '/payables',
-  getParentRoute: () => AdminFinancialRoute,
-} as any)
-const AdminFinancialMovementsRoute = AdminFinancialMovementsRouteImport.update({
-  id: '/movements',
-  path: '/movements',
-  getParentRoute: () => AdminFinancialRoute,
-} as any)
-const AdminFinancialHistoryRoute = AdminFinancialHistoryRouteImport.update({
-  id: '/history',
-  path: '/history',
-  getParentRoute: () => AdminFinancialRoute,
-} as any)
-const AdminFinancialDreRoute = AdminFinancialDreRouteImport.update({
+const AdminFinanceiroHistoricoRoute =
+  AdminFinanceiroHistoricoRouteImport.update({
+    id: '/historico',
+    path: '/historico',
+    getParentRoute: () => AdminFinanceiroRoute,
+  } as any)
+const AdminFinanceiroFluxoCaixaRoute =
+  AdminFinanceiroFluxoCaixaRouteImport.update({
+    id: '/fluxo-caixa',
+    path: '/fluxo-caixa',
+    getParentRoute: () => AdminFinanceiroRoute,
+  } as any)
+const AdminFinanceiroDreRoute = AdminFinanceiroDreRouteImport.update({
   id: '/dre',
   path: '/dre',
-  getParentRoute: () => AdminFinancialRoute,
+  getParentRoute: () => AdminFinanceiroRoute,
 } as any)
-const AdminFinancialCashflowRoute = AdminFinancialCashflowRouteImport.update({
-  id: '/cashflow',
-  path: '/cashflow',
-  getParentRoute: () => AdminFinancialRoute,
+const AdminFinanceiroConfiguracoesRoute =
+  AdminFinanceiroConfiguracoesRouteImport.update({
+    id: '/configuracoes',
+    path: '/configuracoes',
+    getParentRoute: () => AdminFinanceiroRoute,
+  } as any)
+const AdminEstoqueTransferenciasRoute =
+  AdminEstoqueTransferenciasRouteImport.update({
+    id: '/transferencias',
+    path: '/transferencias',
+    getParentRoute: () => AdminEstoqueRoute,
+  } as any)
+const AdminEstoqueSaidasRoute = AdminEstoqueSaidasRouteImport.update({
+  id: '/saidas',
+  path: '/saidas',
+  getParentRoute: () => AdminEstoqueRoute,
+} as any)
+const AdminEstoqueHistoricoRoute = AdminEstoqueHistoricoRouteImport.update({
+  id: '/historico',
+  path: '/historico',
+  getParentRoute: () => AdminEstoqueRoute,
+} as any)
+const AdminEstoqueExtratoRoute = AdminEstoqueExtratoRouteImport.update({
+  id: '/extrato',
+  path: '/extrato',
+  getParentRoute: () => AdminEstoqueRoute,
+} as any)
+const AdminEstoqueEntradasRoute = AdminEstoqueEntradasRouteImport.update({
+  id: '/entradas',
+  path: '/entradas',
+  getParentRoute: () => AdminEstoqueRoute,
+} as any)
+const AdminEstoqueBalancoRoute = AdminEstoqueBalancoRouteImport.update({
+  id: '/balanco',
+  path: '/balanco',
+  getParentRoute: () => AdminEstoqueRoute,
+} as any)
+const AdminEstoqueBalanceteRoute = AdminEstoqueBalanceteRouteImport.update({
+  id: '/balancete',
+  path: '/balancete',
+  getParentRoute: () => AdminEstoqueRoute,
+} as any)
+const AdminEstoqueAjustesRoute = AdminEstoqueAjustesRouteImport.update({
+  id: '/ajustes',
+  path: '/ajustes',
+  getParentRoute: () => AdminEstoqueRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/convite': typeof ConviteRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/store': typeof StoreRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
-  '/admin/categories': typeof AdminCategoriesRoute
-  '/admin/coupons': typeof AdminCouponsRoute
-  '/admin/customers': typeof AdminCustomersRoute
+  '/admin/ambientes-impressao': typeof AdminAmbientesImpressaoRoute
+  '/admin/categorias': typeof AdminCategoriasRoute
+  '/admin/clientes': typeof AdminClientesRoute
+  '/admin/configuracoes': typeof AdminConfiguracoesRoute
+  '/admin/cupons': typeof AdminCuponsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
-  '/admin/delivery': typeof AdminDeliveryRoute
-  '/admin/financial': typeof AdminFinancialRouteWithChildren
-  '/admin/orders': typeof AdminOrdersRoute
+  '/admin/entrega': typeof AdminEntregaRoute
+  '/admin/estoque': typeof AdminEstoqueRouteWithChildren
+  '/admin/financeiro': typeof AdminFinanceiroRouteWithChildren
+  '/admin/impressoras': typeof AdminImpressorasRoute
   '/admin/pdv': typeof AdminPdvRoute
-  '/admin/print-environments': typeof AdminPrintEnvironmentsRoute
-  '/admin/printers': typeof AdminPrintersRoute
-  '/admin/products': typeof AdminProductsRoute
-  '/admin/reports': typeof AdminReportsRoute
-  '/admin/reports-dashboard': typeof AdminReportsDashboardRoute
-  '/admin/reports-preview': typeof AdminReportsPreviewRoute
-  '/admin/sectors': typeof AdminSectorsRoute
-  '/admin/settings': typeof AdminSettingsRoute
-  '/admin/stock': typeof AdminStockRouteWithChildren
-  '/admin/users': typeof AdminUsersRoute
+  '/admin/pedidos': typeof AdminPedidosRoute
+  '/admin/produtos': typeof AdminProdutosRoute
+  '/admin/relatorios': typeof AdminRelatoriosRoute
+  '/admin/relatorios-dashboard': typeof AdminRelatoriosDashboardRoute
+  '/admin/relatorios-preview': typeof AdminRelatoriosPreviewRoute
+  '/admin/setores': typeof AdminSetoresRoute
+  '/admin/usuarios': typeof AdminUsuariosRoute
   '/loja/$slugOuId': typeof LojaSlugOuIdRoute
   '/store/account': typeof StoreAccountRoute
   '/store/cart': typeof StoreCartRoute
@@ -378,50 +390,51 @@ export interface FileRoutesByFullPath {
   '/store/search': typeof StoreSearchRoute
   '/admin/': typeof AdminIndexRoute
   '/store/': typeof StoreIndexRoute
-  '/admin/financial/cashflow': typeof AdminFinancialCashflowRoute
-  '/admin/financial/dre': typeof AdminFinancialDreRoute
-  '/admin/financial/history': typeof AdminFinancialHistoryRoute
-  '/admin/financial/movements': typeof AdminFinancialMovementsRoute
-  '/admin/financial/payables': typeof AdminFinancialPayablesRoute
-  '/admin/financial/receivables': typeof AdminFinancialReceivablesRoute
-  '/admin/financial/sessions': typeof AdminFinancialSessionsRoute
-  '/admin/financial/settings': typeof AdminFinancialSettingsRoute
-  '/admin/stock/adjustments': typeof AdminStockAdjustmentsRoute
-  '/admin/stock/balance': typeof AdminStockBalanceRoute
-  '/admin/stock/balancete': typeof AdminStockBalanceteRoute
-  '/admin/stock/entries': typeof AdminStockEntriesRoute
-  '/admin/stock/exits': typeof AdminStockExitsRoute
-  '/admin/stock/extract': typeof AdminStockExtractRoute
-  '/admin/stock/history': typeof AdminStockHistoryRoute
-  '/admin/stock/transfers': typeof AdminStockTransfersRoute
+  '/admin/estoque/ajustes': typeof AdminEstoqueAjustesRoute
+  '/admin/estoque/balancete': typeof AdminEstoqueBalanceteRoute
+  '/admin/estoque/balanco': typeof AdminEstoqueBalancoRoute
+  '/admin/estoque/entradas': typeof AdminEstoqueEntradasRoute
+  '/admin/estoque/extrato': typeof AdminEstoqueExtratoRoute
+  '/admin/estoque/historico': typeof AdminEstoqueHistoricoRoute
+  '/admin/estoque/saidas': typeof AdminEstoqueSaidasRoute
+  '/admin/estoque/transferencias': typeof AdminEstoqueTransferenciasRoute
+  '/admin/financeiro/configuracoes': typeof AdminFinanceiroConfiguracoesRoute
+  '/admin/financeiro/dre': typeof AdminFinanceiroDreRoute
+  '/admin/financeiro/fluxo-caixa': typeof AdminFinanceiroFluxoCaixaRoute
+  '/admin/financeiro/historico': typeof AdminFinanceiroHistoricoRoute
+  '/admin/financeiro/movimentacoes': typeof AdminFinanceiroMovimentacoesRoute
+  '/admin/financeiro/pagar': typeof AdminFinanceiroPagarRoute
+  '/admin/financeiro/receber': typeof AdminFinanceiroReceberRoute
+  '/admin/financeiro/sessoes': typeof AdminFinanceiroSessoesRoute
   '/store/order/$orderId': typeof StoreOrderOrderIdRoute
   '/store/product/$productId': typeof StoreProductProductIdRoute
-  '/admin/financial/': typeof AdminFinancialIndexRoute
-  '/admin/stock/': typeof AdminStockIndexRoute
+  '/admin/estoque/': typeof AdminEstoqueIndexRoute
+  '/admin/financeiro/': typeof AdminFinanceiroIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/convite': typeof ConviteRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/verify-email': typeof VerifyEmailRoute
-  '/admin/categories': typeof AdminCategoriesRoute
-  '/admin/coupons': typeof AdminCouponsRoute
-  '/admin/customers': typeof AdminCustomersRoute
+  '/admin/ambientes-impressao': typeof AdminAmbientesImpressaoRoute
+  '/admin/categorias': typeof AdminCategoriasRoute
+  '/admin/clientes': typeof AdminClientesRoute
+  '/admin/configuracoes': typeof AdminConfiguracoesRoute
+  '/admin/cupons': typeof AdminCuponsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
-  '/admin/delivery': typeof AdminDeliveryRoute
-  '/admin/orders': typeof AdminOrdersRoute
+  '/admin/entrega': typeof AdminEntregaRoute
+  '/admin/impressoras': typeof AdminImpressorasRoute
   '/admin/pdv': typeof AdminPdvRoute
-  '/admin/print-environments': typeof AdminPrintEnvironmentsRoute
-  '/admin/printers': typeof AdminPrintersRoute
-  '/admin/products': typeof AdminProductsRoute
-  '/admin/reports': typeof AdminReportsRoute
-  '/admin/reports-dashboard': typeof AdminReportsDashboardRoute
-  '/admin/reports-preview': typeof AdminReportsPreviewRoute
-  '/admin/sectors': typeof AdminSectorsRoute
-  '/admin/settings': typeof AdminSettingsRoute
-  '/admin/users': typeof AdminUsersRoute
+  '/admin/pedidos': typeof AdminPedidosRoute
+  '/admin/produtos': typeof AdminProdutosRoute
+  '/admin/relatorios': typeof AdminRelatoriosRoute
+  '/admin/relatorios-dashboard': typeof AdminRelatoriosDashboardRoute
+  '/admin/relatorios-preview': typeof AdminRelatoriosPreviewRoute
+  '/admin/setores': typeof AdminSetoresRoute
+  '/admin/usuarios': typeof AdminUsuariosRoute
   '/loja/$slugOuId': typeof LojaSlugOuIdRoute
   '/store/account': typeof StoreAccountRoute
   '/store/cart': typeof StoreCartRoute
@@ -431,55 +444,56 @@ export interface FileRoutesByTo {
   '/store/search': typeof StoreSearchRoute
   '/admin': typeof AdminIndexRoute
   '/store': typeof StoreIndexRoute
-  '/admin/financial/cashflow': typeof AdminFinancialCashflowRoute
-  '/admin/financial/dre': typeof AdminFinancialDreRoute
-  '/admin/financial/history': typeof AdminFinancialHistoryRoute
-  '/admin/financial/movements': typeof AdminFinancialMovementsRoute
-  '/admin/financial/payables': typeof AdminFinancialPayablesRoute
-  '/admin/financial/receivables': typeof AdminFinancialReceivablesRoute
-  '/admin/financial/sessions': typeof AdminFinancialSessionsRoute
-  '/admin/financial/settings': typeof AdminFinancialSettingsRoute
-  '/admin/stock/adjustments': typeof AdminStockAdjustmentsRoute
-  '/admin/stock/balance': typeof AdminStockBalanceRoute
-  '/admin/stock/balancete': typeof AdminStockBalanceteRoute
-  '/admin/stock/entries': typeof AdminStockEntriesRoute
-  '/admin/stock/exits': typeof AdminStockExitsRoute
-  '/admin/stock/extract': typeof AdminStockExtractRoute
-  '/admin/stock/history': typeof AdminStockHistoryRoute
-  '/admin/stock/transfers': typeof AdminStockTransfersRoute
+  '/admin/estoque/ajustes': typeof AdminEstoqueAjustesRoute
+  '/admin/estoque/balancete': typeof AdminEstoqueBalanceteRoute
+  '/admin/estoque/balanco': typeof AdminEstoqueBalancoRoute
+  '/admin/estoque/entradas': typeof AdminEstoqueEntradasRoute
+  '/admin/estoque/extrato': typeof AdminEstoqueExtratoRoute
+  '/admin/estoque/historico': typeof AdminEstoqueHistoricoRoute
+  '/admin/estoque/saidas': typeof AdminEstoqueSaidasRoute
+  '/admin/estoque/transferencias': typeof AdminEstoqueTransferenciasRoute
+  '/admin/financeiro/configuracoes': typeof AdminFinanceiroConfiguracoesRoute
+  '/admin/financeiro/dre': typeof AdminFinanceiroDreRoute
+  '/admin/financeiro/fluxo-caixa': typeof AdminFinanceiroFluxoCaixaRoute
+  '/admin/financeiro/historico': typeof AdminFinanceiroHistoricoRoute
+  '/admin/financeiro/movimentacoes': typeof AdminFinanceiroMovimentacoesRoute
+  '/admin/financeiro/pagar': typeof AdminFinanceiroPagarRoute
+  '/admin/financeiro/receber': typeof AdminFinanceiroReceberRoute
+  '/admin/financeiro/sessoes': typeof AdminFinanceiroSessoesRoute
   '/store/order/$orderId': typeof StoreOrderOrderIdRoute
   '/store/product/$productId': typeof StoreProductProductIdRoute
-  '/admin/financial': typeof AdminFinancialIndexRoute
-  '/admin/stock': typeof AdminStockIndexRoute
+  '/admin/estoque': typeof AdminEstoqueIndexRoute
+  '/admin/financeiro': typeof AdminFinanceiroIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/convite': typeof ConviteRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/store': typeof StoreRouteWithChildren
   '/verify-email': typeof VerifyEmailRoute
-  '/admin/categories': typeof AdminCategoriesRoute
-  '/admin/coupons': typeof AdminCouponsRoute
-  '/admin/customers': typeof AdminCustomersRoute
+  '/admin/ambientes-impressao': typeof AdminAmbientesImpressaoRoute
+  '/admin/categorias': typeof AdminCategoriasRoute
+  '/admin/clientes': typeof AdminClientesRoute
+  '/admin/configuracoes': typeof AdminConfiguracoesRoute
+  '/admin/cupons': typeof AdminCuponsRoute
   '/admin/dashboard': typeof AdminDashboardRoute
-  '/admin/delivery': typeof AdminDeliveryRoute
-  '/admin/financial': typeof AdminFinancialRouteWithChildren
-  '/admin/orders': typeof AdminOrdersRoute
+  '/admin/entrega': typeof AdminEntregaRoute
+  '/admin/estoque': typeof AdminEstoqueRouteWithChildren
+  '/admin/financeiro': typeof AdminFinanceiroRouteWithChildren
+  '/admin/impressoras': typeof AdminImpressorasRoute
   '/admin/pdv': typeof AdminPdvRoute
-  '/admin/print-environments': typeof AdminPrintEnvironmentsRoute
-  '/admin/printers': typeof AdminPrintersRoute
-  '/admin/products': typeof AdminProductsRoute
-  '/admin/reports': typeof AdminReportsRoute
-  '/admin/reports-dashboard': typeof AdminReportsDashboardRoute
-  '/admin/reports-preview': typeof AdminReportsPreviewRoute
-  '/admin/sectors': typeof AdminSectorsRoute
-  '/admin/settings': typeof AdminSettingsRoute
-  '/admin/stock': typeof AdminStockRouteWithChildren
-  '/admin/users': typeof AdminUsersRoute
+  '/admin/pedidos': typeof AdminPedidosRoute
+  '/admin/produtos': typeof AdminProdutosRoute
+  '/admin/relatorios': typeof AdminRelatoriosRoute
+  '/admin/relatorios-dashboard': typeof AdminRelatoriosDashboardRoute
+  '/admin/relatorios-preview': typeof AdminRelatoriosPreviewRoute
+  '/admin/setores': typeof AdminSetoresRoute
+  '/admin/usuarios': typeof AdminUsuariosRoute
   '/loja/$slugOuId': typeof LojaSlugOuIdRoute
   '/store/account': typeof StoreAccountRoute
   '/store/cart': typeof StoreCartRoute
@@ -489,56 +503,57 @@ export interface FileRoutesById {
   '/store/search': typeof StoreSearchRoute
   '/admin/': typeof AdminIndexRoute
   '/store/': typeof StoreIndexRoute
-  '/admin/financial/cashflow': typeof AdminFinancialCashflowRoute
-  '/admin/financial/dre': typeof AdminFinancialDreRoute
-  '/admin/financial/history': typeof AdminFinancialHistoryRoute
-  '/admin/financial/movements': typeof AdminFinancialMovementsRoute
-  '/admin/financial/payables': typeof AdminFinancialPayablesRoute
-  '/admin/financial/receivables': typeof AdminFinancialReceivablesRoute
-  '/admin/financial/sessions': typeof AdminFinancialSessionsRoute
-  '/admin/financial/settings': typeof AdminFinancialSettingsRoute
-  '/admin/stock/adjustments': typeof AdminStockAdjustmentsRoute
-  '/admin/stock/balance': typeof AdminStockBalanceRoute
-  '/admin/stock/balancete': typeof AdminStockBalanceteRoute
-  '/admin/stock/entries': typeof AdminStockEntriesRoute
-  '/admin/stock/exits': typeof AdminStockExitsRoute
-  '/admin/stock/extract': typeof AdminStockExtractRoute
-  '/admin/stock/history': typeof AdminStockHistoryRoute
-  '/admin/stock/transfers': typeof AdminStockTransfersRoute
+  '/admin/estoque/ajustes': typeof AdminEstoqueAjustesRoute
+  '/admin/estoque/balancete': typeof AdminEstoqueBalanceteRoute
+  '/admin/estoque/balanco': typeof AdminEstoqueBalancoRoute
+  '/admin/estoque/entradas': typeof AdminEstoqueEntradasRoute
+  '/admin/estoque/extrato': typeof AdminEstoqueExtratoRoute
+  '/admin/estoque/historico': typeof AdminEstoqueHistoricoRoute
+  '/admin/estoque/saidas': typeof AdminEstoqueSaidasRoute
+  '/admin/estoque/transferencias': typeof AdminEstoqueTransferenciasRoute
+  '/admin/financeiro/configuracoes': typeof AdminFinanceiroConfiguracoesRoute
+  '/admin/financeiro/dre': typeof AdminFinanceiroDreRoute
+  '/admin/financeiro/fluxo-caixa': typeof AdminFinanceiroFluxoCaixaRoute
+  '/admin/financeiro/historico': typeof AdminFinanceiroHistoricoRoute
+  '/admin/financeiro/movimentacoes': typeof AdminFinanceiroMovimentacoesRoute
+  '/admin/financeiro/pagar': typeof AdminFinanceiroPagarRoute
+  '/admin/financeiro/receber': typeof AdminFinanceiroReceberRoute
+  '/admin/financeiro/sessoes': typeof AdminFinanceiroSessoesRoute
   '/store/order/$orderId': typeof StoreOrderOrderIdRoute
   '/store/product/$productId': typeof StoreProductProductIdRoute
-  '/admin/financial/': typeof AdminFinancialIndexRoute
-  '/admin/stock/': typeof AdminStockIndexRoute
+  '/admin/estoque/': typeof AdminEstoqueIndexRoute
+  '/admin/financeiro/': typeof AdminFinanceiroIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/admin'
+    | '/convite'
     | '/forgot-password'
     | '/login'
     | '/register'
     | '/reset-password'
     | '/store'
     | '/verify-email'
-    | '/admin/categories'
-    | '/admin/coupons'
-    | '/admin/customers'
+    | '/admin/ambientes-impressao'
+    | '/admin/categorias'
+    | '/admin/clientes'
+    | '/admin/configuracoes'
+    | '/admin/cupons'
     | '/admin/dashboard'
-    | '/admin/delivery'
-    | '/admin/financial'
-    | '/admin/orders'
+    | '/admin/entrega'
+    | '/admin/estoque'
+    | '/admin/financeiro'
+    | '/admin/impressoras'
     | '/admin/pdv'
-    | '/admin/print-environments'
-    | '/admin/printers'
-    | '/admin/products'
-    | '/admin/reports'
-    | '/admin/reports-dashboard'
-    | '/admin/reports-preview'
-    | '/admin/sectors'
-    | '/admin/settings'
-    | '/admin/stock'
-    | '/admin/users'
+    | '/admin/pedidos'
+    | '/admin/produtos'
+    | '/admin/relatorios'
+    | '/admin/relatorios-dashboard'
+    | '/admin/relatorios-preview'
+    | '/admin/setores'
+    | '/admin/usuarios'
     | '/loja/$slugOuId'
     | '/store/account'
     | '/store/cart'
@@ -548,50 +563,51 @@ export interface FileRouteTypes {
     | '/store/search'
     | '/admin/'
     | '/store/'
-    | '/admin/financial/cashflow'
-    | '/admin/financial/dre'
-    | '/admin/financial/history'
-    | '/admin/financial/movements'
-    | '/admin/financial/payables'
-    | '/admin/financial/receivables'
-    | '/admin/financial/sessions'
-    | '/admin/financial/settings'
-    | '/admin/stock/adjustments'
-    | '/admin/stock/balance'
-    | '/admin/stock/balancete'
-    | '/admin/stock/entries'
-    | '/admin/stock/exits'
-    | '/admin/stock/extract'
-    | '/admin/stock/history'
-    | '/admin/stock/transfers'
+    | '/admin/estoque/ajustes'
+    | '/admin/estoque/balancete'
+    | '/admin/estoque/balanco'
+    | '/admin/estoque/entradas'
+    | '/admin/estoque/extrato'
+    | '/admin/estoque/historico'
+    | '/admin/estoque/saidas'
+    | '/admin/estoque/transferencias'
+    | '/admin/financeiro/configuracoes'
+    | '/admin/financeiro/dre'
+    | '/admin/financeiro/fluxo-caixa'
+    | '/admin/financeiro/historico'
+    | '/admin/financeiro/movimentacoes'
+    | '/admin/financeiro/pagar'
+    | '/admin/financeiro/receber'
+    | '/admin/financeiro/sessoes'
     | '/store/order/$orderId'
     | '/store/product/$productId'
-    | '/admin/financial/'
-    | '/admin/stock/'
+    | '/admin/estoque/'
+    | '/admin/financeiro/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/convite'
     | '/forgot-password'
     | '/login'
     | '/register'
     | '/reset-password'
     | '/verify-email'
-    | '/admin/categories'
-    | '/admin/coupons'
-    | '/admin/customers'
+    | '/admin/ambientes-impressao'
+    | '/admin/categorias'
+    | '/admin/clientes'
+    | '/admin/configuracoes'
+    | '/admin/cupons'
     | '/admin/dashboard'
-    | '/admin/delivery'
-    | '/admin/orders'
+    | '/admin/entrega'
+    | '/admin/impressoras'
     | '/admin/pdv'
-    | '/admin/print-environments'
-    | '/admin/printers'
-    | '/admin/products'
-    | '/admin/reports'
-    | '/admin/reports-dashboard'
-    | '/admin/reports-preview'
-    | '/admin/sectors'
-    | '/admin/settings'
-    | '/admin/users'
+    | '/admin/pedidos'
+    | '/admin/produtos'
+    | '/admin/relatorios'
+    | '/admin/relatorios-dashboard'
+    | '/admin/relatorios-preview'
+    | '/admin/setores'
+    | '/admin/usuarios'
     | '/loja/$slugOuId'
     | '/store/account'
     | '/store/cart'
@@ -601,54 +617,55 @@ export interface FileRouteTypes {
     | '/store/search'
     | '/admin'
     | '/store'
-    | '/admin/financial/cashflow'
-    | '/admin/financial/dre'
-    | '/admin/financial/history'
-    | '/admin/financial/movements'
-    | '/admin/financial/payables'
-    | '/admin/financial/receivables'
-    | '/admin/financial/sessions'
-    | '/admin/financial/settings'
-    | '/admin/stock/adjustments'
-    | '/admin/stock/balance'
-    | '/admin/stock/balancete'
-    | '/admin/stock/entries'
-    | '/admin/stock/exits'
-    | '/admin/stock/extract'
-    | '/admin/stock/history'
-    | '/admin/stock/transfers'
+    | '/admin/estoque/ajustes'
+    | '/admin/estoque/balancete'
+    | '/admin/estoque/balanco'
+    | '/admin/estoque/entradas'
+    | '/admin/estoque/extrato'
+    | '/admin/estoque/historico'
+    | '/admin/estoque/saidas'
+    | '/admin/estoque/transferencias'
+    | '/admin/financeiro/configuracoes'
+    | '/admin/financeiro/dre'
+    | '/admin/financeiro/fluxo-caixa'
+    | '/admin/financeiro/historico'
+    | '/admin/financeiro/movimentacoes'
+    | '/admin/financeiro/pagar'
+    | '/admin/financeiro/receber'
+    | '/admin/financeiro/sessoes'
     | '/store/order/$orderId'
     | '/store/product/$productId'
-    | '/admin/financial'
-    | '/admin/stock'
+    | '/admin/estoque'
+    | '/admin/financeiro'
   id:
     | '__root__'
     | '/'
     | '/admin'
+    | '/convite'
     | '/forgot-password'
     | '/login'
     | '/register'
     | '/reset-password'
     | '/store'
     | '/verify-email'
-    | '/admin/categories'
-    | '/admin/coupons'
-    | '/admin/customers'
+    | '/admin/ambientes-impressao'
+    | '/admin/categorias'
+    | '/admin/clientes'
+    | '/admin/configuracoes'
+    | '/admin/cupons'
     | '/admin/dashboard'
-    | '/admin/delivery'
-    | '/admin/financial'
-    | '/admin/orders'
+    | '/admin/entrega'
+    | '/admin/estoque'
+    | '/admin/financeiro'
+    | '/admin/impressoras'
     | '/admin/pdv'
-    | '/admin/print-environments'
-    | '/admin/printers'
-    | '/admin/products'
-    | '/admin/reports'
-    | '/admin/reports-dashboard'
-    | '/admin/reports-preview'
-    | '/admin/sectors'
-    | '/admin/settings'
-    | '/admin/stock'
-    | '/admin/users'
+    | '/admin/pedidos'
+    | '/admin/produtos'
+    | '/admin/relatorios'
+    | '/admin/relatorios-dashboard'
+    | '/admin/relatorios-preview'
+    | '/admin/setores'
+    | '/admin/usuarios'
     | '/loja/$slugOuId'
     | '/store/account'
     | '/store/cart'
@@ -658,31 +675,32 @@ export interface FileRouteTypes {
     | '/store/search'
     | '/admin/'
     | '/store/'
-    | '/admin/financial/cashflow'
-    | '/admin/financial/dre'
-    | '/admin/financial/history'
-    | '/admin/financial/movements'
-    | '/admin/financial/payables'
-    | '/admin/financial/receivables'
-    | '/admin/financial/sessions'
-    | '/admin/financial/settings'
-    | '/admin/stock/adjustments'
-    | '/admin/stock/balance'
-    | '/admin/stock/balancete'
-    | '/admin/stock/entries'
-    | '/admin/stock/exits'
-    | '/admin/stock/extract'
-    | '/admin/stock/history'
-    | '/admin/stock/transfers'
+    | '/admin/estoque/ajustes'
+    | '/admin/estoque/balancete'
+    | '/admin/estoque/balanco'
+    | '/admin/estoque/entradas'
+    | '/admin/estoque/extrato'
+    | '/admin/estoque/historico'
+    | '/admin/estoque/saidas'
+    | '/admin/estoque/transferencias'
+    | '/admin/financeiro/configuracoes'
+    | '/admin/financeiro/dre'
+    | '/admin/financeiro/fluxo-caixa'
+    | '/admin/financeiro/historico'
+    | '/admin/financeiro/movimentacoes'
+    | '/admin/financeiro/pagar'
+    | '/admin/financeiro/receber'
+    | '/admin/financeiro/sessoes'
     | '/store/order/$orderId'
     | '/store/product/$productId'
-    | '/admin/financial/'
-    | '/admin/stock/'
+    | '/admin/estoque/'
+    | '/admin/financeiro/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  ConviteRoute: typeof ConviteRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   RegisterRoute: typeof RegisterRoute
@@ -734,6 +752,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/convite': {
+      id: '/convite'
+      path: '/convite'
+      fullPath: '/convite'
+      preLoaderRoute: typeof ConviteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -813,74 +838,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LojaSlugOuIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/users': {
-      id: '/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
+    '/admin/usuarios': {
+      id: '/admin/usuarios'
+      path: '/usuarios'
+      fullPath: '/admin/usuarios'
+      preLoaderRoute: typeof AdminUsuariosRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/stock': {
-      id: '/admin/stock'
-      path: '/stock'
-      fullPath: '/admin/stock'
-      preLoaderRoute: typeof AdminStockRouteImport
+    '/admin/setores': {
+      id: '/admin/setores'
+      path: '/setores'
+      fullPath: '/admin/setores'
+      preLoaderRoute: typeof AdminSetoresRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/settings': {
-      id: '/admin/settings'
-      path: '/settings'
-      fullPath: '/admin/settings'
-      preLoaderRoute: typeof AdminSettingsRouteImport
+    '/admin/relatorios-preview': {
+      id: '/admin/relatorios-preview'
+      path: '/relatorios-preview'
+      fullPath: '/admin/relatorios-preview'
+      preLoaderRoute: typeof AdminRelatoriosPreviewRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/sectors': {
-      id: '/admin/sectors'
-      path: '/sectors'
-      fullPath: '/admin/sectors'
-      preLoaderRoute: typeof AdminSectorsRouteImport
+    '/admin/relatorios-dashboard': {
+      id: '/admin/relatorios-dashboard'
+      path: '/relatorios-dashboard'
+      fullPath: '/admin/relatorios-dashboard'
+      preLoaderRoute: typeof AdminRelatoriosDashboardRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/reports-preview': {
-      id: '/admin/reports-preview'
-      path: '/reports-preview'
-      fullPath: '/admin/reports-preview'
-      preLoaderRoute: typeof AdminReportsPreviewRouteImport
+    '/admin/relatorios': {
+      id: '/admin/relatorios'
+      path: '/relatorios'
+      fullPath: '/admin/relatorios'
+      preLoaderRoute: typeof AdminRelatoriosRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/reports-dashboard': {
-      id: '/admin/reports-dashboard'
-      path: '/reports-dashboard'
-      fullPath: '/admin/reports-dashboard'
-      preLoaderRoute: typeof AdminReportsDashboardRouteImport
+    '/admin/produtos': {
+      id: '/admin/produtos'
+      path: '/produtos'
+      fullPath: '/admin/produtos'
+      preLoaderRoute: typeof AdminProdutosRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/reports': {
-      id: '/admin/reports'
-      path: '/reports'
-      fullPath: '/admin/reports'
-      preLoaderRoute: typeof AdminReportsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/products': {
-      id: '/admin/products'
-      path: '/products'
-      fullPath: '/admin/products'
-      preLoaderRoute: typeof AdminProductsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/printers': {
-      id: '/admin/printers'
-      path: '/printers'
-      fullPath: '/admin/printers'
-      preLoaderRoute: typeof AdminPrintersRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/print-environments': {
-      id: '/admin/print-environments'
-      path: '/print-environments'
-      fullPath: '/admin/print-environments'
-      preLoaderRoute: typeof AdminPrintEnvironmentsRouteImport
+    '/admin/pedidos': {
+      id: '/admin/pedidos'
+      path: '/pedidos'
+      fullPath: '/admin/pedidos'
+      preLoaderRoute: typeof AdminPedidosRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/pdv': {
@@ -890,25 +894,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPdvRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/orders': {
-      id: '/admin/orders'
-      path: '/orders'
-      fullPath: '/admin/orders'
-      preLoaderRoute: typeof AdminOrdersRouteImport
+    '/admin/impressoras': {
+      id: '/admin/impressoras'
+      path: '/impressoras'
+      fullPath: '/admin/impressoras'
+      preLoaderRoute: typeof AdminImpressorasRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/financial': {
-      id: '/admin/financial'
-      path: '/financial'
-      fullPath: '/admin/financial'
-      preLoaderRoute: typeof AdminFinancialRouteImport
+    '/admin/financeiro': {
+      id: '/admin/financeiro'
+      path: '/financeiro'
+      fullPath: '/admin/financeiro'
+      preLoaderRoute: typeof AdminFinanceiroRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/delivery': {
-      id: '/admin/delivery'
-      path: '/delivery'
-      fullPath: '/admin/delivery'
-      preLoaderRoute: typeof AdminDeliveryRouteImport
+    '/admin/estoque': {
+      id: '/admin/estoque'
+      path: '/estoque'
+      fullPath: '/admin/estoque'
+      preLoaderRoute: typeof AdminEstoqueRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/entrega': {
+      id: '/admin/entrega'
+      path: '/entrega'
+      fullPath: '/admin/entrega'
+      preLoaderRoute: typeof AdminEntregaRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/dashboard': {
@@ -918,40 +929,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDashboardRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/customers': {
-      id: '/admin/customers'
-      path: '/customers'
-      fullPath: '/admin/customers'
-      preLoaderRoute: typeof AdminCustomersRouteImport
+    '/admin/cupons': {
+      id: '/admin/cupons'
+      path: '/cupons'
+      fullPath: '/admin/cupons'
+      preLoaderRoute: typeof AdminCuponsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/coupons': {
-      id: '/admin/coupons'
-      path: '/coupons'
-      fullPath: '/admin/coupons'
-      preLoaderRoute: typeof AdminCouponsRouteImport
+    '/admin/configuracoes': {
+      id: '/admin/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/admin/configuracoes'
+      preLoaderRoute: typeof AdminConfiguracoesRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/categories': {
-      id: '/admin/categories'
-      path: '/categories'
-      fullPath: '/admin/categories'
-      preLoaderRoute: typeof AdminCategoriesRouteImport
+    '/admin/clientes': {
+      id: '/admin/clientes'
+      path: '/clientes'
+      fullPath: '/admin/clientes'
+      preLoaderRoute: typeof AdminClientesRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/stock/': {
-      id: '/admin/stock/'
+    '/admin/categorias': {
+      id: '/admin/categorias'
+      path: '/categorias'
+      fullPath: '/admin/categorias'
+      preLoaderRoute: typeof AdminCategoriasRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/ambientes-impressao': {
+      id: '/admin/ambientes-impressao'
+      path: '/ambientes-impressao'
+      fullPath: '/admin/ambientes-impressao'
+      preLoaderRoute: typeof AdminAmbientesImpressaoRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/financeiro/': {
+      id: '/admin/financeiro/'
       path: '/'
-      fullPath: '/admin/stock/'
-      preLoaderRoute: typeof AdminStockIndexRouteImport
-      parentRoute: typeof AdminStockRoute
+      fullPath: '/admin/financeiro/'
+      preLoaderRoute: typeof AdminFinanceiroIndexRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
     }
-    '/admin/financial/': {
-      id: '/admin/financial/'
+    '/admin/estoque/': {
+      id: '/admin/estoque/'
       path: '/'
-      fullPath: '/admin/financial/'
-      preLoaderRoute: typeof AdminFinancialIndexRouteImport
-      parentRoute: typeof AdminFinancialRoute
+      fullPath: '/admin/estoque/'
+      preLoaderRoute: typeof AdminEstoqueIndexRouteImport
+      parentRoute: typeof AdminEstoqueRoute
     }
     '/store/product/$productId': {
       id: '/store/product/$productId'
@@ -967,218 +992,218 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StoreOrderOrderIdRouteImport
       parentRoute: typeof StoreRoute
     }
-    '/admin/stock/transfers': {
-      id: '/admin/stock/transfers'
-      path: '/transfers'
-      fullPath: '/admin/stock/transfers'
-      preLoaderRoute: typeof AdminStockTransfersRouteImport
-      parentRoute: typeof AdminStockRoute
+    '/admin/financeiro/sessoes': {
+      id: '/admin/financeiro/sessoes'
+      path: '/sessoes'
+      fullPath: '/admin/financeiro/sessoes'
+      preLoaderRoute: typeof AdminFinanceiroSessoesRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
     }
-    '/admin/stock/history': {
-      id: '/admin/stock/history'
-      path: '/history'
-      fullPath: '/admin/stock/history'
-      preLoaderRoute: typeof AdminStockHistoryRouteImport
-      parentRoute: typeof AdminStockRoute
+    '/admin/financeiro/receber': {
+      id: '/admin/financeiro/receber'
+      path: '/receber'
+      fullPath: '/admin/financeiro/receber'
+      preLoaderRoute: typeof AdminFinanceiroReceberRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
     }
-    '/admin/stock/extract': {
-      id: '/admin/stock/extract'
-      path: '/extract'
-      fullPath: '/admin/stock/extract'
-      preLoaderRoute: typeof AdminStockExtractRouteImport
-      parentRoute: typeof AdminStockRoute
+    '/admin/financeiro/pagar': {
+      id: '/admin/financeiro/pagar'
+      path: '/pagar'
+      fullPath: '/admin/financeiro/pagar'
+      preLoaderRoute: typeof AdminFinanceiroPagarRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
     }
-    '/admin/stock/exits': {
-      id: '/admin/stock/exits'
-      path: '/exits'
-      fullPath: '/admin/stock/exits'
-      preLoaderRoute: typeof AdminStockExitsRouteImport
-      parentRoute: typeof AdminStockRoute
+    '/admin/financeiro/movimentacoes': {
+      id: '/admin/financeiro/movimentacoes'
+      path: '/movimentacoes'
+      fullPath: '/admin/financeiro/movimentacoes'
+      preLoaderRoute: typeof AdminFinanceiroMovimentacoesRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
     }
-    '/admin/stock/entries': {
-      id: '/admin/stock/entries'
-      path: '/entries'
-      fullPath: '/admin/stock/entries'
-      preLoaderRoute: typeof AdminStockEntriesRouteImport
-      parentRoute: typeof AdminStockRoute
+    '/admin/financeiro/historico': {
+      id: '/admin/financeiro/historico'
+      path: '/historico'
+      fullPath: '/admin/financeiro/historico'
+      preLoaderRoute: typeof AdminFinanceiroHistoricoRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
     }
-    '/admin/stock/balancete': {
-      id: '/admin/stock/balancete'
-      path: '/balancete'
-      fullPath: '/admin/stock/balancete'
-      preLoaderRoute: typeof AdminStockBalanceteRouteImport
-      parentRoute: typeof AdminStockRoute
+    '/admin/financeiro/fluxo-caixa': {
+      id: '/admin/financeiro/fluxo-caixa'
+      path: '/fluxo-caixa'
+      fullPath: '/admin/financeiro/fluxo-caixa'
+      preLoaderRoute: typeof AdminFinanceiroFluxoCaixaRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
     }
-    '/admin/stock/balance': {
-      id: '/admin/stock/balance'
-      path: '/balance'
-      fullPath: '/admin/stock/balance'
-      preLoaderRoute: typeof AdminStockBalanceRouteImport
-      parentRoute: typeof AdminStockRoute
-    }
-    '/admin/stock/adjustments': {
-      id: '/admin/stock/adjustments'
-      path: '/adjustments'
-      fullPath: '/admin/stock/adjustments'
-      preLoaderRoute: typeof AdminStockAdjustmentsRouteImport
-      parentRoute: typeof AdminStockRoute
-    }
-    '/admin/financial/settings': {
-      id: '/admin/financial/settings'
-      path: '/settings'
-      fullPath: '/admin/financial/settings'
-      preLoaderRoute: typeof AdminFinancialSettingsRouteImport
-      parentRoute: typeof AdminFinancialRoute
-    }
-    '/admin/financial/sessions': {
-      id: '/admin/financial/sessions'
-      path: '/sessions'
-      fullPath: '/admin/financial/sessions'
-      preLoaderRoute: typeof AdminFinancialSessionsRouteImport
-      parentRoute: typeof AdminFinancialRoute
-    }
-    '/admin/financial/receivables': {
-      id: '/admin/financial/receivables'
-      path: '/receivables'
-      fullPath: '/admin/financial/receivables'
-      preLoaderRoute: typeof AdminFinancialReceivablesRouteImport
-      parentRoute: typeof AdminFinancialRoute
-    }
-    '/admin/financial/payables': {
-      id: '/admin/financial/payables'
-      path: '/payables'
-      fullPath: '/admin/financial/payables'
-      preLoaderRoute: typeof AdminFinancialPayablesRouteImport
-      parentRoute: typeof AdminFinancialRoute
-    }
-    '/admin/financial/movements': {
-      id: '/admin/financial/movements'
-      path: '/movements'
-      fullPath: '/admin/financial/movements'
-      preLoaderRoute: typeof AdminFinancialMovementsRouteImport
-      parentRoute: typeof AdminFinancialRoute
-    }
-    '/admin/financial/history': {
-      id: '/admin/financial/history'
-      path: '/history'
-      fullPath: '/admin/financial/history'
-      preLoaderRoute: typeof AdminFinancialHistoryRouteImport
-      parentRoute: typeof AdminFinancialRoute
-    }
-    '/admin/financial/dre': {
-      id: '/admin/financial/dre'
+    '/admin/financeiro/dre': {
+      id: '/admin/financeiro/dre'
       path: '/dre'
-      fullPath: '/admin/financial/dre'
-      preLoaderRoute: typeof AdminFinancialDreRouteImport
-      parentRoute: typeof AdminFinancialRoute
+      fullPath: '/admin/financeiro/dre'
+      preLoaderRoute: typeof AdminFinanceiroDreRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
     }
-    '/admin/financial/cashflow': {
-      id: '/admin/financial/cashflow'
-      path: '/cashflow'
-      fullPath: '/admin/financial/cashflow'
-      preLoaderRoute: typeof AdminFinancialCashflowRouteImport
-      parentRoute: typeof AdminFinancialRoute
+    '/admin/financeiro/configuracoes': {
+      id: '/admin/financeiro/configuracoes'
+      path: '/configuracoes'
+      fullPath: '/admin/financeiro/configuracoes'
+      preLoaderRoute: typeof AdminFinanceiroConfiguracoesRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
+    }
+    '/admin/estoque/transferencias': {
+      id: '/admin/estoque/transferencias'
+      path: '/transferencias'
+      fullPath: '/admin/estoque/transferencias'
+      preLoaderRoute: typeof AdminEstoqueTransferenciasRouteImport
+      parentRoute: typeof AdminEstoqueRoute
+    }
+    '/admin/estoque/saidas': {
+      id: '/admin/estoque/saidas'
+      path: '/saidas'
+      fullPath: '/admin/estoque/saidas'
+      preLoaderRoute: typeof AdminEstoqueSaidasRouteImport
+      parentRoute: typeof AdminEstoqueRoute
+    }
+    '/admin/estoque/historico': {
+      id: '/admin/estoque/historico'
+      path: '/historico'
+      fullPath: '/admin/estoque/historico'
+      preLoaderRoute: typeof AdminEstoqueHistoricoRouteImport
+      parentRoute: typeof AdminEstoqueRoute
+    }
+    '/admin/estoque/extrato': {
+      id: '/admin/estoque/extrato'
+      path: '/extrato'
+      fullPath: '/admin/estoque/extrato'
+      preLoaderRoute: typeof AdminEstoqueExtratoRouteImport
+      parentRoute: typeof AdminEstoqueRoute
+    }
+    '/admin/estoque/entradas': {
+      id: '/admin/estoque/entradas'
+      path: '/entradas'
+      fullPath: '/admin/estoque/entradas'
+      preLoaderRoute: typeof AdminEstoqueEntradasRouteImport
+      parentRoute: typeof AdminEstoqueRoute
+    }
+    '/admin/estoque/balanco': {
+      id: '/admin/estoque/balanco'
+      path: '/balanco'
+      fullPath: '/admin/estoque/balanco'
+      preLoaderRoute: typeof AdminEstoqueBalancoRouteImport
+      parentRoute: typeof AdminEstoqueRoute
+    }
+    '/admin/estoque/balancete': {
+      id: '/admin/estoque/balancete'
+      path: '/balancete'
+      fullPath: '/admin/estoque/balancete'
+      preLoaderRoute: typeof AdminEstoqueBalanceteRouteImport
+      parentRoute: typeof AdminEstoqueRoute
+    }
+    '/admin/estoque/ajustes': {
+      id: '/admin/estoque/ajustes'
+      path: '/ajustes'
+      fullPath: '/admin/estoque/ajustes'
+      preLoaderRoute: typeof AdminEstoqueAjustesRouteImport
+      parentRoute: typeof AdminEstoqueRoute
     }
   }
 }
 
-interface AdminFinancialRouteChildren {
-  AdminFinancialCashflowRoute: typeof AdminFinancialCashflowRoute
-  AdminFinancialDreRoute: typeof AdminFinancialDreRoute
-  AdminFinancialHistoryRoute: typeof AdminFinancialHistoryRoute
-  AdminFinancialMovementsRoute: typeof AdminFinancialMovementsRoute
-  AdminFinancialPayablesRoute: typeof AdminFinancialPayablesRoute
-  AdminFinancialReceivablesRoute: typeof AdminFinancialReceivablesRoute
-  AdminFinancialSessionsRoute: typeof AdminFinancialSessionsRoute
-  AdminFinancialSettingsRoute: typeof AdminFinancialSettingsRoute
-  AdminFinancialIndexRoute: typeof AdminFinancialIndexRoute
+interface AdminEstoqueRouteChildren {
+  AdminEstoqueAjustesRoute: typeof AdminEstoqueAjustesRoute
+  AdminEstoqueBalanceteRoute: typeof AdminEstoqueBalanceteRoute
+  AdminEstoqueBalancoRoute: typeof AdminEstoqueBalancoRoute
+  AdminEstoqueEntradasRoute: typeof AdminEstoqueEntradasRoute
+  AdminEstoqueExtratoRoute: typeof AdminEstoqueExtratoRoute
+  AdminEstoqueHistoricoRoute: typeof AdminEstoqueHistoricoRoute
+  AdminEstoqueSaidasRoute: typeof AdminEstoqueSaidasRoute
+  AdminEstoqueTransferenciasRoute: typeof AdminEstoqueTransferenciasRoute
+  AdminEstoqueIndexRoute: typeof AdminEstoqueIndexRoute
 }
 
-const AdminFinancialRouteChildren: AdminFinancialRouteChildren = {
-  AdminFinancialCashflowRoute: AdminFinancialCashflowRoute,
-  AdminFinancialDreRoute: AdminFinancialDreRoute,
-  AdminFinancialHistoryRoute: AdminFinancialHistoryRoute,
-  AdminFinancialMovementsRoute: AdminFinancialMovementsRoute,
-  AdminFinancialPayablesRoute: AdminFinancialPayablesRoute,
-  AdminFinancialReceivablesRoute: AdminFinancialReceivablesRoute,
-  AdminFinancialSessionsRoute: AdminFinancialSessionsRoute,
-  AdminFinancialSettingsRoute: AdminFinancialSettingsRoute,
-  AdminFinancialIndexRoute: AdminFinancialIndexRoute,
+const AdminEstoqueRouteChildren: AdminEstoqueRouteChildren = {
+  AdminEstoqueAjustesRoute: AdminEstoqueAjustesRoute,
+  AdminEstoqueBalanceteRoute: AdminEstoqueBalanceteRoute,
+  AdminEstoqueBalancoRoute: AdminEstoqueBalancoRoute,
+  AdminEstoqueEntradasRoute: AdminEstoqueEntradasRoute,
+  AdminEstoqueExtratoRoute: AdminEstoqueExtratoRoute,
+  AdminEstoqueHistoricoRoute: AdminEstoqueHistoricoRoute,
+  AdminEstoqueSaidasRoute: AdminEstoqueSaidasRoute,
+  AdminEstoqueTransferenciasRoute: AdminEstoqueTransferenciasRoute,
+  AdminEstoqueIndexRoute: AdminEstoqueIndexRoute,
 }
 
-const AdminFinancialRouteWithChildren = AdminFinancialRoute._addFileChildren(
-  AdminFinancialRouteChildren,
+const AdminEstoqueRouteWithChildren = AdminEstoqueRoute._addFileChildren(
+  AdminEstoqueRouteChildren,
 )
 
-interface AdminStockRouteChildren {
-  AdminStockAdjustmentsRoute: typeof AdminStockAdjustmentsRoute
-  AdminStockBalanceRoute: typeof AdminStockBalanceRoute
-  AdminStockBalanceteRoute: typeof AdminStockBalanceteRoute
-  AdminStockEntriesRoute: typeof AdminStockEntriesRoute
-  AdminStockExitsRoute: typeof AdminStockExitsRoute
-  AdminStockExtractRoute: typeof AdminStockExtractRoute
-  AdminStockHistoryRoute: typeof AdminStockHistoryRoute
-  AdminStockTransfersRoute: typeof AdminStockTransfersRoute
-  AdminStockIndexRoute: typeof AdminStockIndexRoute
+interface AdminFinanceiroRouteChildren {
+  AdminFinanceiroConfiguracoesRoute: typeof AdminFinanceiroConfiguracoesRoute
+  AdminFinanceiroDreRoute: typeof AdminFinanceiroDreRoute
+  AdminFinanceiroFluxoCaixaRoute: typeof AdminFinanceiroFluxoCaixaRoute
+  AdminFinanceiroHistoricoRoute: typeof AdminFinanceiroHistoricoRoute
+  AdminFinanceiroMovimentacoesRoute: typeof AdminFinanceiroMovimentacoesRoute
+  AdminFinanceiroPagarRoute: typeof AdminFinanceiroPagarRoute
+  AdminFinanceiroReceberRoute: typeof AdminFinanceiroReceberRoute
+  AdminFinanceiroSessoesRoute: typeof AdminFinanceiroSessoesRoute
+  AdminFinanceiroIndexRoute: typeof AdminFinanceiroIndexRoute
 }
 
-const AdminStockRouteChildren: AdminStockRouteChildren = {
-  AdminStockAdjustmentsRoute: AdminStockAdjustmentsRoute,
-  AdminStockBalanceRoute: AdminStockBalanceRoute,
-  AdminStockBalanceteRoute: AdminStockBalanceteRoute,
-  AdminStockEntriesRoute: AdminStockEntriesRoute,
-  AdminStockExitsRoute: AdminStockExitsRoute,
-  AdminStockExtractRoute: AdminStockExtractRoute,
-  AdminStockHistoryRoute: AdminStockHistoryRoute,
-  AdminStockTransfersRoute: AdminStockTransfersRoute,
-  AdminStockIndexRoute: AdminStockIndexRoute,
+const AdminFinanceiroRouteChildren: AdminFinanceiroRouteChildren = {
+  AdminFinanceiroConfiguracoesRoute: AdminFinanceiroConfiguracoesRoute,
+  AdminFinanceiroDreRoute: AdminFinanceiroDreRoute,
+  AdminFinanceiroFluxoCaixaRoute: AdminFinanceiroFluxoCaixaRoute,
+  AdminFinanceiroHistoricoRoute: AdminFinanceiroHistoricoRoute,
+  AdminFinanceiroMovimentacoesRoute: AdminFinanceiroMovimentacoesRoute,
+  AdminFinanceiroPagarRoute: AdminFinanceiroPagarRoute,
+  AdminFinanceiroReceberRoute: AdminFinanceiroReceberRoute,
+  AdminFinanceiroSessoesRoute: AdminFinanceiroSessoesRoute,
+  AdminFinanceiroIndexRoute: AdminFinanceiroIndexRoute,
 }
 
-const AdminStockRouteWithChildren = AdminStockRoute._addFileChildren(
-  AdminStockRouteChildren,
+const AdminFinanceiroRouteWithChildren = AdminFinanceiroRoute._addFileChildren(
+  AdminFinanceiroRouteChildren,
 )
 
 interface AdminRouteChildren {
-  AdminCategoriesRoute: typeof AdminCategoriesRoute
-  AdminCouponsRoute: typeof AdminCouponsRoute
-  AdminCustomersRoute: typeof AdminCustomersRoute
+  AdminAmbientesImpressaoRoute: typeof AdminAmbientesImpressaoRoute
+  AdminCategoriasRoute: typeof AdminCategoriasRoute
+  AdminClientesRoute: typeof AdminClientesRoute
+  AdminConfiguracoesRoute: typeof AdminConfiguracoesRoute
+  AdminCuponsRoute: typeof AdminCuponsRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
-  AdminDeliveryRoute: typeof AdminDeliveryRoute
-  AdminFinancialRoute: typeof AdminFinancialRouteWithChildren
-  AdminOrdersRoute: typeof AdminOrdersRoute
+  AdminEntregaRoute: typeof AdminEntregaRoute
+  AdminEstoqueRoute: typeof AdminEstoqueRouteWithChildren
+  AdminFinanceiroRoute: typeof AdminFinanceiroRouteWithChildren
+  AdminImpressorasRoute: typeof AdminImpressorasRoute
   AdminPdvRoute: typeof AdminPdvRoute
-  AdminPrintEnvironmentsRoute: typeof AdminPrintEnvironmentsRoute
-  AdminPrintersRoute: typeof AdminPrintersRoute
-  AdminProductsRoute: typeof AdminProductsRoute
-  AdminReportsRoute: typeof AdminReportsRoute
-  AdminReportsDashboardRoute: typeof AdminReportsDashboardRoute
-  AdminReportsPreviewRoute: typeof AdminReportsPreviewRoute
-  AdminSectorsRoute: typeof AdminSectorsRoute
-  AdminSettingsRoute: typeof AdminSettingsRoute
-  AdminStockRoute: typeof AdminStockRouteWithChildren
-  AdminUsersRoute: typeof AdminUsersRoute
+  AdminPedidosRoute: typeof AdminPedidosRoute
+  AdminProdutosRoute: typeof AdminProdutosRoute
+  AdminRelatoriosRoute: typeof AdminRelatoriosRoute
+  AdminRelatoriosDashboardRoute: typeof AdminRelatoriosDashboardRoute
+  AdminRelatoriosPreviewRoute: typeof AdminRelatoriosPreviewRoute
+  AdminSetoresRoute: typeof AdminSetoresRoute
+  AdminUsuariosRoute: typeof AdminUsuariosRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
-  AdminCategoriesRoute: AdminCategoriesRoute,
-  AdminCouponsRoute: AdminCouponsRoute,
-  AdminCustomersRoute: AdminCustomersRoute,
+  AdminAmbientesImpressaoRoute: AdminAmbientesImpressaoRoute,
+  AdminCategoriasRoute: AdminCategoriasRoute,
+  AdminClientesRoute: AdminClientesRoute,
+  AdminConfiguracoesRoute: AdminConfiguracoesRoute,
+  AdminCuponsRoute: AdminCuponsRoute,
   AdminDashboardRoute: AdminDashboardRoute,
-  AdminDeliveryRoute: AdminDeliveryRoute,
-  AdminFinancialRoute: AdminFinancialRouteWithChildren,
-  AdminOrdersRoute: AdminOrdersRoute,
+  AdminEntregaRoute: AdminEntregaRoute,
+  AdminEstoqueRoute: AdminEstoqueRouteWithChildren,
+  AdminFinanceiroRoute: AdminFinanceiroRouteWithChildren,
+  AdminImpressorasRoute: AdminImpressorasRoute,
   AdminPdvRoute: AdminPdvRoute,
-  AdminPrintEnvironmentsRoute: AdminPrintEnvironmentsRoute,
-  AdminPrintersRoute: AdminPrintersRoute,
-  AdminProductsRoute: AdminProductsRoute,
-  AdminReportsRoute: AdminReportsRoute,
-  AdminReportsDashboardRoute: AdminReportsDashboardRoute,
-  AdminReportsPreviewRoute: AdminReportsPreviewRoute,
-  AdminSectorsRoute: AdminSectorsRoute,
-  AdminSettingsRoute: AdminSettingsRoute,
-  AdminStockRoute: AdminStockRouteWithChildren,
-  AdminUsersRoute: AdminUsersRoute,
+  AdminPedidosRoute: AdminPedidosRoute,
+  AdminProdutosRoute: AdminProdutosRoute,
+  AdminRelatoriosRoute: AdminRelatoriosRoute,
+  AdminRelatoriosDashboardRoute: AdminRelatoriosDashboardRoute,
+  AdminRelatoriosPreviewRoute: AdminRelatoriosPreviewRoute,
+  AdminSetoresRoute: AdminSetoresRoute,
+  AdminUsuariosRoute: AdminUsuariosRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 
@@ -1213,6 +1238,7 @@ const StoreRouteWithChildren = StoreRoute._addFileChildren(StoreRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  ConviteRoute: ConviteRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   RegisterRoute: RegisterRoute,

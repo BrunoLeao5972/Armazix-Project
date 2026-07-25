@@ -17,7 +17,11 @@ export const Route = createFileRoute("/reset-password")({
 });
 
 function ResetPasswordPage() {
-  const { email } = Route.useSearch();
+  const { email: initialEmail } = Route.useSearch();
+  // O e-mail agora vai no corpo da requisição (o código é validado apenas
+  // contra esta conta). Normalmente vem da tela anterior; se o link foi aberto
+  // direto, pedimos aqui.
+  const [email, setEmail] = useState(initialEmail);
   const [code, setCode] = useState(["", "", "", "", "", ""]);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -59,6 +63,10 @@ function ResetPasswordPage() {
     e.preventDefault();
     const finalCode = code.join("");
 
+    if (!email.trim()) {
+      setError("Informe o e-mail da conta");
+      return;
+    }
     if (finalCode.length !== 6) {
       setError("Digite o código completo");
       return;
@@ -79,7 +87,7 @@ function ResetPasswordPage() {
       const res = await fetch("/api/auth/reset-password", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code: finalCode, newPassword }),
+        body: JSON.stringify({ email, code: finalCode, newPassword }),
       });
       const data = await res.json();
 
@@ -145,10 +153,27 @@ function ResetPasswordPage() {
 
         <h1 className="text-2xl font-bold text-center">Redefinir senha</h1>
         <p className="text-sm text-muted-foreground text-center mt-2">
-          Digite o código enviado para <strong className="text-foreground">{email || "seu email"}</strong>
+          {initialEmail
+            ? <>Digite o código enviado para <strong className="text-foreground">{initialEmail}</strong></>
+            : "Informe o e-mail da conta e o código que você recebeu"}
         </p>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+          {/* E-mail — só quando não veio da tela anterior */}
+          {!initialEmail && (
+            <div className="space-y-2">
+              <Label>E-mail da conta</Label>
+              <Input
+                type="email"
+                placeholder="voce@email.com"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                className="h-11 rounded-xl"
+                required
+              />
+            </div>
+          )}
+
           {/* Code inputs */}
           <div className="flex gap-2 justify-center" onPaste={handlePaste}>
             {code.map((digit, i) => (
@@ -175,7 +200,7 @@ function ResetPasswordPage() {
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 type={showPassword ? "text" : "password"}
-                placeholder="Mínimo 8 caracteres"
+                placeholder="Mín. 8 caracteres, com maiúscula e número"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="pl-10 pr-10 h-11 rounded-xl"

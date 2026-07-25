@@ -3,6 +3,7 @@ import { schema } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { requireStoreAccess, requireStoreOwner } from "@/lib/auth/require-store-access";
 import { hashPassword, validatePasswordPolicy } from "@/lib/auth";
+import { logAudit, AuditActions, ResourceTypes } from "@/lib/audit";
 import type { AuthContext } from "@/lib/middleware/auth";
 
 const { users, storeUsers } = schema;
@@ -16,6 +17,63 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+// ─── Guard: escrita no registro global de um usuário ──────────────────────
+//
+// `users` é global; `store_users` é por loja. Os handlers abaixo alteram senha,
+// active, nome e cpf — todos em `users`. Ser membro da minha loja não pode dar
+// autoridade sobre a identidade global de alguém que também trabalha em outra.
+//
+// Por isso a escrita global só é liberada quando a loja do solicitante é o
+// ÚNICO vínculo do alvo. Usuário multi-loja vira somente-leitura: dá para
+// mudar o papel dele aqui dentro, não quem ele é lá fora.
+//
+// O fluxo de convite (store-invite-handler.ts) impede novos vínculos sem
+// aceite; este guard cobre os vínculos que o fluxo antigo já criou.
+interface MemberCheck {
+  /** Papel do alvo NESTA loja — null quando ele não é membro dela. */
+  role: string | null;
+  /** true quando esta loja é o único vínculo do alvo em toda a plataforma. */
+  exclusive: boolean;
+}
+
+async function checkMember(
+  db: ReturnType<typeof createDb>,
+  storeId: string,
+  targetUserId: string,
+): Promise<MemberCheck> {
+  const vinculos = await db
+    .select({ storeId: storeUsers.storeId, role: storeUsers.role })
+    .from(storeUsers)
+    .where(eq(storeUsers.userId, targetUserId));
+
+  const naLoja = vinculos.find(v => v.storeId === storeId);
+  return {
+    role: naLoja?.role ?? null,
+    exclusive: !!naLoja && vinculos.length === 1,
+  };
+}
+
+/** Resposta padrão quando o alvo trabalha em mais de uma loja. */
+function blockGlobalWrite(
+  storeId: string,
+  targetUserId: string,
+  actorUserId: string,
+  request: Request,
+): Response {
+  logAudit({
+    userId:       actorUserId,
+    storeId,
+    action:       AuditActions.CROSS_STORE_USER_WRITE_BLOCKED,
+    resourceType: ResourceTypes.USER,
+    resourceId:   targetUserId,
+    status:       "denied",
+  }, request);
+
+  return json({
+    error: "Este usuário também faz parte de outra loja. Você pode alterar o perfil de acesso dele nesta loja, mas não os dados da conta nem a senha.",
+  }, 403);
 }
 
 // ─── GET /api/store-users/list ────────────────────────────────────────────────
@@ -52,121 +110,6 @@ export async function listStoreUsersHandler(
   return json({ users: members });
 }
 
-// ─── POST /api/store-users/create ────────────────────────────────────────────
-export async function createStoreUserHandler(
-  request: Request,
-  auth?: AuthContext
-): Promise<Response> {
-  let storeAccess: { storeId: string; userId: string };
-  try {
-    storeAccess = await requireStoreOwner(auth);
-  } catch (e) {
-    return json({ error: (e as Error).message }, auth?.userId ? 403 : 401);
-  }
-
-  const body = await request.json() as {
-    name?: string;
-    email?: string;
-    phone?: string;
-    cpf?: string;
-    password?: string;
-    storeRole?: string;
-    active?: boolean;
-  };
-
-  const name  = body.name?.trim();
-  const email = body.email?.trim().toLowerCase();
-  const storeRole = body.storeRole as AssignableRole | undefined;
-
-  if (!name || !email || !body.password || !storeRole) {
-    return json({ error: "Nome, e-mail, senha e perfil são obrigatórios" }, 400);
-  }
-
-  if (!ASSIGNABLE_ROLES.includes(storeRole)) {
-    return json({ error: "Perfil inválido" }, 400);
-  }
-
-  const pwCheck = validatePasswordPolicy(body.password);
-  if (!pwCheck.valid) {
-    return json({ error: pwCheck.errors[0] ?? "Senha inválida" }, 400);
-  }
-
-  const rawCpf   = body.cpf?.replace(/\D/g, "") || null;
-  const rawPhone = body.phone?.replace(/\D/g, "") || null;
-
-  const db = createDb(process.env.DATABASE_URL!);
-
-  // Verifica se e-mail já existe
-  const [existingByEmail] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
-
-  if (existingByEmail) {
-    // Verifica se já é membro desta loja
-    const [alreadyMember] = await db
-      .select({ userId: storeUsers.userId })
-      .from(storeUsers)
-      .where(and(
-        eq(storeUsers.storeId, storeAccess.storeId),
-        eq(storeUsers.userId, existingByEmail.id),
-      ))
-      .limit(1);
-
-    if (alreadyMember) {
-      return json({ error: "Este e-mail já faz parte da equipe desta loja" }, 409);
-    }
-
-    // Adiciona usuário existente à loja
-    await db.insert(storeUsers).values({
-      storeId: storeAccess.storeId,
-      userId:  existingByEmail.id,
-      role:    storeRole,
-    });
-
-    return json({ success: true, userId: existingByEmail.id });
-  }
-
-  // Verifica unicidade do CPF
-  if (rawCpf) {
-    const [existingByCpf] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.cpf, rawCpf))
-      .limit(1);
-
-    if (existingByCpf) {
-      return json({ error: "CPF já cadastrado no sistema" }, 409);
-    }
-  }
-
-  const passwordHash = await hashPassword(body.password);
-
-  const [newUser] = await db
-    .insert(users)
-    .values({
-      name,
-      email,
-      passwordHash,
-      phone: rawPhone,
-      cpf:   rawCpf,
-      role:  "merchant",
-      emailVerified: true, // criado por admin = pré-verificado
-      active: body.active !== false,
-    })
-    .returning({ id: users.id });
-
-  if (!newUser) return json({ error: "Erro ao criar usuário" }, 500);
-
-  await db.insert(storeUsers).values({
-    storeId: storeAccess.storeId,
-    userId:  newUser.id,
-    role:    storeRole,
-  });
-
-  return json({ success: true, userId: newUser.id });
-}
 
 // ─── POST /api/store-users/update ────────────────────────────────────────────
 export async function updateStoreUserHandler(
@@ -200,17 +143,8 @@ export async function updateStoreUserHandler(
 
   const db = createDb(process.env.DATABASE_URL!);
 
-  // Verifica se o usuário é membro desta loja
-  const [member] = await db
-    .select({ role: storeUsers.role })
-    .from(storeUsers)
-    .where(and(
-      eq(storeUsers.storeId, storeAccess.storeId),
-      eq(storeUsers.userId, body.userId),
-    ))
-    .limit(1);
-
-  if (!member) {
+  const member = await checkMember(db, storeAccess.storeId, body.userId);
+  if (!member.role) {
     return json({ error: "Usuário não encontrado nesta equipe" }, 404);
   }
 
@@ -222,30 +156,41 @@ export async function updateStoreUserHandler(
   const rawCpf   = body.cpf ? body.cpf.replace(/\D/g, "") || null : undefined;
   const rawPhone = body.phone ? body.phone.replace(/\D/g, "") || null : undefined;
 
-  // Unicidade de CPF (se alterado)
-  if (rawCpf) {
-    const [conflict] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.cpf, rawCpf))
-      .limit(1);
+  const mexeEmDadosGlobais =
+    body.name !== undefined || rawPhone !== undefined ||
+    rawCpf !== undefined || body.active !== undefined;
 
-    if (conflict && conflict.id !== body.userId) {
-      return json({ error: "CPF já cadastrado em outra conta" }, 409);
-    }
+  // Alterar apenas o perfil de acesso é escrita de loja, não de identidade —
+  // continua liberado mesmo para quem trabalha em mais de uma loja.
+  if (mexeEmDadosGlobais && !member.exclusive) {
+    return blockGlobalWrite(storeAccess.storeId, body.userId, storeAccess.userId, request);
   }
 
-  // Atualiza dados do usuário
-  await db
-    .update(users)
-    .set({
-      ...(body.name !== undefined ? { name: body.name.trim() } : {}),
-      ...(rawPhone !== undefined ? { phone: rawPhone } : {}),
-      ...(rawCpf !== undefined ? { cpf: rawCpf } : {}),
-      ...(body.active !== undefined ? { active: body.active } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(users.id, body.userId));
+  if (mexeEmDadosGlobais) {
+    // Unicidade de CPF (se alterado)
+    if (rawCpf) {
+      const [conflict] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.cpf, rawCpf))
+        .limit(1);
+
+      if (conflict && conflict.id !== body.userId) {
+        return json({ error: "CPF já cadastrado em outra conta" }, 409);
+      }
+    }
+
+    await db
+      .update(users)
+      .set({
+        ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+        ...(rawPhone !== undefined ? { phone: rawPhone } : {}),
+        ...(rawCpf !== undefined ? { cpf: rawCpf } : {}),
+        ...(body.active !== undefined ? { active: body.active } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, body.userId));
+  }
 
   // Atualiza role na loja (apenas se informado e diferente de "owner")
   if (body.storeRole && ASSIGNABLE_ROLES.includes(body.storeRole as AssignableRole)) {
@@ -291,18 +236,12 @@ export async function adminChangeUserPasswordHandler(
 
   const db = createDb(process.env.DATABASE_URL!);
 
-  // Verifica se é membro da loja
-  const [member] = await db
-    .select({ role: storeUsers.role })
-    .from(storeUsers)
-    .where(and(
-      eq(storeUsers.storeId, storeAccess.storeId),
-      eq(storeUsers.userId, body.userId),
-    ))
-    .limit(1);
-
-  if (!member) {
+  const member = await checkMember(db, storeAccess.storeId, body.userId);
+  if (!member.role) {
     return json({ error: "Usuário não encontrado nesta equipe" }, 404);
+  }
+  if (!member.exclusive) {
+    return blockGlobalWrite(storeAccess.storeId, body.userId, storeAccess.userId, request);
   }
 
   // Não permite alterar a senha do proprietário (exceto o próprio)
@@ -344,17 +283,12 @@ export async function toggleStoreUserStatusHandler(
 
   const db = createDb(process.env.DATABASE_URL!);
 
-  const [member] = await db
-    .select({ role: storeUsers.role })
-    .from(storeUsers)
-    .where(and(
-      eq(storeUsers.storeId, storeAccess.storeId),
-      eq(storeUsers.userId, body.userId),
-    ))
-    .limit(1);
-
-  if (!member) {
+  const member = await checkMember(db, storeAccess.storeId, body.userId);
+  if (!member.role) {
     return json({ error: "Usuário não encontrado nesta equipe" }, 404);
+  }
+  if (!member.exclusive) {
+    return blockGlobalWrite(storeAccess.storeId, body.userId, storeAccess.userId, request);
   }
 
   if (member.role === "owner" && body.userId !== storeAccess.userId) {

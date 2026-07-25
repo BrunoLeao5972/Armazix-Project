@@ -16,12 +16,13 @@
   //   DATABASE_URL              — Neon PostgreSQL connection string
   //   JWT_SECRET                — Auth signing key
   //   ENCRYPTION_KEY            — AES-256 encryption key for sensitive data (mpAccessToken)
-  //   WEBHOOK_API_KEY           — Secret for validating webhook requests (optional)
+  //   MP_WEBHOOK_SECRET         — Mercado Pago webhook signing key (painel MP › Webhooks).
+  //                               Usado pelos webhooks de assinatura/PIX, onde quem cobra
+  //                               é o Armazix. O webhook de PEDIDOS não usa segredo: a conta
+  //                               MP é do lojista, então a notificação é só um gatilho e a
+  //                               verdade vem de GET /v1/payments com o token da loja.
+  //                               (WEBHOOK_API_KEY foi retirado — não era lido por ninguém.)
   //   PLATFORM_MP_ACCESS_TOKEN  — Mercado Pago token for Armazix platform subscriptions
-  //   APPMAX_APP_ID             — Appmax app_id (Armazix's own app, from "Criar App")
-  //   APPMAX_CLIENT_ID          — Appmax client_id of the Armazix platform app (not per-store)
-  //   APPMAX_CLIENT_SECRET      — Appmax client_secret of the Armazix platform app
-  //   APPMAX_ENV                — "production" to use api.appmax.com.br; anything else = sandbox
   //   UPSTASH_REDIS_REST_URL    — https://<id>.upstash.io  (Dashboard › REST API)
   //   UPSTASH_REDIS_REST_TOKEN  — token do Upstash (Dashboard › REST API)
   //

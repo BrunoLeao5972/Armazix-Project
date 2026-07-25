@@ -1,9 +1,10 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { encrypt, decrypt } from "@/lib/crypto";
-import { validateWebhookApiKey } from "@/lib/webhook-validator";
 import { requireStoreOwner, type AuthContext } from "@/lib/auth/require-store-access";
+import { waitUntil } from "@/lib/execution-context";
+import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
 
 const { stores, orders, orderItems, products } = schema;
 
@@ -30,10 +31,15 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
       quantity: number;
       unitPrice: string;
       total: string;
+      additionsSnapshot?: { name: string; price: string }[];
+      notes?: string;
     }[];
+    // Valores informativos: o servidor recalcula tudo em priceOrder().
     subtotal: string;
     deliveryFee?: string;
     total: string;
+    couponCode?: string;
+    couponId?: string;
     addressSnapshot?: {
       street: string;
       number: string;
@@ -77,32 +83,43 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
     return json({ error: "Erro ao descriptografar token de pagamento" }, 500);
   }
 
-  // Fetch current prices from DB to prevent stale-price and price-manipulation bugs
-  const productIds = body.items.map((i) => i.productId).filter(Boolean) as string[];
-  const dbProducts = productIds.length > 0
-    ? await db
-        .select({ id: products.id, price: products.price, name: products.name })
-        .from(products)
-        .where(inArray(products.id, productIds))
-    : [];
-
-  const priceMap = new Map(dbProducts.map((p) => [p.id, p.price]));
-
-  for (const item of body.items) {
-    if (item.productId && !priceMap.has(item.productId)) {
-      return json({ error: `Produto não encontrado: ${item.productId}` }, 400);
-    }
+  // Lojas que salvaram o token antes de mpUserId existir não seriam
+  // reconhecidas pelo webhook. Preenche na primeira venda, em background —
+  // sem isso o lojista teria que reconfigurar o token na mão.
+  if (!store.mpUserId) {
+    waitUntil(request, (async () => {
+      try {
+        const meRes = await fetch(`${MP_API}/users/me`, {
+          headers: { Authorization: `Bearer ${mpAccessToken}` },
+        });
+        if (!meRes.ok) return;
+        const me = await meRes.json() as { id?: number | string };
+        if (me.id === undefined) return;
+        await db.update(stores)
+          .set({ mpUserId: String(me.id) })
+          .where(eq(stores.id, store.id));
+      } catch (err) {
+        console.error("[mp-checkout] falha ao resolver mpUserId:", err);
+      }
+    })());
   }
 
-  const verifiedItems = body.items.map((item) => {
-    if (!item.productId) return item;
-    const dbPrice = priceMap.get(item.productId)!;
-    return { ...item, unitPrice: dbPrice, total: (parseFloat(dbPrice) * item.quantity).toFixed(2) };
+  // Preço recalculado do banco pelo motor compartilhado — mesma conta do
+  // checkout comum. A versão anterior daqui só relia o preço-base, ignorando
+  // adicionais, variação, promoção, frete e cupom.
+  const priced = await priceOrder(db, {
+    storeId:         body.storeId,
+    type:            body.type,
+    items:           body.items,
+    addressSnapshot: body.addressSnapshot,
+    couponCode:      body.couponCode,
+    couponId:        body.couponId,
+    channel:         "store",
   });
 
-  const deliveryFee = parseFloat(body.deliveryFee || "0");
-  const subtotal = verifiedItems.reduce((sum, i) => sum + parseFloat(i.total), 0);
-  const total = (subtotal + deliveryFee).toFixed(2);
+  if (isPricingFailure(priced)) {
+    return json({ error: priced.error }, priced.status);
+  }
 
   // Create the order with status awaiting_payment
   const [maxOrder] = await db
@@ -119,26 +136,29 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
     type: body.type || "delivery",
     paymentMethod: "mercadopago",
     paymentStatus: "pending",
-    subtotal: subtotal.toFixed(2),
-    deliveryFee: deliveryFee.toFixed(2),
-    discount: "0",
-    total,
+    subtotal: priced.subtotal,
+    deliveryFee: priced.deliveryFee,
+    discount: priced.discount,
+    total: priced.total,
+    couponId: priced.couponId,
     addressSnapshot: body.addressSnapshot || null,
     estimatedDelivery: body.estimatedDelivery ? new Date(body.estimatedDelivery) : null,
   }).returning();
 
   // Insert order items
-  const itemsValues = verifiedItems.map((item) => ({
+  await db.insert(orderItems).values(priced.items.map((item) => ({
     orderId: order.id,
-    productId: item.productId || null,
+    productId: item.productId,
     productName: item.productName,
-    productEmoji: item.productEmoji || null,
+    productEmoji: item.productEmoji,
+    productImage: item.productImage,
     quantity: item.quantity,
     unitPrice: item.unitPrice,
-    additionsTotal: "0",
+    additionsTotal: item.additionsTotal,
     total: item.total,
-  }));
-  await db.insert(orderItems).values(itemsValues);
+    additionsSnapshot: item.additionsSnapshot,
+    notes: item.notes,
+  })));
 
   // Insert timeline entry
   await db.insert(schema.orderTimeline).values({
@@ -148,26 +168,36 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
   });
 
   // Deduct stock
-  for (const item of body.items) {
-    if (item.productId) {
-      await db
-        .update(products)
-        .set({ stock: sql`${products.stock} - ${item.quantity}`, updatedAt: new Date() })
-        .where(eq(products.id, item.productId));
-    }
+  for (const item of priced.items) {
+    await db
+      .update(products)
+      .set({ stock: sql`${products.stock} - ${item.quantity}`, updatedAt: new Date() })
+      .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)));
   }
 
   // Build the origin URL for back_urls and notification_url
   const origin = new URL(request.url).origin;
 
-  // Build MP preference items from DB-verified prices
-  const mpItems = verifiedItems.map((item) => ({
+  // Itens da preferência com os preços calculados no servidor. O frete entra
+  // como uma linha própria para o total do MP bater com o total do pedido.
+  const mpItems: Array<Record<string, unknown>> = priced.items.map((item) => ({
     id: item.productId,
     title: item.productName,
     quantity: item.quantity,
     unit_price: parseFloat(item.unitPrice),
     currency_id: "BRL",
   }));
+
+  const freteMp = parseFloat(priced.deliveryFee);
+  if (freteMp > 0) {
+    mpItems.push({
+      id: "delivery-fee",
+      title: "Taxa de entrega",
+      quantity: 1,
+      unit_price: freteMp,
+      currency_id: "BRL",
+    });
+  }
 
   const preferenceBody: Record<string, unknown> = {
     items: mpItems,
@@ -210,151 +240,213 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
 }
 
 // ─── POST /api/payments/mp-webhook ──────────────────────────────
-// Receives Mercado Pago IPN/webhook notifications and updates order status.
+//
+// Modelo de confiança: a notificação é apenas um GATILHO. Nada que vem no
+// corpo decide alguma coisa — nem o status, nem o valor, nem qual pedido foi
+// pago. A única fonte de verdade é o recurso lido de volta na API do Mercado
+// Pago com o token da própria loja.
+//
+// Por que não há validação de assinatura aqui, ao contrário do webhook de
+// assinaturas: naquele, quem cobra é o Armazix, então o segredo do webhook é
+// nosso (MP_WEBHOOK_SECRET). Aqui cada lojista usa a conta MP DELE — o segredo
+// de assinatura fica no painel dele e nós não temos. Enquanto não existir um
+// campo por loja para isso, a garantia vem da cadeia de verificação abaixo:
+// mesmo que qualquer um dispare este endpoint com um corpo forjado, só
+// aplicamos o que o MP confirmar, para o pedido que o MP disser, se o valor
+// bater e se ainda não tiver sido aplicado.
 export async function mpWebhookHandler(request: Request): Promise<Response> {
-  // Validate webhook using API key - MANDATORY (fail closed)
-  const webhookSecret = process.env.WEBHOOK_API_KEY;
-  if (!webhookSecret) {
-    console.error("WEBHOOK_API_KEY not configured - webhook validation disabled");
-    return new Response("Webhook security not configured", { status: 500 });
-  }
-
-  const validation = validateWebhookApiKey(request, webhookSecret);
-  if (!validation.valid) {
-    console.error("Webhook validation failed:", validation.error);
-    return new Response("Unauthorized", { status: 401 });
-  }
-
   const url = new URL(request.url);
-
-  // MP can send data-id as query param or in body
-  const dataId = url.searchParams.get("data.id") || url.searchParams.get("id");
   const topic = url.searchParams.get("topic") || url.searchParams.get("type");
 
-  if (!dataId || (topic !== "payment" && topic !== "payment_intent")) {
-    return new Response("ok", { status: 200 });
-  }
-
-  // We need a store's MP access token to query the payment.
-  // We'll fetch the payment using the storeId from the order (fetched by external_reference).
-  // First get the payment from MP using a platform-level query or store token.
-  // Since we don't know which store's token to use, we need to query the payment first
-  // using the resource URL from the notification body.
-
-  let body: Record<string, unknown> = {};
+  let body: MpWebhookBody = {};
   try {
-    body = await request.json() as Record<string, unknown>;
+    body = await request.json() as MpWebhookBody;
   } catch {
-    // body may be empty for old IPN format
+    // IPN antigo manda tudo na query string — corpo vazio é esperado.
   }
 
-  const resource = (body.resource as string) || `${MP_API}/v1/payments/${dataId}`;
-  const paymentId = dataId;
+  const eventType = topic ?? body.type ?? body.topic;
+  if (eventType && eventType !== "payment" && eventType !== "payment_intent") {
+    return ok();
+  }
 
-  const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
+  const paymentId =
+    url.searchParams.get("data.id") ||
+    url.searchParams.get("id") ||
+    (body.data?.id !== undefined ? String(body.data.id) : null);
 
-  // Fetch the payment — we need to try with all store tokens or fetch order first.
-  // Strategy: find payment notification, extract external_reference (orderId),
-  // find the store for that order, then use that store's token to verify.
+  if (!paymentId) return ok();
 
-  // First attempt: try fetching payment without auth to get external_reference
-  // (MP requires auth, so we query our DB for the order using the dataId pattern)
-  // Better: just trust the webhook and update by external_reference if present in body.
-  const externalRef = (body.external_reference as string) || undefined;
+  const db = createDb(process.env.DATABASE_URL!);
 
-  if (externalRef) {
-    // Find the order directly
-    const order = await db.query.orders.findFirst({ where: eq(orders.id, externalRef) });
-    if (order) {
-      const store = await db.query.stores.findFirst({ where: eq(stores.id, order.storeId) });
-      if (store?.mpAccessToken) {
-        await verifyAndUpdatePayment(db, paymentId, store.mpAccessToken, externalRef);
-      }
+  // ── 1. Descobrir com QUAL token consultar ────────────────────────────────
+  // O MP identifica o lojista pelo `user_id` (o collector). Note que ele NÃO
+  // manda o external_reference no webhook, então não dá para achar o pedido
+  // primeiro. Varrer todas as lojas tentando cada token seria O(n) chamadas
+  // externas por requisição — vetor de DoS trivial.
+  const mpUserId = body.user_id !== undefined ? String(body.user_id) : null;
+  if (!mpUserId) {
+    console.error("[mp-webhook] Notificação sem user_id — impossível resolver a loja");
+    return ok();
+  }
+
+  const store = await db.query.stores.findFirst({ where: eq(stores.mpUserId, mpUserId) });
+  if (!store?.mpAccessToken) {
+    console.error(`[mp-webhook] Nenhuma loja com mpUserId=${mpUserId} (ou sem token salvo)`);
+    return ok();
+  }
+
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    console.error("[mp-webhook] ENCRYPTION_KEY não configurada");
+    return ok();
+  }
+
+  const accessToken = await decrypt(store.mpAccessToken, encryptionKey);
+  if (!accessToken) {
+    console.error("[mp-webhook] Falha ao descriptografar o token da loja");
+    return ok();
+  }
+
+  // ── 2. Ler o pagamento REAL no Mercado Pago ──────────────────────────────
+  const pmtRes = await fetch(`${MP_API}/v1/payments/${encodeURIComponent(paymentId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!pmtRes.ok) {
+    console.error(`[mp-webhook] GET /v1/payments/${paymentId} falhou: ${pmtRes.status}`);
+    return ok();
+  }
+
+  const pmt = await pmtRes.json() as MpPayment;
+
+  // ── 3. O pagamento precisa apontar de volta para um pedido nosso ─────────
+  // Esta é a checagem de autorização: o vínculo pedido↔pagamento vem do
+  // registro do MP, nunca do corpo da requisição.
+  const orderId = pmt.external_reference;
+  if (!orderId) {
+    console.error(`[mp-webhook] Pagamento ${paymentId} sem external_reference — ignorado`);
+    return ok();
+  }
+
+  const order = await db.query.orders.findFirst({ where: eq(orders.id, orderId) });
+  if (!order) {
+    console.error(`[mp-webhook] Pedido ${orderId} não encontrado`);
+    return ok();
+  }
+
+  // O pedido tem que ser da mesma loja dona do token usado na consulta.
+  if (order.storeId !== store.id) {
+    console.error(
+      `[mp-webhook] BLOQUEADO: pagamento ${paymentId} (loja ${store.id}) aponta para o pedido ${orderId} da loja ${order.storeId}`,
+    );
+    return ok();
+  }
+
+  const outcome = mapPaymentStatus(pmt.status);
+
+  // ── 4. Conferência de valor — só para liberar como pago ─────────────────
+  if (outcome.paymentStatus === "paid") {
+    if (pmt.currency_id && pmt.currency_id !== "BRL") {
+      console.error(`[mp-webhook] Moeda inesperada em ${paymentId}: ${pmt.currency_id}`);
+      return ok();
     }
-    return new Response("ok", { status: 200 });
-  }
-
-  // If no external_reference in body, fetch payment from MP using each store token
-  // (not ideal for multi-tenant; rely on external_reference being in query or body)
-  // MP sends the payment URL in the resource field when using IPN
-  if (resource && resource.includes("/v1/payments/")) {
-    const pid = resource.split("/v1/payments/")[1];
-    if (pid) {
-      const encryptionKey = process.env.ENCRYPTION_KEY;
-      if (!encryptionKey) {
-        console.error("ENCRYPTION_KEY not set");
-        return new Response("ok", { status: 200 });
-      }
-
-      // SECURITY: Do not iterate all stores if no external_reference is available.
-      // Iterating all stores to try each MP token is a DoS vector (O(n) API calls).
-      // Only process the payment if we can identify the store from external_reference.
-      console.error("[Webhook] Payment notification received without external_reference — skipping token scan");
+    const pago    = Number(pmt.transaction_amount ?? 0);
+    const devido  = Number(order.total ?? 0);
+    // Tolerância de 1 centavo para arredondamento de ponto flutuante.
+    if (!Number.isFinite(pago) || pago + 0.01 < devido) {
+      console.error(
+        `[mp-webhook] BLOQUEADO: pagamento ${paymentId} de R$ ${pago} não cobre o pedido ${orderId} de R$ ${devido}`,
+      );
+      return ok();
     }
   }
 
+  // ── 5. Aplicar, sem reprocessar e sem rebaixar ──────────────────────────
+  await applyPaymentOutcome(db, order, paymentId, pmt.status, outcome);
+
+  return ok();
+}
+
+// ─── Tipos do payload/recurso do MP ─────────────────────────────
+interface MpWebhookBody {
+  type?: string;
+  topic?: string;
+  user_id?: number | string;
+  data?: { id?: number | string };
+}
+
+interface MpPayment {
+  status?: string;
+  status_detail?: string;
+  external_reference?: string;
+  transaction_amount?: number;
+  currency_id?: string;
+}
+
+interface PaymentOutcome {
+  paymentStatus: "paid" | "failed" | "pending" | "refunded";
+  orderStatus: "confirmed" | "cancelled" | "received";
+}
+
+function ok(): Response {
   return new Response("ok", { status: 200 });
 }
 
-async function verifyAndUpdatePayment(
-  db: ReturnType<typeof createDb>,
-  paymentId: string,
-  encryptedAccessToken: string,
-  orderId: string
-) {
-  const encryptionKey = process.env.ENCRYPTION_KEY;
-  if (!encryptionKey) {
-    console.error("ENCRYPTION_KEY not set");
-    return;
-  }
-
-  const accessToken = await decrypt(encryptedAccessToken, encryptionKey);
-  if (!accessToken) {
-    console.error("Failed to decrypt MP access token");
-    return;
-  }
-
-  const pmtRes = await fetch(`${MP_API}/v1/payments/${paymentId}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!pmtRes.ok) return;
-
-  const pmt = await pmtRes.json() as { status: string; status_detail: string };
-
-  let orderPaymentStatus: string;
-  let orderStatus: string;
-
-  switch (pmt.status) {
+function mapPaymentStatus(status?: string): PaymentOutcome {
+  switch (status) {
     case "approved":
-      orderPaymentStatus = "paid";
-      orderStatus = "confirmed";
-      break;
+      return { paymentStatus: "paid", orderStatus: "confirmed" };
+    case "refunded":
+    case "charged_back":
+      return { paymentStatus: "refunded", orderStatus: "cancelled" };
     case "rejected":
     case "cancelled":
-      orderPaymentStatus = "failed";
-      orderStatus = "cancelled";
-      break;
-    case "pending":
-    case "in_process":
-    case "authorized":
-      orderPaymentStatus = "pending";
-      orderStatus = "received";
-      break;
+      return { paymentStatus: "failed", orderStatus: "cancelled" };
     default:
-      orderPaymentStatus = "pending";
-      orderStatus = "received";
+      // pending | in_process | authorized | desconhecido
+      return { paymentStatus: "pending", orderStatus: "received" };
+  }
+}
+
+async function applyPaymentOutcome(
+  db: ReturnType<typeof createDb>,
+  order: { id: string; paymentStatus: string | null; gatewayPaymentId: string | null },
+  paymentId: string,
+  rawStatus: string | undefined,
+  outcome: PaymentOutcome,
+): Promise<void> {
+  // Idempotência: reenvio do MP e replay de uma notificação capturada chegam
+  // com o mesmo payment id. Se já foi aplicado, não há o que fazer.
+  if (order.gatewayPaymentId === paymentId && order.paymentStatus === outcome.paymentStatus) {
+    return;
   }
 
-  await db
+  // Um evento "pending" atrasado não pode desfazer um pagamento já confirmado.
+  // Estorno é a única transição que sai de "paid".
+  if (order.paymentStatus === "paid" && outcome.paymentStatus !== "refunded") {
+    console.error(
+      `[mp-webhook] Ignorando transição paid → ${outcome.paymentStatus} no pedido ${order.id} (evento fora de ordem)`,
+    );
+    return;
+  }
+
+  const [updated] = await db
     .update(orders)
-    .set({ paymentStatus: orderPaymentStatus, status: orderStatus, updatedAt: new Date() })
-    .where(eq(orders.id, orderId));
+    .set({
+      paymentStatus:    outcome.paymentStatus,
+      status:           outcome.orderStatus,
+      gatewayPaymentId: paymentId,
+      updatedAt:        new Date(),
+    })
+    .where(eq(orders.id, order.id))
+    .returning({ id: orders.id });
+
+  if (!updated) return;
 
   await db.insert(schema.orderTimeline).values({
-    orderId,
-    status: orderStatus,
-    note: `Pagamento ${pmt.status} via Mercado Pago`,
+    orderId: order.id,
+    status:  outcome.orderStatus,
+    note:    `Pagamento ${rawStatus ?? outcome.paymentStatus} via Mercado Pago`,
   });
 }
 
@@ -389,6 +481,18 @@ export async function saveMpTokenHandler(request: Request, auth?: AuthContext): 
     return json({ error: "Configuração de segurança incompleta" }, 500);
   }
 
+  // Resolve o id da conta MP do lojista. É por ele que o webhook reconhece de
+  // qual loja é a notificação (o MP manda `user_id`, não o external_reference).
+  // De quebra, confirma que o token é aceito pelo MP antes de salvarmos.
+  const meRes = await fetch(`${MP_API}/users/me`, {
+    headers: { Authorization: `Bearer ${body.accessToken}` },
+  });
+  if (!meRes.ok) {
+    return json({ error: "O Mercado Pago recusou este token. Confira se copiou o Access Token correto." }, 400);
+  }
+  const me = await meRes.json() as { id?: number | string };
+  const mpUserId = me.id !== undefined ? String(me.id) : null;
+
   try {
     const encryptedToken = await encrypt(body.accessToken, encryptionKey);
 
@@ -399,6 +503,7 @@ export async function saveMpTokenHandler(request: Request, auth?: AuthContext): 
       .update(stores)
       .set({
         mpAccessToken: encryptedToken,
+        mpUserId,
         // Public key is not sensitive; stored in plaintext
         ...(body.publicKey !== undefined ? { mpPublicKey: body.publicKey || null } : {}),
         updatedAt: new Date(),

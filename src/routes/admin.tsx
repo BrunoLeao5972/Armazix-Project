@@ -96,8 +96,8 @@ const NAV_GROUPS: NavGroup[] = [
     id: "top",
     items: [
       { label: "Dashboard",  icon: LayoutDashboard, href: "/admin/dashboard" },
-      { label: "Pedidos",    icon: ShoppingCart,    href: "/admin/orders"    },
-      { label: "Relatórios", icon: BarChart3,       href: "/admin/reports"   },
+      { label: "Pedidos",    icon: ShoppingCart,    href: "/admin/pedidos"    },
+      { label: "Relatórios", icon: BarChart3,       href: "/admin/relatorios"   },
     ],
   },
   {
@@ -105,13 +105,13 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Cadastros",
     collapsible: true,
     items: [
-      { label: "Produtos e Serviços",     icon: Package,   href: "/admin/products"   },
-      { label: "Categorias",              icon: Tags,      href: "/admin/categories" },
-      { label: "Setores",                 icon: Building2, href: "/admin/sectors"    },
-      { label: "Clientes e Fornecedores", icon: Users,     href: "/admin/customers"  },
-      { label: "Usuários",                icon: UserCog,   href: "/admin/users"      },
-      { label: "Impressoras",             icon: Printer,       href: "/admin/printers"            },
-      { label: "Ambientes de Impressão",  icon: MonitorCheck,  href: "/admin/print-environments"  },
+      { label: "Produtos e Serviços",     icon: Package,   href: "/admin/produtos"   },
+      { label: "Categorias",              icon: Tags,      href: "/admin/categorias" },
+      { label: "Setores",                 icon: Building2, href: "/admin/setores"    },
+      { label: "Clientes e Fornecedores", icon: Users,     href: "/admin/clientes"  },
+      { label: "Usuários",                icon: UserCog,   href: "/admin/usuarios"      },
+      { label: "Impressoras",             icon: Printer,       href: "/admin/impressoras"            },
+      { label: "Ambientes de Impressão",  icon: MonitorCheck,  href: "/admin/ambientes-impressao"  },
     ],
   },
   {
@@ -119,15 +119,15 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Estoque",
     collapsible: true,
     items: [
-      { label: "Inventário",    icon: Warehouse,         href: "/admin/stock"             },
-      { label: "Entradas",      icon: ArrowUpCircle,     href: "/admin/stock/entries"     },
-      { label: "Saídas",        icon: ArrowDownCircle,   href: "/admin/stock/exits"       },
-      { label: "Transferências",icon: ArrowLeftRight,    href: "/admin/stock/transfers"   },
-      { label: "Extrato",       icon: FileText,          href: "/admin/stock/extract"     },
-      { label: "Balanço",       icon: Scale,             href: "/admin/stock/balance"     },
-      { label: "Ajuste",        icon: SlidersHorizontal, href: "/admin/stock/adjustments" },
-      { label: "Histórico",     icon: History,           href: "/admin/stock/history"     },
-      { label: "Balancete",     icon: FileSpreadsheet,   href: "/admin/stock/balancete"   },
+      { label: "Inventário",    icon: Warehouse,         href: "/admin/estoque"             },
+      { label: "Entradas",      icon: ArrowUpCircle,     href: "/admin/estoque/entradas"     },
+      { label: "Saídas",        icon: ArrowDownCircle,   href: "/admin/estoque/saidas"       },
+      { label: "Transferências",icon: ArrowLeftRight,    href: "/admin/estoque/transferencias"   },
+      { label: "Extrato",       icon: FileText,          href: "/admin/estoque/extrato"     },
+      { label: "Balanço",       icon: Scale,             href: "/admin/estoque/balanco"     },
+      { label: "Ajuste",        icon: SlidersHorizontal, href: "/admin/estoque/ajustes" },
+      { label: "Histórico",     icon: History,           href: "/admin/estoque/historico"     },
+      { label: "Balancete",     icon: FileSpreadsheet,   href: "/admin/estoque/balancete"   },
     ],
   },
   {
@@ -135,15 +135,15 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Financeiro",
     collapsible: true,
     items: [
-      { label: "Dashboard Financeiro", icon: BarChart3,   href: "/admin/financial"             },
-      { label: "Contas a pagar",       icon: CreditCard,  href: "/admin/financial/payables"    },
-      { label: "Contas a receber",     icon: Banknote,    href: "/admin/financial/receivables" },
-      { label: "Fluxo de Caixa",       icon: TrendingUp,  href: "/admin/financial/cashflow"    },
-      { label: "Movimentações",        icon: ArrowUpDown, href: "/admin/financial/movements"   },
-      { label: "DRE",                  icon: BarChart2,   href: "/admin/financial/dre"         },
-      { label: "Históricos",           icon: History,     href: "/admin/financial/history"     },
-      { label: "Sessões de Caixa",     icon: Lock,        href: "/admin/financial/sessions"    },
-      { label: "Gerais",               icon: Settings2,   href: "/admin/financial/settings"    },
+      { label: "Dashboard Financeiro", icon: BarChart3,   href: "/admin/financeiro"             },
+      { label: "Contas a pagar",       icon: CreditCard,  href: "/admin/financeiro/pagar"    },
+      { label: "Contas a receber",     icon: Banknote,    href: "/admin/financeiro/receber" },
+      { label: "Fluxo de Caixa",       icon: TrendingUp,  href: "/admin/financeiro/fluxo-caixa"    },
+      { label: "Movimentações",        icon: ArrowUpDown, href: "/admin/financeiro/movimentacoes"   },
+      { label: "DRE",                  icon: BarChart2,   href: "/admin/financeiro/dre"         },
+      { label: "Históricos",           icon: History,     href: "/admin/financeiro/historico"     },
+      { label: "Sessões de Caixa",     icon: Lock,        href: "/admin/financeiro/sessoes"    },
+      { label: "Gerais",               icon: Settings2,   href: "/admin/financeiro/configuracoes"    },
     ],
   },
   {
@@ -151,8 +151,8 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Outros",
     items: [
       { label: "PDV",           icon: Monitor,       href: "/admin/pdv"      },
-      { label: "Cupons",        icon: Ticket,        href: "/admin/coupons"  },
-      { label: "Configurações", icon: Settings,      href: "/admin/settings" },
+      { label: "Cupons",        icon: Ticket,        href: "/admin/cupons"  },
+      { label: "Configurações", icon: Settings,      href: "/admin/configuracoes" },
       { label: "WhatsApp",      icon: MessageCircle, action: "whatsapp"      },
     ],
   },
@@ -628,19 +628,19 @@ function AdminLayout() {
               <DropdownMenuContent align="end" className="w-48 rounded-xl">
                 <DropdownMenuItem
                   className="rounded-lg cursor-pointer"
-                  onClick={() => navigate({ to: "/admin/settings", search: { tab: "perfil" } })}
+                  onClick={() => navigate({ to: "/admin/configuracoes", search: { tab: "perfil" } })}
                 >
                   Meu perfil
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="rounded-lg cursor-pointer"
-                  onClick={() => navigate({ to: "/admin/settings", search: { tab: "geral" } })}
+                  onClick={() => navigate({ to: "/admin/configuracoes", search: { tab: "geral" } })}
                 >
                   Minha loja
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="rounded-lg cursor-pointer"
-                  onClick={() => navigate({ to: "/admin/settings", search: { tab: "senha" } })}
+                  onClick={() => navigate({ to: "/admin/configuracoes", search: { tab: "senha" } })}
                 >
                   Redefinir senha
                 </DropdownMenuItem>
@@ -691,7 +691,7 @@ function AdminLayout() {
                 : `Plano atual vence em ${planDaysLabel}. Assine um plano para não perder o acesso ao sistema.`}
             </span>
             <button
-              onClick={() => navigate({ to: "/admin/settings", search: { tab: "planos" } })}
+              onClick={() => navigate({ to: "/admin/configuracoes", search: { tab: "planos" } })}
               className="flex items-center gap-1 font-semibold text-red-700 dark:text-red-300 hover:text-red-900 dark:hover:text-red-100 transition-colors shrink-0"
             >
               <ArrowUpCircle className="w-3.5 h-3.5" /> {planId === "free" ? "Renovar / Assinar Plano" : "Renovar / Fazer Upgrade"}

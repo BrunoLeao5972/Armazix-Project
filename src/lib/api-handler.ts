@@ -57,11 +57,17 @@ import { getCustomerOrdersHandler, getCustomerOrderDetailHandler, getCustomerPro
 import { saveBannersHandler } from "./api/banners-handler";
 import {
   listStoreUsersHandler,
-  createStoreUserHandler,
   updateStoreUserHandler,
   adminChangeUserPasswordHandler,
   toggleStoreUserStatusHandler,
 } from "./api/user-handler";
+import {
+  inviteStoreUserHandler,
+  listStoreInvitesHandler,
+  revokeStoreInviteHandler,
+  getInviteInfoHandler,
+  acceptInviteHandler,
+} from "./api/store-invite-handler";
 import {
   listRoleProfilesHandler,
   saveRoleProfileHandler,
@@ -93,16 +99,6 @@ import {
   saveWppConfigHandler,
 } from "./api/whatsapp-handler";
 import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
-import {
-  startAppmaxConnectHandler,
-  appmaxConnectCallbackHandler,
-  getAppmaxStatusHandler,
-  disconnectAppmaxHandler,
-  createAppmaxCheckoutHandler,
-  appmaxWebhookHandler,
-  appmaxHealthHandler,
-  appmaxDiagnoseHandler, // TEMPORÁRIO — remover junto da rota depois de resolver o /app/authorize
-} from "./api/appmax-handler";
 import {
   getCaixaAtualHandler,
   abrirCaixaHandler,
@@ -171,8 +167,7 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/payments/mp-webhook": mpWebhookHandler, // Webhook do MercadoPago
   "/api/subscriptions/mp-webhook": subscriptionWebhookHandler, // Webhook de assinaturas
   "/api/subscriptions/pix-webhook": pixWebhookHandler, // Webhook PIX avulso
-  "/api/payments/appmax-webhook": appmaxWebhookHandler, // Webhook da Appmax (URL única p/ toda a plataforma)
-  "/api/payments/appmax-checkout": createAppmaxCheckoutHandler, // Público para checkout da loja (cliente anônimo)
+  "/api/store-users/accept-invite": acceptInviteHandler, // Aceite de convite (auth é a posse do token no e-mail)
 };
 
 const publicGetRoutes: Record<string, ApiHandler> = {
@@ -188,8 +183,7 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/customer/orders": getCustomerOrdersHandler,     // Central do cliente (auth própria via Bearer)
   "/api/customer/order-detail": getCustomerOrderDetailHandler, // Tela de acompanhamento de um pedido (auth própria via Bearer)
   "/api/customer/profile": getCustomerProfileHandler, // Perfil do cliente logado, pra pré-preencher o checkout (auth própria via Bearer)
-  "/api/payments/appmax-callback": appmaxConnectCallbackHandler, // Appmax redireciona o navegador do lojista pra cá
-  "/api/payments/appmax-health": appmaxHealthHandler, // "URL de validação" da tela de Configuração de URLs no painel Appmax
+  "/api/store-users/invite-info": getInviteInfoHandler, // Tela pública de aceite lê os dados do convite
 };
 
 // Rotas protegidas (requerem autenticação)
@@ -225,8 +219,6 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/stock/adjustment": stockAdjustmentHandler,
   "/api/payments/mp-checkout": createMpCheckoutHandler,
   "/api/payments/mp-token": saveMpTokenHandler,
-  "/api/payments/appmax-connect": startAppmaxConnectHandler,
-  "/api/payments/appmax-disconnect": disconnectAppmaxHandler,
   "/api/store/payment-config": savePaymentConfigHandler,
   "/api/banners/save": saveBannersHandler,
   "/api/whatsapp/connect": connectWhatsAppHandler,
@@ -239,7 +231,8 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/pdv/caixa/movimentar":  movimentarCaixaHandler,
   "/api/pdv/mesas/salvar":      salvarMesasHandler,
   "/api/pdv/finalizar-venda":   finalizarVendaPdvHandler,
-  "/api/store-users/create":          createStoreUserHandler,
+  "/api/store-users/invite":          inviteStoreUserHandler,
+  "/api/store-users/invite-revoke":   revokeStoreInviteHandler,
   "/api/store-users/update":          updateStoreUserHandler,
   "/api/store-users/change-password": adminChangeUserPasswordHandler,
   "/api/store-users/toggle-status":   toggleStoreUserStatusHandler,
@@ -267,8 +260,6 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/store/user": getUserStoreHandler,
-  "/api/payments/appmax-status": getAppmaxStatusHandler,
-  "/api/payments/appmax-diagnose": appmaxDiagnoseHandler, // TEMPORÁRIO — remover depois
   "/api/products/next-pdv-code": getNextPdvCodeHandler,
   "/api/dashboard/stats": (req, auth) => getDashboardStatsHandler(req, auth),
   "/api/stock/stats": getStockStatsHandler,
@@ -293,6 +284,7 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/pdv/mesas":              listMesasHandler,
   "/api/pdv/financeiro":         listFinanceiroLancamentosHandler,
   "/api/store-users/list":       listStoreUsersHandler,
+  "/api/store-users/invites":    listStoreInvitesHandler,
   "/api/role-profiles/list":     listRoleProfilesHandler,
   "/api/printers/list":          listPrintersHandler,
   "/api/printers/detect":        detectPrintersHandler,
@@ -315,10 +307,13 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/auth/verify-email": "verify-email",
   "/api/auth/forgot-password": "forgot-password",
   "/api/auth/reset-password": "reset-password",
+  // Aceite valida a senha atual de quem já tem conta — trata como auth.
+  "/api/store-users/accept-invite": "auth",
+  // Dispara e-mail para terceiros: limita spam de convite.
+  "/api/store-users/invite": "sensitive",
   "/api/payments/mp-webhook": "webhook",
   "/api/subscriptions/mp-webhook": "webhook",
   "/api/subscriptions/pix-webhook": "webhook",
-  "/api/payments/appmax-webhook": "webhook",
 };
 
 async function getRequestBodyStoreId(_request: Request): Promise<string | null> {

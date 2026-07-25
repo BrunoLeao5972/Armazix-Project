@@ -1,51 +1,75 @@
 import { createDb } from "@/lib/db";
-import { validateVerificationCode, hashPassword } from "@/lib/auth";
+import { validateVerificationCode, hashPassword, findUserByEmail, validatePasswordPolicy } from "@/lib/auth";
 import { schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
+import { logAudit, AuditActions } from "@/lib/audit";
 
 const { users } = schema;
 
-export async function resetPasswordHandler(request: Request): Promise<Response> {
-  const { code, newPassword } = await request.json() as { code: string; newPassword: string };
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
 
-  if (!code || code.length !== 6) {
-    return new Response(JSON.stringify({ error: "Código inválido" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+export async function resetPasswordHandler(request: Request): Promise<Response> {
+  const { email, code, newPassword } = await request.json() as {
+    email: string; code: string; newPassword: string;
+  };
+
+  // O e-mail é obrigatório: sem ele o código seria buscado na plataforma
+  // inteira, e acertar qualquer código ativo daria acesso à conta do dono dele.
+  if (!email?.trim()) {
+    return json({ error: "E-mail é obrigatório" }, 400);
   }
 
-  if (!newPassword || newPassword.length < 8) {
-    return new Response(JSON.stringify({ error: "A senha deve ter no mínimo 8 caracteres" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+  if (!code || code.length !== 6) {
+    return json({ error: "Código inválido" }, 400);
+  }
+
+  const pwCheck = validatePasswordPolicy(newPassword ?? "");
+  if (!pwCheck.valid) {
+    return json({ error: pwCheck.errors[0] ?? "Senha inválida" }, 400);
   }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
 
-  const result = await validateVerificationCode(db, code, "password_reset");
+  const user = await findUserByEmail(db, email.trim().toLowerCase());
 
-  if (!result.valid || !result.userId) {
-    return new Response(JSON.stringify({ error: "Código inválido ou expirado" }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+  // Resposta idêntica para e-mail inexistente e código errado — não revela
+  // quais contas existem nem se há um código pendente.
+  const invalido = () => json({ error: "Código inválido ou expirado" }, 400);
+
+  if (!user) return invalido();
+
+  const result = await validateVerificationCode(db, user.id, code, "password_reset");
+  if (!result.valid) {
+    logAudit({
+      userId:       user.id,
+      action:       AuditActions.PASSWORD_RESET,
+      resourceType: "user",
+      resourceId:   user.id,
+      status:       "failure",
+      errorMessage: "Código inválido, expirado ou tentativas esgotadas",
+    }, request);
+    return invalido();
   }
 
-  // Update password
   const passwordHash = await hashPassword(newPassword);
   await db
     .update(users)
     .set({ passwordHash, updatedAt: new Date() })
-    .where(eq(users.id, result.userId));
+    .where(eq(users.id, user.id));
 
-  return new Response(JSON.stringify({
-    success: true,
-    message: "Senha alterada com sucesso!",
-  }), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
+  logAudit({
+    userId:       user.id,
+    action:       AuditActions.PASSWORD_RESET,
+    resourceType: "user",
+    resourceId:   user.id,
+    status:       "success",
+  }, request);
+
+  return json({ success: true, message: "Senha alterada com sucesso!" }, 200);
 }

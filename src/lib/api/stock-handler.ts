@@ -2,6 +2,7 @@ import { createDb, createTenantDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, gte, ne, desc, sql } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
+import { generateCode } from "@/lib/auth";
 import { generateCleanSlug } from "@/lib/slug";
 
 const { products, orders, orderItems, verificationCodes, users, storeUsers, customers } = schema;
@@ -302,7 +303,7 @@ export async function sendEmailVerificationCodeHandler(request: Request, auth?: 
   const db = createDb(dbUrl);
 
   try {
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = generateCode();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
     await db.insert(verificationCodes).values({

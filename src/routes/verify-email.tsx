@@ -50,7 +50,7 @@ function VerifyEmailPage() {
   }, [countdown]);
 
   const goToDestination = () => {
-    if (next === "planos") navigate({ to: "/admin/settings", search: { tab: "planos" } });
+    if (next === "planos") navigate({ to: "/admin/configuracoes", search: { tab: "planos" } });
     else if (next === "admin") navigate({ to: "/admin" });
     // Sem "next" → veio do login bloqueado por email não verificado, sem sessão ainda.
     else navigate({ to: "/login" });
@@ -94,6 +94,12 @@ function VerifyEmailPage() {
       setError("Digite o código completo de 6 dígitos");
       return;
     }
+    // O código é validado apenas contra esta conta, então sem o e-mail não há
+    // o que verificar. Só acontece se a URL for aberta sem o parâmetro.
+    if (!email) {
+      setError("Não sabemos qual conta verificar. Entre pelo login para recomeçar.");
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -102,7 +108,7 @@ function VerifyEmailPage() {
       const res = await fetch("/api/auth/verify-email", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code: finalCode }),
+        body: JSON.stringify({ email, code: finalCode }),
       });
       const data = await res.json();
 

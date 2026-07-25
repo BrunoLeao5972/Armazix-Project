@@ -12,7 +12,6 @@ export type EspeciePagamento =
   | "boleto"
   | "pix"
   | "mercadopago"
-  | "appmax"
   | "outros";
 
 export type OperacaoCartao = "credito" | "debito" | "carteira_digital";
