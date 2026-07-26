@@ -35,13 +35,13 @@ export default function ModalPagamento({
   if (orderNumber !== null) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center animate-in fade-in zoom-in-95 duration-200">
+        <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center animate-in fade-in zoom-in-95 duration-200">
           <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500 flex items-center justify-center mb-4 shadow-lg shadow-emerald-100">
             <CheckCircle2 className="w-9 h-9 text-white" />
           </div>
-          <h3 className="text-xl font-bold text-slate-800">Venda concluída!</h3>
-          {mesaLabel && <p className="text-xs text-slate-500 mt-0.5">{mesaLabel}</p>}
-          <p className="text-sm text-slate-500 mt-1">Pedido #{orderNumber}</p>
+          <h3 className="text-xl font-bold text-foreground">Venda concluída!</h3>
+          {mesaLabel && <p className="text-xs text-muted-foreground mt-0.5">{mesaLabel}</p>}
+          <p className="text-sm text-muted-foreground mt-1">Pedido #{orderNumber}</p>
           <p className="text-3xl font-extrabold text-emerald-600 mt-3 tabular-nums">{fmtBRL(total)}</p>
           {trocoCalc !== null && trocoCalc > 0 && (
             <p className="text-sm font-semibold text-amber-600 mt-1">Troco: {fmtBRL(trocoCalc)}</p>
@@ -57,36 +57,36 @@ export default function ModalPagamento({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div>
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
               <CreditCard className="w-4 h-4 text-emerald-500" />Fechar Venda
             </h3>
-            {mesaLabel && <p className="text-[11px] text-slate-400 mt-0.5">{mesaLabel}</p>}
+            {mesaLabel && <p className="text-[11px] text-muted-foreground mt-0.5">{mesaLabel}</p>}
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-            <X className="w-4 h-4 text-slate-400" />
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
+            <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
         <div className="p-5 space-y-4">
-          <div className="bg-slate-50 rounded-xl border border-slate-100 p-4 space-y-1.5 text-sm">
-            <div className="flex justify-between text-slate-500"><span>Subtotal</span><span className="tabular-nums">{fmtBRL(subtotal)}</span></div>
+          <div className="bg-secondary rounded-xl border border-border p-4 space-y-1.5 text-sm">
+            <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span className="tabular-nums">{fmtBRL(subtotal)}</span></div>
             {discount > 0 && (
               <div className="flex justify-between text-amber-600 font-medium">
                 <span>Desconto</span><span className="tabular-nums">−{fmtBRL(discountValue)}</span>
               </div>
             )}
-            <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-              <span className="font-bold text-slate-700">Total</span>
+            <div className="flex justify-between items-center pt-2 border-t border-border">
+              <span className="font-bold text-foreground">Total</span>
               <span className="text-2xl font-extrabold text-emerald-600 tabular-nums">{fmtBRL(total)}</span>
             </div>
           </div>
 
           <div>
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Forma de Pagamento</p>
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Forma de Pagamento</p>
             {methods.length === 0
-              ? <p className="text-xs text-slate-400">Nenhuma forma ativa.</p>
+              ? <p className="text-xs text-muted-foreground">Nenhuma forma ativa.</p>
               : (
                 <div className="grid grid-cols-3 gap-2">
                   {methods.map(m => {
@@ -97,7 +97,7 @@ export default function ModalPagamento({
                         className={`flex flex-col items-center gap-1.5 py-3 rounded-xl text-xs font-semibold border transition-all ${
                           method === m.key
                             ? "bg-emerald-500 text-white border-emerald-500 shadow-md shadow-emerald-100"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300 hover:bg-emerald-50"
+                            : "bg-card text-muted-foreground border-border hover:border-emerald-300 hover:bg-emerald-50"
                         }`}>
                         <Icon className="w-5 h-5" />{m.label}
                       </button>
@@ -109,14 +109,14 @@ export default function ModalPagamento({
 
           {method && selectedConfig && selectedConfig.plans.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Plano de Pagamento</p>
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Plano de Pagamento</p>
               <div className="grid grid-cols-2 gap-1.5">
                 {selectedConfig.plans.map(plan => (
                   <button key={plan.id} onClick={() => setPlanId(plan.id)}
                     className={`py-2 rounded-lg text-xs font-semibold border transition-all ${
                       planId === plan.id
                         ? "bg-emerald-500 text-white border-emerald-500"
-                        : "bg-white text-slate-600 border-slate-200 hover:border-emerald-300"
+                        : "bg-card text-muted-foreground border-border hover:border-emerald-300"
                     }`}>
                     {plan.parcelas <= 1
                       ? `${plan.nome} — ${fmtBRL(total)}`
@@ -129,7 +129,7 @@ export default function ModalPagamento({
 
           {method === "cash" && (
             <div>
-              <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Valor Recebido (R$)</label>
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Valor Recebido (R$)</label>
               <Input value={troco} onChange={e => setTroco(e.target.value)} placeholder="0,00"
                 className="mt-1 h-10 rounded-xl text-sm" autoFocus />
               {trocoCalc !== null && trocoCalc > 0  && <p className="text-sm font-bold text-amber-600 mt-1.5">Troco: {fmtBRL(trocoCalc)}</p>}

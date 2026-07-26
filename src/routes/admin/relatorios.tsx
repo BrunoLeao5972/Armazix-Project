@@ -79,7 +79,7 @@ const TIPOS_DATA = [{ id: "emissao", nome: "Data de Emissão" }, { id: "vencimen
 const FORMAS_PAGAMENTO = ["Dinheiro", "Cartão de Crédito", "Cartão de Débito", "Pix", "Boleto", "Transferência"];
 const CANAIS = ["PDV - Balcão", "Delivery", "E-commerce", "WhatsApp"];
 const STATUS_OPTIONS: Record<string, string[]> = { vendas: ["Emitida", "Cancelada", "Pendente"], financeiro: ["Em Aberto", "Pago", "Atrasado", "Cancelado"], fiscal: ["Autorizada", "Cancelada", "Denegada"], estoque: ["Venda", "Avaria", "Uso Interno", "Devolução"] };
-const MODULOS_LABEL: Record<ModuloReport, { label: string; cor: string }> = { estoque: { label: "Estoque", cor: "text-emerald-600 bg-emerald-500/10" }, clientes: { label: "Clientes", cor: "text-blue-600 bg-blue-500/10" }, produtos: { label: "Produtos", cor: "text-violet-600 bg-violet-500/10" }, vendas: { label: "Vendas", cor: "text-amber-600 bg-amber-500/10" }, financeiro: { label: "Financeiro", cor: "text-rose-600 bg-rose-500/10" }, fiscal: { label: "Fiscal", cor: "text-slate-600 bg-slate-500/10" }, auditoria: { label: "Auditoria", cor: "text-red-600 bg-red-500/10" } };
+const MODULOS_LABEL: Record<ModuloReport, { label: string; cor: string }> = { estoque: { label: "Estoque", cor: "text-emerald-600 bg-emerald-500/10" }, clientes: { label: "Clientes", cor: "text-blue-600 bg-blue-500/10" }, produtos: { label: "Produtos", cor: "text-violet-600 bg-violet-500/10" }, vendas: { label: "Vendas", cor: "text-amber-600 bg-amber-500/10" }, financeiro: { label: "Financeiro", cor: "text-rose-600 bg-rose-500/10" }, fiscal: { label: "Fiscal", cor: "text-muted-foreground bg-slate-500/10" }, auditoria: { label: "Auditoria", cor: "text-red-600 bg-red-500/10" } };
 
 function usePermissaoUsuario(): Permissao { return "admin"; }
 function temPermissao(p: Permissao, req: Permissao[]): boolean { return req.includes(p); }
@@ -151,17 +151,17 @@ function ReportFilterDrawer({ report, isOpen, onClose }: { report: ReportConfig 
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-end" onClick={onClose}>
-      <div className="h-full w-full max-w-xl bg-white shadow-2xl flex flex-col rounded-l-3xl" onClick={e => e.stopPropagation()}>
+      <div className="h-full w-full max-w-xl bg-card shadow-2xl flex flex-col rounded-l-3xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div><h2 className="text-lg font-semibold">Filtros Avançados</h2><p className="text-xs text-muted-foreground">{report.nome}</p></div>
           <div className="flex items-center gap-2"><button onClick={limpar} className="text-xs px-3 py-1.5 rounded-lg border hover:bg-secondary">Limpar Filtros</button><button onClick={onClose} className="p-2 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button></div>
         </div>
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          <div className="space-y-4 p-4 bg-slate-50 rounded-2xl border">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-700"><Calendar className="w-4 h-4" /> Período de Análise</div>
+          <div className="space-y-4 p-4 bg-secondary rounded-2xl border">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Calendar className="w-4 h-4" /> Período de Análise</div>
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground">Filtrar por</label>
-              <select value={tipoData} onChange={e => setTipoData(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-white text-sm focus:ring-2 focus:ring-primary/20">
+              <select value={tipoData} onChange={e => setTipoData(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card text-sm focus:ring-2 focus:ring-primary/20">
                 <option value="emissao">Data de Emissão</option>
                 <option value="vencimento">Data de Vencimento</option>
                 <option value="recebimento">Data de Recebimento/Pagamento</option>
@@ -169,36 +169,36 @@ function ReportFilterDrawer({ report, isOpen, onClose }: { report: ReportConfig 
               </select>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">De</label><div className="flex gap-2"><input type="date" value={dataDe} onChange={e => setDataDe(e.target.value)} className="flex-1 h-10 px-3 rounded-xl border bg-white text-sm" /><div className="relative w-24"><Clock className="w-3.5 h-3.5 absolute left-3 top-3.5 text-muted-foreground" /><input type="time" value={horaDe} onChange={e => setHoraDe(e.target.value)} className="w-full h-10 pl-9 pr-2 rounded-xl border bg-white text-sm" /></div></div></div>
-              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">Até</label><div className="flex gap-2"><input type="date" value={dataAte} onChange={e => setDataAte(e.target.value)} className="flex-1 h-10 px-3 rounded-xl border bg-white text-sm" /><div className="relative w-24"><Clock className="w-3.5 h-3.5 absolute left-3 top-3.5 text-muted-foreground" /><input type="time" value={horaAte} onChange={e => setHoraAte(e.target.value)} className="w-full h-10 pl-9 pr-2 rounded-xl border bg-white text-sm" /></div></div></div>
+              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">De</label><div className="flex gap-2"><input type="date" value={dataDe} onChange={e => setDataDe(e.target.value)} className="flex-1 h-10 px-3 rounded-xl border bg-card text-sm" /><div className="relative w-24"><Clock className="w-3.5 h-3.5 absolute left-3 top-3.5 text-muted-foreground" /><input type="time" value={horaDe} onChange={e => setHoraDe(e.target.value)} className="w-full h-10 pl-9 pr-2 rounded-xl border bg-card text-sm" /></div></div></div>
+              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">Até</label><div className="flex gap-2"><input type="date" value={dataAte} onChange={e => setDataAte(e.target.value)} className="flex-1 h-10 px-3 rounded-xl border bg-card text-sm" /><div className="relative w-24"><Clock className="w-3.5 h-3.5 absolute left-3 top-3.5 text-muted-foreground" /><input type="time" value={horaAte} onChange={e => setHoraAte(e.target.value)} className="w-full h-10 pl-9 pr-2 rounded-xl border bg-card text-sm" /></div></div></div>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {mostrarVendedor && (
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Users className="w-3 h-3" /> Vendedor/Operador</label>
-                <div className="relative"><input type="text" placeholder="Buscar usuário..." value={buscaUser} onChange={e => setBuscaUser(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
-                {buscaUser && <div className="max-h-32 overflow-y-auto border rounded-lg bg-white">{usersFiltered.map(u => <div key={u.id} onClick={() => { if (!vendedores.includes(u.id)) setVendedores([...vendedores, u.id]); setBuscaUser(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm flex justify-between"><span>{u.nome}</span><span className="text-xs text-muted-foreground">{u.cargo}</span></div>)}</div>}
+                <div className="relative"><input type="text" placeholder="Buscar usuário..." value={buscaUser} onChange={e => setBuscaUser(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
+                {buscaUser && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{usersFiltered.map(u => <div key={u.id} onClick={() => { if (!vendedores.includes(u.id)) setVendedores([...vendedores, u.id]); setBuscaUser(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm flex justify-between"><span>{u.nome}</span><span className="text-xs text-muted-foreground">{u.cargo}</span></div>)}</div>}
                 {vendedores.length > 0 && <div className="flex flex-wrap gap-1">{vendedores.map(id => { const u = MOCK_USUARIOS.find(x => x.id === id); return u ? <span key={id} className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-lg text-xs">{u.nome}<button onClick={() => setVendedores(vendedores.filter(x => x !== id))} className="hover:text-red-500"><X className="w-3 h-3" /></button></span> : null; })}</div>}
               </div>
             )}
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><User className="w-3 h-3" /> Cliente</label>
-              <div className="relative"><input type="text" placeholder="Buscar por nome ou CPF/CNPJ..." value={buscaCli} onChange={e => setBuscaCli(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
-              {buscaCli && <div className="max-h-32 overflow-y-auto border rounded-lg bg-white">{cliFiltered.map(c => <div key={c.id} onClick={() => { setCliente(c.id); setBuscaCli(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm"><p className="font-medium">{c.nome}</p><p className="text-xs text-muted-foreground">{c.doc}</p></div>)}</div>}
+              <div className="relative"><input type="text" placeholder="Buscar por nome ou CPF/CNPJ..." value={buscaCli} onChange={e => setBuscaCli(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
+              {buscaCli && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{cliFiltered.map(c => <div key={c.id} onClick={() => { setCliente(c.id); setBuscaCli(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm"><p className="font-medium">{c.nome}</p><p className="text-xs text-muted-foreground">{c.doc}</p></div>)}</div>}
               {cliente && <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg"><span className="text-sm font-medium">{MOCK_CLIENTES.find(c => c.id === cliente)?.nome}</span><button onClick={() => setCliente("")} className="text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button></div>}
             </div>
             {mostrarFornecedor && (
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Truck className="w-3 h-3" /> Fornecedor/Favorecido</label>
-                <div className="relative"><input type="text" placeholder="Buscar fornecedor..." value={buscaForn} onChange={e => setBuscaForn(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
-                {buscaForn && <div className="max-h-32 overflow-y-auto border rounded-lg bg-white">{fornFiltered.map(f => <div key={f.id} onClick={() => { setFornecedor(f.id); setBuscaForn(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm"><p className="font-medium">{f.nome}</p><p className="text-xs text-muted-foreground">{f.cnpj}</p></div>)}</div>}
+                <div className="relative"><input type="text" placeholder="Buscar fornecedor..." value={buscaForn} onChange={e => setBuscaForn(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
+                {buscaForn && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{fornFiltered.map(f => <div key={f.id} onClick={() => { setFornecedor(f.id); setBuscaForn(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm"><p className="font-medium">{f.nome}</p><p className="text-xs text-muted-foreground">{f.cnpj}</p></div>)}</div>}
                 {fornecedor && <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg"><span className="text-sm font-medium">{MOCK_FORNECEDORES.find(f => f.id === fornecedor)?.nome}</span><button onClick={() => setFornecedor("")} className="text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button></div>}
               </div>
             )}
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Landmark className="w-3 h-3" /> Conta Bancária</label>
-              <select value={conta} onChange={e => setConta(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+              <select value={conta} onChange={e => setConta(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
                 <option value="">Selecione uma conta</option>
                 {MOCK_CONTAS.map(c => <option key={c.id} value={c.id}>{c.nome} ({c.tipo})</option>)}
               </select>
@@ -212,7 +212,7 @@ function ReportFilterDrawer({ report, isOpen, onClose }: { report: ReportConfig 
             {mostrarHistorico && (
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><BarChart3 className="w-3 h-3" /> Histórico Estruturado</label>
-                <select value={historico} onChange={e => setHistorico(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+                <select value={historico} onChange={e => setHistorico(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
                   <option value="">Selecione um histórico</option>
                   {MOCK_HISTORICOS.map(h => <option key={h.id} value={h.id}>{h.id} | {h.nome.toUpperCase()}</option>)}
                 </select>
@@ -220,7 +220,7 @@ function ReportFilterDrawer({ report, isOpen, onClose }: { report: ReportConfig 
             )}
           </div>
         </div>
-        <div className="p-6 border-t bg-white"><Button onClick={gerarRelatorio} className="w-full h-12 rounded-2xl text-base font-semibold bg-gradient-primary text-primary-foreground"><Search className="w-4 h-4 mr-2" /> Gerar Relatório</Button></div>
+        <div className="p-6 border-t bg-card"><Button onClick={gerarRelatorio} className="w-full h-12 rounded-2xl text-base font-semibold bg-gradient-primary text-primary-foreground"><Search className="w-4 h-4 mr-2" /> Gerar Relatório</Button></div>
       </div>
     </div>
   );
@@ -230,9 +230,9 @@ function ReportCard({ report, isFavorito, onToggleFavorito, onVisualizar, isLock
   const Icon = report.icone;
   const moduloStyle = MODULOS_LABEL[report.modulo];
   if (isLocked) {
-    return (<div className="group relative p-4 rounded-2xl border border-border/50 bg-secondary/30 opacity-60"><div className="flex items-start gap-3"><div className={`w-10 h-10 rounded-xl ${moduloStyle.cor} flex items-center justify-center shrink-0`}><Lock className="w-4 h-4" /></div><div className="flex-1 min-w-0"><div className="flex items-center gap-2"><h4 className="font-semibold text-sm text-slate-600 truncate">{report.nome}</h4><Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-md shrink-0">{moduloStyle.label}</Badge></div><p className="text-xs text-muted-foreground mt-1 line-clamp-2">Acesso restrito</p></div></div></div>);
+    return (<div className="group relative p-4 rounded-2xl border border-border/50 bg-secondary/30 opacity-60"><div className="flex items-start gap-3"><div className={`w-10 h-10 rounded-xl ${moduloStyle.cor} flex items-center justify-center shrink-0`}><Lock className="w-4 h-4" /></div><div className="flex-1 min-w-0"><div className="flex items-center gap-2"><h4 className="font-semibold text-sm text-muted-foreground truncate">{report.nome}</h4><Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-md shrink-0">{moduloStyle.label}</Badge></div><p className="text-xs text-muted-foreground mt-1 line-clamp-2">Acesso restrito</p></div></div></div>);
   }
-  return (<div className="group relative p-4 rounded-2xl border border-border/50 bg-white hover:border-primary/30 hover:shadow-soft transition-all"><div className="flex items-start gap-3"><div className={`w-10 h-10 rounded-xl ${moduloStyle.cor} flex items-center justify-center shrink-0`}><Icon className="w-4 h-4" /></div><div className="flex-1 min-w-0"><div className="flex items-center gap-2"><h4 className="font-semibold text-sm text-slate-700 truncate">{report.nome}</h4>{report.destaque && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />}</div><p className="text-xs text-muted-foreground mt-1 line-clamp-2">{report.descricao}</p><div className="flex items-center gap-1.5 mt-2"><Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-md">{moduloStyle.label}</Badge><Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-md">{report.uso}</Badge></div></div><button onClick={onToggleFavorito} className={`p-1.5 rounded-lg transition-colors ${isFavorito ? "text-amber-400" : "text-slate-300 hover:text-amber-400"}`}><Star className={`w-4 h-4 ${isFavorito ? "fill-amber-400" : ""}`} /></button></div><div className="flex items-center gap-1 mt-3 pt-3 border-t border-border/30 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={onVisualizar} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"><Eye className="w-3.5 h-3.5" /> Ver</button><button onClick={() => alert(`Exportando ${report.nome} em PDF...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50"><FileText className="w-3.5 h-3.5" /> PDF</button><button onClick={() => alert(`Exportando ${report.nome} em Excel...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50"><FileSpreadsheet className="w-3.5 h-3.5" /> Excel</button><button onClick={() => alert(`Imprimindo ${report.nome}...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"><Printer className="w-3.5 h-3.5" /> Print</button></div></div>);
+  return (<div className="group relative p-4 rounded-2xl border border-border/50 bg-card hover:border-primary/30 hover:shadow-soft transition-all"><div className="flex items-start gap-3"><div className={`w-10 h-10 rounded-xl ${moduloStyle.cor} flex items-center justify-center shrink-0`}><Icon className="w-4 h-4" /></div><div className="flex-1 min-w-0"><div className="flex items-center gap-2"><h4 className="font-semibold text-sm text-foreground truncate">{report.nome}</h4>{report.destaque && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />}</div><p className="text-xs text-muted-foreground mt-1 line-clamp-2">{report.descricao}</p><div className="flex items-center gap-1.5 mt-2"><Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-md">{moduloStyle.label}</Badge><Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-md">{report.uso}</Badge></div></div><button onClick={onToggleFavorito} className={`p-1.5 rounded-lg transition-colors ${isFavorito ? "text-amber-400" : "text-muted-foreground hover:text-amber-400"}`}><Star className={`w-4 h-4 ${isFavorito ? "fill-amber-400" : ""}`} /></button></div><div className="flex items-center gap-1 mt-3 pt-3 border-t border-border/30 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={onVisualizar} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-secondary"><Eye className="w-3.5 h-3.5" /> Ver</button><button onClick={() => alert(`Exportando ${report.nome} em PDF...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50"><FileText className="w-3.5 h-3.5" /> PDF</button><button onClick={() => alert(`Exportando ${report.nome} em Excel...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50"><FileSpreadsheet className="w-3.5 h-3.5" /> Excel</button><button onClick={() => alert(`Imprimindo ${report.nome}...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-secondary"><Printer className="w-3.5 h-3.5" /> Print</button></div></div>);
 }
 
 // Mock de emissões nas últimas 24h (simulado - virá do backend)
@@ -307,12 +307,12 @@ function ReportsPage() {
     { id: "estoque", label: "📦 Estoque & Movimentação", icone: Package, cor: "text-emerald-600" },
     { id: "produtos", label: "🏷️ Cadastro de Produtos", icone: Tag, cor: "text-violet-600" },
     { id: "clientes", label: "👥 Clientes & Comportamento", icone: Users, cor: "text-blue-600" },
-    { id: "fiscal", label: "🔐 Fiscal & Operacional", icone: Receipt, cor: "text-slate-600" },
+    { id: "fiscal", label: "🔐 Fiscal & Operacional", icone: Receipt, cor: "text-muted-foreground" },
     { id: "auditoria", label: "🔍 Auditoria & Segurança", icone: Shield, cor: "text-red-600" },
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-secondary p-6">
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -328,7 +328,7 @@ function ReportsPage() {
         {/* KPI Cards - Indicadores Rápidos */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {/* Card 1: Total de relatórios disponíveis */}
-          <Card className="rounded-2xl border-border/50 bg-white hover:shadow-md transition-shadow">
+          <Card className="rounded-2xl border-border/50 bg-card hover:shadow-md transition-shadow">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center"><FileText className="w-5 h-5 text-emerald-600" /></div>
@@ -341,12 +341,12 @@ function ReportsPage() {
           </Card>
 
           {/* Card 2: Último relatório gerado */}
-          <Card className="rounded-2xl border-border/50 bg-white hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToUltimo}>
+          <Card className="rounded-2xl border-border/50 bg-card hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToUltimo}>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center"><History className="w-5 h-5 text-blue-600" /></div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-700 truncate">{ultimoRelatorio ? ultimoRelatorio.nome : "Nenhum ainda"}</p>
+                  <p className="text-sm font-semibold text-foreground truncate">{ultimoRelatorio ? ultimoRelatorio.nome : "Nenhum ainda"}</p>
                   <p className="text-xs text-muted-foreground">{ultimoRelatorio ? "Clique para reabrir" : "Último Relatório Gerado"}</p>
                 </div>
               </div>
@@ -354,7 +354,7 @@ function ReportsPage() {
           </Card>
 
           {/* Card 3: Atalho para favoritos */}
-          <Card className="rounded-2xl border-border/50 bg-white hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToFavoritos}>
+          <Card className="rounded-2xl border-border/50 bg-card hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToFavoritos}>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center"><Star className="w-5 h-5 text-amber-600" /></div>
@@ -367,7 +367,7 @@ function ReportsPage() {
           </Card>
 
           {/* Card 4: Emissões nas últimas 24h */}
-          <Card className="rounded-2xl border-border/50 bg-white hover:shadow-md transition-shadow">
+          <Card className="rounded-2xl border-border/50 bg-card hover:shadow-md transition-shadow">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center"><Shield className="w-5 h-5 text-violet-600" /></div>
@@ -389,7 +389,7 @@ function ReportsPage() {
                 <Input placeholder="Buscar relatórios por nome, descrição ou palavras-chave..." value={busca} onChange={e => setBusca(e.target.value)} className="pl-9 h-10 rounded-xl" />
               </div>
               <div className="flex gap-2">
-                <select value={filtroModulo} onChange={e => setFiltroModulo(e.target.value as ModuloReport | "todos")} className="h-10 px-3 rounded-xl border bg-white text-sm focus:ring-2 focus:ring-primary/20">
+                <select value={filtroModulo} onChange={e => setFiltroModulo(e.target.value as ModuloReport | "todos")} className="h-10 px-3 rounded-xl border bg-card text-sm focus:ring-2 focus:ring-primary/20">
                   <option value="todos">📁 Todos os Módulos</option>
                   <option value="estoque">📦 Estoque</option>
                   <option value="clientes">👥 Clientes</option>
@@ -399,7 +399,7 @@ function ReportsPage() {
                   <option value="fiscal">🔐 Fiscal</option>
                   <option value="auditoria">🔍 Auditoria</option>
                 </select>
-                <select value={filtroUso} onChange={e => setFiltroUso(e.target.value as UsoReport | "todos")} className="h-10 px-3 rounded-xl border bg-white text-sm focus:ring-2 focus:ring-primary/20">
+                <select value={filtroUso} onChange={e => setFiltroUso(e.target.value as UsoReport | "todos")} className="h-10 px-3 rounded-xl border bg-card text-sm focus:ring-2 focus:ring-primary/20">
                   <option value="todos">🎯 Todos os Tipos</option>
                   <option value="operacional">⚙️ Operacional</option>
                   <option value="gerencial">📈 Gerencial</option>
@@ -458,7 +458,7 @@ function ReportsPage() {
               <div key={id} className="space-y-4">
                 <div className="flex items-center gap-2 border-b border-border/50 pb-2">
                   <ModIcon className={`w-5 h-5 ${cor}`} />
-                  <h2 className="text-lg font-semibold text-slate-800">{label}</h2>
+                  <h2 className="text-lg font-semibold text-foreground">{label}</h2>
                   <Badge variant="secondary" className="rounded-lg ml-2">{relatoriosModulo.length}</Badge>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">

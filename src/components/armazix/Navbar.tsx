@@ -82,6 +82,15 @@ export function Navbar() {
                   Criar Loja Grátis
                 </a>
               </li>
+              <li>
+                <Link
+                  to="/login"
+                  onClick={() => setOpen(false)}
+                  className="block text-center py-3 rounded-full border border-border font-semibold hover:bg-secondary transition-colors"
+                >
+                  Entrar
+                </Link>
+              </li>
             </ul>
           </div>
         )}

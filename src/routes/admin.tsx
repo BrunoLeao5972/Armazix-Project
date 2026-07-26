@@ -53,6 +53,7 @@ import {
 
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ThemeToggle } from "@/components/admin/ThemeToggle";
 import { api } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -609,6 +610,8 @@ function AdminLayout() {
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary" />
             </button>
 
+            <ThemeToggle />
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-xl hover:bg-secondary transition-colors">
@@ -700,7 +703,12 @@ function AdminLayout() {
         )}
 
         {/* Page content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">
+        {/* overflow-x-hidden: nenhuma página de conteúdo deve conseguir rolar de
+            lado — se algum elemento (ex: uma barra de ferramentas) transbordar,
+            fica só clipado, em vez de tornar o conteúdo arrastável na horizontal
+            (o que em touch se sente como a página/sidebar "balançando" ao rolar
+            verticalmente). */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto overflow-x-hidden">
           <Outlet />
         </main>
       </div>

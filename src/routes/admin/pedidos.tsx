@@ -646,6 +646,17 @@ function OrdersPage() {
     setAutoAccept(prev => {
       const next = !prev;
       localStorage.setItem("armazix:autoAccept", String(next));
+      if (next) {
+        // Ao ligar, pega imediatamente os pedidos pendentes já visíveis na tela
+        // — sem isso, só pedidos que chegassem DEPOIS do toggle eram pegos,
+        // e só no próximo polling (até 30s de atraso). Pedido que já estava
+        // parado no kanban antes de ligar o toggle nunca era tocado.
+        for (const order of orders) {
+          if (!seenOrderIds.current.has(order.orderId) && ["pending", "received"].includes(order.status)) {
+            advanceToPreparingQuiet(order);
+          }
+        }
+      }
       return next;
     });
   };
@@ -701,8 +712,12 @@ function OrdersPage() {
       if (res.ok) {
         const mapped = (data.orders || []).map(normalize);
 
-        // Aceite automático: avança novos pedidos pending/received para preparando
-        if (silent && autoAcceptRef.current) {
+        // Aceite automático: avança pending/received para preparando. Roda
+        // também na primeira carga (não só em polling silencioso) — se o
+        // toggle já estava ligado (persistido no localStorage) quando a
+        // página abriu, os pedidos já parados no kanban precisam ser pegos
+        // também, não só os que chegarem depois.
+        if (autoAcceptRef.current) {
           for (const order of mapped) {
             if (!seenOrderIds.current.has(order.orderId) && ["pending", "received"].includes(order.status)) {
               advanceToPreparingQuiet(order);
@@ -827,12 +842,15 @@ function OrdersPage() {
           <p className="text-sm text-muted-foreground mt-0.5">Acompanhe em tempo real</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* flex-wrap: em telas estreitas, os controles quebram linha em vez de
+            transbordar (o que forçava rolagem horizontal do <main> inteiro —
+            em touch isso se sentia como a página "balançando" ao rolar). */}
+        <div className="flex flex-wrap items-center gap-2">
           {/* Aceite automático — toggle estilo iOS */}
           <div
             title={autoAccept ? "Aceite automático ativado" : "Aceite automático desativado"}
             className={[
-              "flex items-center gap-2 h-10 pl-3 pr-2.5 rounded-xl border transition-all",
+              "flex items-center gap-2 h-10 pl-3 pr-2.5 rounded-xl border transition-all shrink-0",
               autoAccept
                 ? "border-emerald-500/40 bg-emerald-500/10 shadow-[0_0_0_2px_rgba(16,185,129,0.15)]"
                 : "border-border/60 bg-secondary/30",
@@ -858,14 +876,16 @@ function OrdersPage() {
             </button>
           </div>
 
-          {/* Search */}
-          <div className="relative">
+          {/* Search — cresce pra preencher o espaço disponível na tela estreita
+              (em vez de largura fixa forçando os botões seguintes a transbordar),
+              e volta a ter largura fixa a partir de sm: */}
+          <div className="relative flex-1 min-w-[140px] sm:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             <Input
               placeholder="Nome ou #número..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-9 h-10 rounded-xl w-52 sm:w-64"
+              className="pl-9 h-10 rounded-xl w-full sm:w-64"
             />
           </div>
 
@@ -945,7 +965,7 @@ function OrdersPage() {
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm" className="h-10 rounded-xl gap-1.5 relative shrink-0">
                 <Filter className="w-3.5 h-3.5" />
-                Filtrar
+                <span className="hidden sm:inline">Filtrar</span>
                 {activeFiltersCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center leading-none">
                     {activeFiltersCount}

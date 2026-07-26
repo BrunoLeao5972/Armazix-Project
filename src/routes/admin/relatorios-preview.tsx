@@ -94,20 +94,20 @@ function TabelaVendas() {
   return (
     <div className="overflow-x-auto print:text-xs">
       <table className="w-full text-sm border-collapse">
-        <thead className="bg-slate-100 border-b-2 border-slate-300">
+        <thead className="bg-secondary border-b-2 border-border">
           <tr>
             {["ID", "Data", "Cliente", "Produto", "Qtd", "Unitário", "Total", "Pagto", "Status"].map(h => (
-              <th key={h} className="px-3 py-2 text-left font-bold text-slate-700">{h}</th>
+              <th key={h} className="px-3 py-2 text-left font-bold text-foreground">{h}</th>
             ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200">
           {MOCK_VENDAS.map((item) => (
-            <tr key={item.id} className="hover:bg-slate-50 print:hover:bg-transparent">
+            <tr key={item.id} className="hover:bg-secondary print:hover:bg-transparent">
               <td className="px-3 py-2 font-medium">{item.id}</td>
-              <td className="px-3 py-2 text-slate-600">{item.data}</td>
+              <td className="px-3 py-2 text-muted-foreground">{item.data}</td>
               <td className="px-3 py-2">{item.cliente}</td>
-              <td className="px-3 py-2 text-slate-600">{item.produto}</td>
+              <td className="px-3 py-2 text-muted-foreground">{item.produto}</td>
               <td className="px-3 py-2 text-center">{item.qtd}</td>
               <td className="px-3 py-2 text-right">R$ {item.unit.toFixed(2)}</td>
               <td className="px-3 py-2 text-right font-semibold text-emerald-600">R$ {item.total.toFixed(2)}</td>
@@ -122,9 +122,9 @@ function TabelaVendas() {
             </tr>
           ))}
         </tbody>
-        <tfoot className="bg-slate-50 border-t-2 border-slate-300">
+        <tfoot className="bg-secondary border-t-2 border-border">
           <tr>
-            <td colSpan={6} className="px-3 py-3 text-right font-bold text-slate-700">TOTAL GERAL:</td>
+            <td colSpan={6} className="px-3 py-3 text-right font-bold text-foreground">TOTAL GERAL:</td>
             <td className="px-3 py-3 text-right font-bold text-emerald-600 text-lg">R$ {total.toFixed(2)}</td>
             <td colSpan={2}></td>
           </tr>
@@ -175,19 +175,19 @@ function TabelaFluxoCaixa() {
       {/* Tabela */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
-          <thead className="bg-slate-100 border-b-2 border-slate-300">
+          <thead className="bg-secondary border-b-2 border-border">
             <tr>
               {["Data", "Histórico", "Descrição", "Tipo", "Valor", "Saldo"].map(h => (
-                <th key={h} className="px-3 py-2 text-left font-bold text-slate-700">{h}</th>
+                <th key={h} className="px-3 py-2 text-left font-bold text-foreground">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
             {MOCK_FLUXO_CAIXA.map((item, idx) => (
-              <tr key={idx} className="hover:bg-slate-50">
-                <td className="px-3 py-2 text-slate-600">{item.data}</td>
+              <tr key={idx} className="hover:bg-secondary">
+                <td className="px-3 py-2 text-muted-foreground">{item.data}</td>
                 <td className="px-3 py-2 font-medium">{item.historico}</td>
-                <td className="px-3 py-2 text-slate-600">{item.descricao}</td>
+                <td className="px-3 py-2 text-muted-foreground">{item.descricao}</td>
                 <td className="px-3 py-2">
                   <Badge className={`text-xs ${item.tipo === "RECEITA" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
                     {item.tipo}
@@ -220,21 +220,21 @@ function TabelaEstoque() {
       
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
-          <thead className="bg-slate-100 border-b-2 border-slate-300">
+          <thead className="bg-secondary border-b-2 border-border">
             <tr>
               {["Código", "Produto", "Categoria", "Estoque", "Mínimo", "Status"].map(h => (
-                <th key={h} className="px-3 py-2 text-left font-bold text-slate-700">{h}</th>
+                <th key={h} className="px-3 py-2 text-left font-bold text-foreground">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
             {MOCK_ESTOQUE.map((item) => (
-              <tr key={item.codigo} className="hover:bg-slate-50">
+              <tr key={item.codigo} className="hover:bg-secondary">
                 <td className="px-3 py-2 font-medium">{item.codigo}</td>
                 <td className="px-3 py-2">{item.produto}</td>
-                <td className="px-3 py-2 text-slate-600">{item.categoria}</td>
+                <td className="px-3 py-2 text-muted-foreground">{item.categoria}</td>
                 <td className="px-3 py-2 text-center font-semibold">{item.estoque}</td>
-                <td className="px-3 py-2 text-center text-slate-500">{item.minimo}</td>
+                <td className="px-3 py-2 text-center text-muted-foreground">{item.minimo}</td>
                 <td className="px-3 py-2">
                   <Badge className={`text-xs ${item.status === "OK" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
                     {item.status === "OK" ? <CheckCircle className="w-3 h-3 mr-1 inline" /> : <AlertCircle className="w-3 h-3 mr-1 inline" />}
@@ -267,7 +267,7 @@ function ReportsPreviewPage() {
   }, [abaAtiva]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-secondary">
       {/* CSS para Impressão A4 */}
       <style>{`
         @media print {
@@ -275,7 +275,7 @@ function ReportsPreviewPage() {
           .print-only { display: block !important; }
           body { background: white; }
           .shadow-sm { box-shadow: none !important; }
-          .border-slate-200 { border-color: #ddd !important; }
+          .border-border { border-color: #ddd !important; }
         }
         @media screen {
           .print-only { display: none; }
@@ -283,15 +283,15 @@ function ReportsPreviewPage() {
       `}</style>
       
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 no-print">
+      <div className="bg-card border-b border-border px-6 py-4 no-print">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" className="text-slate-600">
+            <Button variant="ghost" size="sm" className="text-muted-foreground">
               <ChevronLeft className="w-4 h-4 mr-1" /> Voltar
             </Button>
             <div>
-              <h1 className="text-xl font-bold text-slate-900">Preview de Relatórios</h1>
-              <p className="text-sm text-slate-500">Visualização com dados fictícios</p>
+              <h1 className="text-xl font-bold text-foreground">Preview de Relatórios</h1>
+              <p className="text-sm text-muted-foreground">Visualização com dados fictícios</p>
             </div>
           </div>
           
@@ -328,7 +328,7 @@ function ReportsPreviewPage() {
       <div className="p-6 max-w-7xl mx-auto">
         {/* Abas */}
         <Tabs value={abaAtiva} onValueChange={setAbaAtiva} className="space-y-6 no-print">
-          <TabsList className="bg-white border border-slate-200 p-1">
+          <TabsList className="bg-card border border-border p-1">
             <TabsTrigger value="vendas" className="flex items-center gap-2">
               <ShoppingCart className="w-4 h-4" /> Vendas
             </TabsTrigger>
@@ -341,12 +341,12 @@ function ReportsPreviewPage() {
           </TabsList>
           
           <TabsContent value="vendas">
-            <Card className="border-slate-200 shadow-sm">
+            <Card className="border-border shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h2 className="text-lg font-bold text-slate-900">Vendas por Período</h2>
-                    <p className="text-sm text-slate-500">Período: 31/05/2026 a 02/06/2026</p>
+                    <h2 className="text-lg font-bold text-foreground">Vendas por Período</h2>
+                    <p className="text-sm text-muted-foreground">Período: 31/05/2026 a 02/06/2026</p>
                   </div>
                   <Badge variant="outline" className="text-xs">10 registros</Badge>
                 </div>
@@ -356,12 +356,12 @@ function ReportsPreviewPage() {
           </TabsContent>
           
           <TabsContent value="financeiro">
-            <Card className="border-slate-200 shadow-sm">
+            <Card className="border-border shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h2 className="text-lg font-bold text-slate-900">Fluxo de Caixa</h2>
-                    <p className="text-sm text-slate-500">Histórico estruturado por categorias</p>
+                    <h2 className="text-lg font-bold text-foreground">Fluxo de Caixa</h2>
+                    <p className="text-sm text-muted-foreground">Histórico estruturado por categorias</p>
                   </div>
                   <Badge variant="outline" className="text-xs">6 lançamentos</Badge>
                 </div>
@@ -371,12 +371,12 @@ function ReportsPreviewPage() {
           </TabsContent>
           
           <TabsContent value="estoque">
-            <Card className="border-slate-200 shadow-sm">
+            <Card className="border-border shadow-sm">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h2 className="text-lg font-bold text-slate-900">Controle de Estoque</h2>
-                    <p className="text-sm text-slate-500">Posição atual com alertas de reposição</p>
+                    <h2 className="text-lg font-bold text-foreground">Controle de Estoque</h2>
+                    <p className="text-sm text-muted-foreground">Posição atual com alertas de reposição</p>
                   </div>
                   <Badge variant="outline" className="text-xs">6 produtos</Badge>
                 </div>

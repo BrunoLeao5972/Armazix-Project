@@ -28,25 +28,25 @@ export function ModalAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => vo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-150">
         <div className="flex items-center gap-3 mb-5">
           <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
             <Unlock className="w-5 h-5 text-emerald-600" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-800">Abrir Caixa</h3>
-            <p className="text-xs text-slate-500">Informe o saldo inicial (troco em espécie)</p>
+            <h3 className="text-sm font-bold text-foreground">Abrir Caixa</h3>
+            <p className="text-xs text-muted-foreground">Informe o saldo inicial (troco em espécie)</p>
           </div>
         </div>
         <div className="space-y-3">
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Saldo Inicial (R$)</label>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Saldo Inicial (R$)</label>
             <Input type="number" min="0" step="0.01" value={saldo}
               onChange={e => setSaldo(e.target.value)} placeholder="0,00" autoFocus
               className="mt-1 h-11 rounded-xl text-base font-semibold" />
           </div>
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Responsável</label>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Responsável</label>
             <Input value={resp} onChange={e => setResp(e.target.value)}
               placeholder="Nome do operador" className="mt-1 h-10 rounded-xl text-sm" />
           </div>
@@ -92,7 +92,7 @@ export function ModalFecharCaixa({
   };
 
   const LINHAS = [
-    { label: "Saldo inicial",     val: parseFloat(sessao.saldoInicial),  cor: "text-slate-700" },
+    { label: "Saldo inicial",     val: parseFloat(sessao.saldoInicial),  cor: "text-foreground" },
     { label: "Dinheiro vendas",   val: parseFloat(sessao.totalDinheiro), cor: "text-emerald-600" },
     { label: "PIX",               val: parseFloat(sessao.totalPix),      cor: "text-emerald-600" },
     { label: "Cartão Crédito",    val: parseFloat(sessao.totalCartao),   cor: "text-emerald-600" },
@@ -108,34 +108,34 @@ export function ModalFecharCaixa({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
-            <LockKeyhole className="w-4 h-4 text-slate-500" />
-            <h3 className="text-sm font-bold text-slate-800">Fechar Caixa</h3>
+            <LockKeyhole className="w-4 h-4 text-muted-foreground" />
+            <h3 className="text-sm font-bold text-foreground">Fechar Caixa</h3>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-            <X className="w-4 h-4 text-slate-400" />
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
+            <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {/* Resumo */}
-          <div className="bg-slate-50 rounded-xl border border-slate-100 overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-slate-100">
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Resumo da Sessão</p>
-              <p className="text-xs text-slate-400 mt-0.5">Aberto em {fmtDate(sessao.openedAt)} · {sessao.totalVendas} vendas</p>
+          <div className="bg-secondary rounded-xl border border-border overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-border">
+              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Resumo da Sessão</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Aberto em {fmtDate(sessao.openedAt)} · {sessao.totalVendas} vendas</p>
             </div>
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-border">
               {LINHAS.map(l => Math.abs(l.val) > 0.001 && (
                 <div key={l.label} className="flex justify-between items-center px-4 py-2 text-xs">
-                  <span className="text-slate-500">{l.label}</span>
+                  <span className="text-muted-foreground">{l.label}</span>
                   <span className={`font-semibold tabular-nums ${l.cor}`}>{fmtBRL(l.val)}</span>
                 </div>
               ))}
             </div>
-            <div className="flex justify-between items-center px-4 py-3 bg-slate-100 border-t border-slate-200">
-              <span className="text-xs font-bold text-slate-700">Total de Vendas</span>
+            <div className="flex justify-between items-center px-4 py-3 bg-secondary border-t border-border">
+              <span className="text-xs font-bold text-foreground">Total de Vendas</span>
               <span className="text-sm font-black text-emerald-600 tabular-nums">{fmtBRL(totalVendasValor)}</span>
             </div>
             <div className="flex justify-between items-center px-4 py-3 bg-emerald-50 border-t border-emerald-100">
@@ -146,7 +146,7 @@ export function ModalFecharCaixa({
 
           {/* Saldo conferência */}
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Saldo Contado (R$)</label>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Saldo Contado (R$)</label>
             <Input type="number" min="0" step="0.01" value={saldoFinal}
               onChange={e => setSaldoFinal(e.target.value)}
               placeholder={saldoEsperado.toFixed(2).replace(".", ",")}
@@ -158,12 +158,12 @@ export function ModalFecharCaixa({
             )}
           </div>
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Encerrado por</label>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Encerrado por</label>
             <Input value={resp} onChange={e => setResp(e.target.value)}
               placeholder="Nome do operador" className="mt-1 h-10 rounded-xl text-sm" />
           </div>
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Observações</label>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Observações</label>
             <Input value={obs} onChange={e => setObs(e.target.value)}
               placeholder="Opcional" className="mt-1 h-10 rounded-xl text-sm" />
           </div>
@@ -171,7 +171,7 @@ export function ModalFecharCaixa({
 
         <div className="px-5 pb-5 shrink-0 flex gap-2">
           <button onClick={onClose}
-            className="flex-1 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-sm transition-colors">
+            className="flex-1 h-11 rounded-xl bg-secondary hover:bg-secondary text-muted-foreground font-semibold text-sm transition-colors">
             Cancelar
           </button>
           <button onClick={handleFechar} disabled={loading}
@@ -216,28 +216,28 @@ export function ModalMovimentar({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-150">
         <div className="flex items-center gap-3 mb-5">
           <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${corBg}`}>
             <Icon className={`w-5 h-5 ${cor}`} />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-800">{label}</h3>
-            <p className="text-xs text-slate-500">Registre a movimentação de dinheiro em espécie</p>
+            <h3 className="text-sm font-bold text-foreground">{label}</h3>
+            <p className="text-xs text-muted-foreground">Registre a movimentação de dinheiro em espécie</p>
           </div>
-          <button onClick={onClose} className="ml-auto p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-            <X className="w-4 h-4 text-slate-400" />
+          <button onClick={onClose} className="ml-auto p-1.5 rounded-lg hover:bg-secondary transition-colors">
+            <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
         <div className="space-y-3">
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Valor (R$)</label>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Valor (R$)</label>
             <Input type="number" min="0" step="0.01" value={valor}
               onChange={e => setValor(e.target.value)} placeholder="0,00" autoFocus
               className="mt-1 h-11 rounded-xl text-base font-semibold" />
           </div>
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Motivo</label>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Motivo</label>
             <Input value={motivo} onChange={e => setMotivo(e.target.value)}
               placeholder="Ex: Troco, reposição, pagamento fornecedor..."
               className="mt-1 h-10 rounded-xl text-sm" />
@@ -246,7 +246,7 @@ export function ModalMovimentar({
         </div>
         <div className="flex gap-2 mt-5">
           <button onClick={onClose}
-            className="flex-1 h-11 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold text-sm transition-colors">
+            className="flex-1 h-11 rounded-xl bg-secondary hover:bg-secondary text-muted-foreground font-semibold text-sm transition-colors">
             Cancelar
           </button>
           <button onClick={handleConfirm} disabled={loading}
@@ -289,61 +289,61 @@ export function ModalSessoes({ storeId, onClose }: { storeId: string; onClose: (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
-            <ReceiptText className="w-4 h-4 text-slate-500" />
-            <h3 className="text-sm font-bold text-slate-800">Histórico de Sessões</h3>
+            <ReceiptText className="w-4 h-4 text-muted-foreground" />
+            <h3 className="text-sm font-bold text-foreground">Histórico de Sessões</h3>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-            <X className="w-4 h-4 text-slate-400" />
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
+            <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
 
         {/* Filtros */}
-        <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap gap-2 shrink-0">
+        <div className="px-5 py-3 border-b border-border flex flex-wrap gap-2 shrink-0">
           <select value={statusFil} onChange={e => setStatusFil(e.target.value)}
-            className="h-9 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-slate-300">
+            className="h-9 px-3 rounded-lg border border-border text-xs font-medium text-foreground bg-card focus:outline-none focus:ring-1 focus:ring-slate-300">
             <option value="all">Todos os status</option>
             <option value="aberta">Aberta</option>
             <option value="encerrada">Encerrada</option>
           </select>
           <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
             className="h-9 rounded-lg text-xs w-36" />
-          <span className="self-center text-xs text-slate-400">até</span>
+          <span className="self-center text-xs text-muted-foreground">até</span>
           <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
             className="h-9 rounded-lg text-xs w-36" />
           <button onClick={buscar}
-            className="h-9 px-4 rounded-lg bg-slate-800 text-white text-xs font-semibold flex items-center gap-1.5 hover:bg-slate-700 transition-colors">
+            className="h-9 px-4 rounded-lg bg-foreground text-background text-xs font-semibold flex items-center gap-1.5 hover:bg-foreground/90 transition-colors">
             <Filter className="w-3 h-3" />Filtrar
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+        <div className="flex-1 overflow-y-auto divide-y divide-border">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
             </div>
           ) : sessoes.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-sm">Nenhuma sessão encontrada</div>
+            <div className="py-12 text-center text-muted-foreground text-sm">Nenhuma sessão encontrada</div>
           ) : sessoes.map(s => {
             const totalSessao = parseFloat(s.totalDinheiro) + parseFloat(s.totalPix) +
               parseFloat(s.totalCartao) + parseFloat(s.totalDebito) + parseFloat(s.totalOutros);
             const isAberta = s.status === "aberta";
             return (
-              <div key={s.id} className="px-5 py-3.5 hover:bg-slate-50 transition-colors">
+              <div key={s.id} className="px-5 py-3.5 hover:bg-secondary transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${isAberta ? "bg-emerald-500" : "bg-slate-400"}`} />
-                      <span className="text-xs font-bold text-slate-700">{fmtDate(s.openedAt)}</span>
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${isAberta ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+                      <span className="text-xs font-bold text-foreground">{fmtDate(s.openedAt)}</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                        isAberta ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-100 text-slate-500 border-slate-200"
+                        isAberta ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-secondary text-muted-foreground border-border"
                       }`}>
                         {isAberta ? "ABERTA" : "ENCERRADA"}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-1 ml-4">
+                    <p className="text-[11px] text-muted-foreground mt-1 ml-4">
                       {s.abertoPor && <>Operador: {s.abertoPor} · </>}
                       {s.totalVendas} venda{s.totalVendas !== 1 ? "s" : ""}
                       {s.closedAt && <> · Fechado {fmtDate(s.closedAt)}</>}
@@ -351,11 +351,11 @@ export function ModalSessoes({ storeId, onClose }: { storeId: string; onClose: (
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-sm font-bold text-emerald-600 tabular-nums">{fmtBRL(totalSessao)}</p>
-                    <p className="text-[11px] text-slate-400">Inicial: {fmtBRL(parseFloat(s.saldoInicial))}</p>
+                    <p className="text-[11px] text-muted-foreground">Inicial: {fmtBRL(parseFloat(s.saldoInicial))}</p>
                   </div>
                 </div>
                 {/* Breakdown */}
-                <div className="mt-2 ml-4 flex flex-wrap gap-3 text-[10px] text-slate-500">
+                <div className="mt-2 ml-4 flex flex-wrap gap-3 text-[10px] text-muted-foreground">
                   {parseFloat(s.totalDinheiro) > 0   && <span>Dinheiro {fmtBRL(parseFloat(s.totalDinheiro))}</span>}
                   {parseFloat(s.totalPix)      > 0   && <span>PIX {fmtBRL(parseFloat(s.totalPix))}</span>}
                   {parseFloat(s.totalCartao)   > 0   && <span>Crédito {fmtBRL(parseFloat(s.totalCartao))}</span>}
@@ -368,8 +368,8 @@ export function ModalSessoes({ storeId, onClose }: { storeId: string; onClose: (
         </div>
 
         {sessoes.length > 0 && (
-          <div className="px-5 py-3 border-t border-slate-100 flex justify-between items-center shrink-0 bg-slate-50">
-            <span className="text-xs text-slate-500">{sessoes.length} sessão(ões)</span>
+          <div className="px-5 py-3 border-t border-border flex justify-between items-center shrink-0 bg-secondary">
+            <span className="text-xs text-muted-foreground">{sessoes.length} sessão(ões)</span>
             <span className="text-sm font-bold text-emerald-600 tabular-nums">Total: {fmtBRL(totalVendasAll)}</span>
           </div>
         )}

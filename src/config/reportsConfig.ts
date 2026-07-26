@@ -19,7 +19,7 @@ import {
 // TIPOS E ENUMS
 // ============================================
 
-export type ModuloReport = "gerencial" | "financeiro" | "suprimentos" | "comercial" | "seguranca";
+export type ModuloReport = "estoque" | "clientes" | "produtos" | "vendas" | "financeiro" | "fiscal" | "auditoria";
 export type UsoReport = "operacional" | "gerencial" | "fiscal" | "auditoria";
 export type NivelPermissao = "admin" | "gerente" | "financeiro" | "vendedor" | "operador" | "caixa" | "fiscal";
 
@@ -138,51 +138,74 @@ export interface ReportCategory {
 // NOVAS CATEGORIAS - ESTRUTURA 2025
 // ============================================
 
+// As 7 categorias abaixo espelham exatamente as usadas em
+// src/routes/admin/relatorios.tsx (rótulo, emoji, ícone e cor) — mesmo
+// esquema nos dois lugares, para não haver duas fontes de verdade divergentes
+// como havia antes (ver histórico: ModuloReport aqui declarava 5 valores que
+// nunca bateram com os 7 realmente usados em REPORTS_CATALOGO abaixo).
 export const REPORT_CATEGORIES: ReportCategory[] = [
   {
-    id: "gerencial",
-    label: "Demonstrativos & Resultados",
-    emoji: "�",
-    cor: "text-indigo-600",
-    icone: BarChart3,
-    descricao: "Relatórios gerenciais, demonstrativos e resultados financeiros",
+    id: "vendas",
+    label: "Vendas & PDV",
+    emoji: "📊",
+    cor: "text-amber-600",
+    icone: ShoppingCart,
+    descricao: "Vendas, pedidos e operações comerciais",
     ordem: 1
   },
   {
     id: "financeiro",
-    label: "Contas, Cobranças & Lançamentos",
+    label: "Financeiro Integrado",
     emoji: "💰",
-    cor: "text-emerald-600",
+    cor: "text-rose-600",
     icone: DollarSign,
-    descricao: "Contas a pagar/receber, cobranças, conciliação e fluxo de caixa",
+    descricao: "Contas a pagar/receber, fluxo de caixa e resultados financeiros",
     ordem: 2
   },
   {
-    id: "suprimentos",
-    label: "Estoque, Compras & Produtos",
+    id: "estoque",
+    label: "Estoque & Movimentação",
     emoji: "📦",
-    cor: "text-amber-600",
+    cor: "text-emerald-600",
     icone: Package,
-    descricao: "Gestão de estoque, compras, produtos e suprimentos",
+    descricao: "Entradas, saídas, inventário e balanço de estoque",
     ordem: 3
   },
   {
-    id: "comercial",
-    label: "Vendas, Pedidos & Operações",
-    emoji: "�",
-    cor: "text-rose-600",
-    icone: ShoppingCart,
-    descricao: "Vendas, pedidos, entregas e operações comerciais",
+    id: "produtos",
+    label: "Cadastro de Produtos",
+    emoji: "🏷️",
+    cor: "text-violet-600",
+    icone: Tag,
+    descricao: "Catálogo, categorias, margens e giro de produtos",
     ordem: 4
   },
   {
-    id: "seguranca",
-    label: "Auditoria, Exclusões & Fiscal",
-    emoji: "�",
-    cor: "text-slate-600",
-    icone: Shield,
-    descricao: "Auditoria, logs de exclusões, fiscal e segurança",
+    id: "clientes",
+    label: "Clientes & Comportamento",
+    emoji: "👥",
+    cor: "text-blue-600",
+    icone: Users,
+    descricao: "Base de clientes, histórico de compras e comportamento",
     ordem: 5
+  },
+  {
+    id: "fiscal",
+    label: "Fiscal & Operacional",
+    emoji: "🔐",
+    cor: "text-muted-foreground",
+    icone: Receipt,
+    descricao: "Notas fiscais e operações fiscais por usuário",
+    ordem: 6
+  },
+  {
+    id: "auditoria",
+    label: "Auditoria & Segurança",
+    emoji: "🔍",
+    cor: "text-red-600",
+    icone: Shield,
+    descricao: "Logs de alterações críticas e auditoria de segurança",
+    ordem: 7
   }
 ];
 

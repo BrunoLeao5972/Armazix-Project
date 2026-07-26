@@ -72,9 +72,9 @@ export function HeroCarousel({ banners, storeName, slideIntervalMs = 5000 }: Her
               className="
                 absolute left-2 top-1/2 -translate-y-1/2 z-10
                 flex items-center justify-center w-9 h-9 rounded-full
-                bg-white/80 dark:bg-black/50 shadow-md
-                hover:bg-white dark:hover:bg-black/70
-                text-slate-700 dark:text-white
+                bg-white/80 shadow-md
+                hover:bg-white
+                text-slate-700
                 transition-all duration-200
                 opacity-100 sm:opacity-0 sm:group-hover:opacity-100
                 active:scale-95
@@ -90,9 +90,9 @@ export function HeroCarousel({ banners, storeName, slideIntervalMs = 5000 }: Her
               className="
                 absolute right-2 top-1/2 -translate-y-1/2 z-10
                 flex items-center justify-center w-9 h-9 rounded-full
-                bg-white/80 dark:bg-black/50 shadow-md
-                hover:bg-white dark:hover:bg-black/70
-                text-slate-700 dark:text-white
+                bg-white/80 shadow-md
+                hover:bg-white
+                text-slate-700
                 transition-all duration-200
                 opacity-100 sm:opacity-0 sm:group-hover:opacity-100
                 active:scale-95

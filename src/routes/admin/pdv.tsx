@@ -110,11 +110,11 @@ function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) 
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-card">
       {/* Cabeçalho da coluna — mantém visual consistente com o CartPanel */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
-        <LockKeyhole className="w-4 h-4 text-slate-400" />
-        <h2 className="text-xs font-bold text-slate-500">Caixa Fechado</h2>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
+        <LockKeyhole className="w-4 h-4 text-muted-foreground" />
+        <h2 className="text-xs font-bold text-muted-foreground">Caixa Fechado</h2>
       </div>
 
       {/* Conteúdo centralizado */}
@@ -125,15 +125,15 @@ function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) 
         </div>
 
         {/* Título + subtítulo */}
-        <h3 className="text-base font-bold text-slate-800 text-center">Abrir Caixa</h3>
-        <p className="text-xs text-slate-400 text-center mt-1 leading-relaxed max-w-[220px]">
+        <h3 className="text-base font-bold text-foreground text-center">Abrir Caixa</h3>
+        <p className="text-xs text-muted-foreground text-center mt-1 leading-relaxed max-w-[220px]">
           Informe o saldo inicial em espécie e o nome do operador para liberar as vendas.
         </p>
 
         {/* Formulário */}
         <div className="w-full mt-6 space-y-3">
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
               Saldo Inicial (R$)
             </label>
             <Input
@@ -149,7 +149,7 @@ function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) 
             />
           </div>
           <div>
-            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
               Responsável
             </label>
             <Input
@@ -178,7 +178,7 @@ function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) 
         </div>
 
         {/* Dica visual de que o catálogo está acessível */}
-        <p className="text-[11px] text-slate-300 text-center mt-6 leading-relaxed">
+        <p className="text-[11px] text-muted-foreground text-center mt-6 leading-relaxed">
           Você pode navegar pelo catálogo e mesas enquanto prepara a abertura.
         </p>
       </div>
@@ -196,12 +196,12 @@ function MesaMap({
   if (mesasList.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
-          <Users className="w-8 h-8 text-slate-400" />
+        <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center">
+          <Users className="w-8 h-8 text-muted-foreground" />
         </div>
         <div>
-          <p className="font-semibold text-slate-600">Nenhuma mesa configurada</p>
-          <p className="text-sm text-slate-400 mt-1">Configure as mesas em Configurações → PDV</p>
+          <p className="font-semibold text-muted-foreground">Nenhuma mesa configurada</p>
+          <p className="text-sm text-muted-foreground mt-1">Configure as mesas em Configurações → PDV</p>
         </div>
       </div>
     );
@@ -222,10 +222,10 @@ function MesaMap({
                   : `${cfg.ring} hover:shadow-md`
               }`}>
               <span className={`absolute top-2.5 right-2.5 w-2 h-2 rounded-full ${cfg.dot}`} />
-              <span className="text-3xl font-black text-slate-700 tabular-nums leading-none">
+              <span className="text-3xl font-black text-foreground tabular-nums leading-none">
                 {String(mesa.numero).padStart(2, "0")}
               </span>
-              <span className="text-[11px] font-medium text-slate-500 leading-tight">{mesa.label}</span>
+              <span className="text-[11px] font-medium text-muted-foreground leading-tight">{mesa.label}</span>
               <span className={`text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
                 st === "livre" ? "bg-emerald-100 text-emerald-700"
                 : st === "atendimento" ? "bg-blue-100 text-blue-700"
@@ -255,17 +255,17 @@ function CartPanel({
   onFecharCaixa: () => void; onClose?: () => void;
 }) {
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
           <ShoppingCart className="w-4 h-4 text-emerald-500" />
           <div>
-            <h2 className="text-xs font-bold text-slate-800 leading-none">
+            <h2 className="text-xs font-bold text-foreground leading-none">
               {activeMesa ? activeMesa.label : "Carrinho"}
             </h2>
             {activeMesa && (
-              <p className="text-[10px] text-slate-400 mt-0.5">Atendimento aberto</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Atendimento aberto</p>
             )}
           </div>
         </div>
@@ -277,13 +277,13 @@ function CartPanel({
           )}
           {cart.length > 0 && (
             <button onClick={onClear} title="Limpar"
-              className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+              className="p-1.5 rounded-lg text-muted-foreground hover:bg-red-50 hover:text-red-500 transition-colors">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           )}
           {onClose && (
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors lg:hidden">
-              <X className="w-4 h-4 text-slate-400" />
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors lg:hidden">
+              <X className="w-4 h-4 text-muted-foreground" />
             </button>
           )}
         </div>
@@ -292,44 +292,44 @@ function CartPanel({
       {/* Items */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
         {cart.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 gap-3 text-slate-400">
+          <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground">
             <ShoppingCart className="w-10 h-10 opacity-20" />
-            <p className="text-xs text-center">Carrinho vazio<br /><span className="text-slate-300">Toque nos produtos</span></p>
+            <p className="text-xs text-center">Carrinho vazio<br /><span className="text-muted-foreground">Toque nos produtos</span></p>
           </div>
         ) : cart.map(item => (
           <div key={item.productId}
-            className="flex items-center gap-2.5 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 hover:border-slate-200 transition-colors">
+            className="flex items-center gap-2.5 bg-secondary border border-border rounded-xl px-3 py-2.5 hover:border-border transition-colors">
             {/* Thumb */}
-            <div className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
+            <div className="w-9 h-9 rounded-lg bg-card border border-border flex items-center justify-center shrink-0 overflow-hidden">
               {item.imageUrl
                 ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain p-0.5" />
                 : item.emoji
                   ? <span className="text-base">{item.emoji}</span>
-                  : <Package className="w-4 h-4 text-slate-400" />
+                  : <Package className="w-4 h-4 text-muted-foreground" />
               }
             </div>
             {/* Info */}
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-semibold text-slate-700 truncate">{item.name}</p>
-              <p className="text-[10px] text-slate-400 tabular-nums">{item.qty}× {fmtBRL(item.price)}</p>
+              <p className="text-[11px] font-semibold text-foreground truncate">{item.name}</p>
+              <p className="text-[10px] text-muted-foreground tabular-nums">{item.qty}× {fmtBRL(item.price)}</p>
             </div>
             {/* Total */}
-            <span className="text-xs font-bold text-slate-700 tabular-nums shrink-0 w-16 text-right">
+            <span className="text-xs font-bold text-foreground tabular-nums shrink-0 w-16 text-right">
               {fmtBRL(item.price * item.qty)}
             </span>
             {/* Controls */}
             <div className="flex items-center gap-0.5 shrink-0">
               <button onClick={() => onUpdateQty(item.productId, -1)}
-                className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors">
+                className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-muted-foreground transition-colors">
                 <Minus className="w-3 h-3" />
               </button>
-              <span className="w-5 text-center text-[11px] font-bold text-slate-700">{item.qty}</span>
+              <span className="w-5 text-center text-[11px] font-bold text-foreground">{item.qty}</span>
               <button onClick={() => onUpdateQty(item.productId, 1)}
-                className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors">
+                className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-muted-foreground transition-colors">
                 <Plus className="w-3 h-3" />
               </button>
               <button onClick={() => onRemove(item.productId)}
-                className="w-6 h-6 rounded flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors ml-0.5">
+                className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors ml-0.5">
                 <X className="w-3 h-3" />
               </button>
             </div>
@@ -338,35 +338,35 @@ function CartPanel({
       </div>
 
       {/* Footer */}
-      <div className="px-3 py-3 border-t border-slate-100 space-y-3 shrink-0">
+      <div className="px-3 py-3 border-t border-border space-y-3 shrink-0">
         {/* Desconto */}
         <div className="flex items-center gap-2">
-          <div className="flex rounded-lg overflow-hidden border border-slate-200 shrink-0">
+          <div className="flex rounded-lg overflow-hidden border border-border shrink-0">
             {(["pct", "brl"] as const).map(t => (
               <button key={t} onClick={() => onSetDiscountType(t)}
-                className={`px-2.5 py-1.5 text-[11px] font-bold transition-colors ${discountType === t ? "bg-slate-700 text-white" : "bg-white text-slate-500 hover:text-slate-700"}`}>
+                className={`px-2.5 py-1.5 text-[11px] font-bold transition-colors ${discountType === t ? "bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground"}`}>
                 {t === "pct" ? "%" : "R$"}
               </button>
             ))}
           </div>
           <div className="relative flex-1">
-            <Percent className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+            <Percent className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <Input type="number" min={0} max={discountType === "pct" ? 100 : undefined}
               value={discount || ""} onChange={e => onSetDiscount(Number(e.target.value))}
               placeholder={discountType === "pct" ? "Desconto %" : "Desconto R$"}
               className="pl-7 h-8 rounded-lg text-xs" />
           </div>
           {discount > 0 && (
-            <button onClick={() => onSetDiscount(0)} className="shrink-0 p-1 rounded-md hover:bg-slate-100 transition-colors">
-              <X className="w-3.5 h-3.5 text-slate-400" />
+            <button onClick={() => onSetDiscount(0)} className="shrink-0 p-1 rounded-md hover:bg-secondary transition-colors">
+              <X className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
           )}
         </div>
 
         {/* Totais */}
-        <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 space-y-1.5">
+        <div className="bg-secondary border border-border rounded-2xl px-4 py-3 space-y-1.5">
           {subtotal !== total && (
-            <div className="flex justify-between text-xs text-slate-500">
+            <div className="flex justify-between text-xs text-muted-foreground">
               <span>Subtotal</span><span className="tabular-nums">{fmtBRL(subtotal)}</span>
             </div>
           )}
@@ -375,9 +375,9 @@ function CartPanel({
               <span>Desconto</span><span className="tabular-nums">−{fmtBRL(discountValue)}</span>
             </div>
           )}
-          <div className="flex items-center justify-between pt-1.5 border-t border-slate-200">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</span>
-            <span className={`text-3xl font-black tabular-nums leading-none ${cart.length === 0 ? "text-slate-300" : "text-emerald-600"}`}>
+          <div className="flex items-center justify-between pt-1.5 border-t border-border">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total</span>
+            <span className={`text-3xl font-black tabular-nums leading-none ${cart.length === 0 ? "text-muted-foreground" : "text-emerald-600"}`}>
               {fmtBRL(total)}
             </span>
           </div>
@@ -389,14 +389,14 @@ function CartPanel({
             className={`h-12 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
               lancadoOk
                 ? "bg-sky-50 text-sky-600 border-sky-300"
-                : "bg-white border-slate-200 text-slate-600 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700"
+                : "bg-card border-border text-muted-foreground hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700"
             }`}>
             {lancandoPedido ? <Loader2 className="w-4 h-4 animate-spin" />
               : lancadoOk ? <><CheckCircle2 className="w-4 h-4 text-sky-500" />Enviado!</>
               : <><ChefHat className="w-4 h-4" />Cozinha [F3]</>}
           </button>
           <button onClick={onOpenPayment} disabled={cart.length === 0 || !sessao}
-            className="h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
+            className="h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
             <CreditCard className="w-4 h-4" />Pagamento [F2]
           </button>
         </div>
@@ -404,17 +404,17 @@ function CartPanel({
         {/* Caixa actions */}
         <div className="flex items-center gap-2">
           <button onClick={() => onOpenMovimentar("sangria")}
-            className="flex-1 h-8 flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200">
+            className="flex-1 h-8 flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200">
             <ArrowDownCircle className="w-3.5 h-3.5" />Sangria
           </button>
-          <span className="text-slate-200 select-none">|</span>
+          <span className="text-muted-foreground select-none">|</span>
           <button onClick={() => onOpenMovimentar("suprimento")}
-            className="flex-1 h-8 flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-200">
+            className="flex-1 h-8 flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-200">
             <ArrowUpCircle className="w-3.5 h-3.5" />Suprimento
           </button>
-          <span className="text-slate-200 select-none">|</span>
+          <span className="text-muted-foreground select-none">|</span>
           <button onClick={onFecharCaixa}
-            className="flex-1 h-8 flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200">
+            className="flex-1 h-8 flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors border border-transparent hover:border-border">
             <LockKeyhole className="w-3.5 h-3.5" />Fechar
           </button>
         </div>
@@ -422,7 +422,7 @@ function CartPanel({
         {/* Caixa info */}
         {sessao && (
           <div className="text-center">
-            <p className="text-[10px] text-slate-400">
+            <p className="text-[10px] text-muted-foreground">
               Caixa aberto {fmtDate(sessao.openedAt)} · {sessao.abertoPor || "—"}
             </p>
           </div>
@@ -612,7 +612,7 @@ function PDVPage() {
 
   // ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden bg-slate-50">
+    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden bg-secondary">
       <div className="flex flex-1 min-h-0">
 
         {/* ═══════════════════════════════════════════
@@ -621,16 +621,16 @@ function PDVPage() {
         <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
           {/* ── Topbar: modo + mesa ── */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200 bg-white shrink-0">
-            <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
+            <div className="flex items-center gap-1 bg-secondary rounded-xl p-1">
               <button onClick={() => setPdvMode("catalog")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${pdvMode === "catalog" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${pdvMode === "catalog" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 <LayoutGrid className="w-3.5 h-3.5" />Catálogo
               </button>
               <button onClick={() => setPdvMode("map")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${pdvMode === "map" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${pdvMode === "map" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 <LayoutDashboard className="w-3.5 h-3.5" />Mesas
-                <kbd className="text-[9px] font-mono bg-slate-200 px-1 rounded">F5</kbd>
+                <kbd className="text-[9px] font-mono bg-secondary px-1 rounded">F5</kbd>
               </button>
             </div>
 
@@ -644,7 +644,7 @@ function PDVPage() {
               </div>
             ) : (
               <button onClick={() => setPdvMode("map")}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-slate-500 border border-slate-200 hover:border-slate-300 hover:text-slate-700 transition-all">
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground border border-border hover:border-border hover:text-foreground transition-all">
                 <Users className="w-3.5 h-3.5" />Mesa
               </button>
             )}
@@ -653,7 +653,7 @@ function PDVPage() {
             <div className="ml-auto flex items-center gap-2">
               {sessao && (
                 <button onClick={() => setModal("sessoes")}
-                  className="hidden sm:flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors">
+                  className="hidden sm:flex items-center gap-1 text-[11px] text-muted-foreground hover:text-muted-foreground transition-colors">
                   <ReceiptText className="w-3.5 h-3.5" />
                   <span>Sessões</span>
                 </button>
@@ -678,16 +678,16 @@ function PDVPage() {
             <>
               {/* Categorias */}
               {rootCats.length > 0 && (
-                <div className="shrink-0 bg-white border-b border-slate-200">
+                <div className="shrink-0 bg-card border-b border-border">
                   <div className="overflow-x-auto no-scrollbar">
                     <div className="flex items-center gap-1.5 px-3 py-2">
                       <button onClick={() => { setActiveCategoryId(null); setActiveSubCategoryId(null); }}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border shrink-0 transition-all ${
                           !activeCategoryId
                             ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
-                            : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                            : "bg-card text-muted-foreground border-border hover:border-border"
                         }`}>
-                        <LayoutGrid className={`w-3 h-3 ${!activeCategoryId ? "text-white" : "text-slate-400"}`} />
+                        <LayoutGrid className={`w-3 h-3 ${!activeCategoryId ? "text-white" : "text-muted-foreground"}`} />
                         Todos
                       </button>
                       {rootCats.map(cat => {
@@ -698,9 +698,9 @@ function PDVPage() {
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border shrink-0 transition-all ${
                               isActive
                                 ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
-                                : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                                : "bg-card text-muted-foreground border-border hover:border-border"
                             }`}>
-                            <Tag className={`w-3 h-3 ${isActive ? "text-white" : "text-slate-400"}`} />
+                            <Tag className={`w-3 h-3 ${isActive ? "text-white" : "text-muted-foreground"}`} />
                             {cat.name}
                           </button>
                         );
@@ -708,7 +708,7 @@ function PDVPage() {
                     </div>
                   </div>
                   {subCats.length > 0 && (
-                    <div className="overflow-x-auto no-scrollbar border-t border-slate-100">
+                    <div className="overflow-x-auto no-scrollbar border-t border-border">
                       <div className="flex items-center gap-1.5 px-3 py-1.5">
                         {subCats.map(sub => {
                           const isActive = activeSubCategoryId === sub.id;
@@ -717,10 +717,10 @@ function PDVPage() {
                               onClick={() => setActiveSubCategoryId(isActive ? null : sub.id)}
                               className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap border shrink-0 transition-all ${
                                 isActive
-                                  ? "bg-slate-700 text-white border-slate-700"
-                                  : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                                  ? "bg-foreground text-background border-foreground"
+                                  : "bg-card text-muted-foreground border-border hover:border-foreground/30"
                               }`}>
-                              <ChevronRight className={`w-2.5 h-2.5 ${isActive ? "text-white" : "text-slate-400"}`} />
+                              <ChevronRight className={`w-2.5 h-2.5 ${isActive ? "text-background" : "text-muted-foreground"}`} />
                               {sub.name}
                             </button>
                           );
@@ -732,20 +732,20 @@ function PDVPage() {
               )}
 
               {/* Busca */}
-              <div className="px-3 pt-2.5 pb-2 shrink-0 bg-slate-50">
+              <div className="px-3 pt-2.5 pb-2 shrink-0 bg-secondary">
                 <div className="relative">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
                     placeholder="Buscar produto, código de barras ou SKU..." autoFocus
-                    className="w-full h-11 bg-white border border-slate-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 text-sm rounded-xl pl-10 pr-16 outline-none transition-all text-slate-700 placeholder:text-slate-400 shadow-sm" />
-                  <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-mono">F1</kbd>
+                    className="w-full h-11 bg-card border border-border focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 text-sm rounded-xl pl-10 pr-16 outline-none transition-all text-foreground placeholder:text-muted-foreground shadow-sm" />
+                  <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground bg-secondary border border-border px-1.5 py-0.5 rounded font-mono">F1</kbd>
                 </div>
               </div>
 
               {/* Grid de produtos */}
               <div className="flex-1 overflow-y-auto px-3 pb-3">
                 {filtered.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-400">
+                  <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground">
                     <Package className="w-10 h-10 opacity-30" />
                     <p className="text-sm">{q ? "Nenhum produto encontrado" : "Nenhum produto disponível"}</p>
                   </div>
@@ -756,13 +756,13 @@ function PDVPage() {
                       const promoP      = getEffectivePrice(product.price, product.promoConfig, "pdv");
                       return (
                         <button key={product.id} onClick={() => addToCart(product)} disabled={isSuspended}
-                          className={`group relative flex flex-col rounded-xl overflow-hidden text-left transition-all duration-150 border bg-white ${
+                          className={`group relative flex flex-col rounded-xl overflow-hidden text-left transition-all duration-150 border bg-card ${
                             isSuspended
                               ? "border-amber-200 opacity-50 cursor-not-allowed"
-                              : "border-slate-200 hover:border-emerald-400 hover:shadow-md hover:shadow-emerald-50 cursor-pointer active:scale-[0.97]"
+                              : "border-border hover:border-emerald-400 hover:shadow-md hover:shadow-emerald-50 cursor-pointer active:scale-[0.97]"
                           }`}>
                           {/* Imagem */}
-                          <div className="relative w-full aspect-square bg-slate-50 overflow-hidden">
+                          <div className="relative w-full aspect-square bg-secondary overflow-hidden">
                             {product.imageUrl
                               ? <img src={product.imageUrl} alt={product.name}
                                   className={`w-full h-full object-contain p-1.5 transition-transform duration-200 ${!isSuspended ? "group-hover:scale-105" : ""}`} />
@@ -770,7 +770,7 @@ function PDVPage() {
                                 <div className="w-full h-full flex items-center justify-center">
                                   {product.emoji
                                     ? <span className={`text-3xl leading-none transition-transform duration-200 ${!isSuspended ? "group-hover:scale-110" : ""}`}>{product.emoji}</span>
-                                    : <Package className="w-7 h-7 text-slate-300" />}
+                                    : <Package className="w-7 h-7 text-muted-foreground" />}
                                 </div>
                               )
                             }
@@ -788,29 +788,29 @@ function PDVPage() {
 
                           {/* Info */}
                           <div className="flex flex-col gap-1 p-2.5 flex-1">
-                            <p className="text-[12px] font-semibold text-slate-700 leading-tight line-clamp-2 min-h-[2rem]">
+                            <p className="text-[12px] font-semibold text-foreground leading-tight line-clamp-2 min-h-[2rem]">
                               {product.name}
                             </p>
                             {product.stock !== null && (
-                              <p className="text-[10px] text-slate-400">Estq: {product.stock}</p>
+                              <p className="text-[10px] text-muted-foreground">Estq: {product.stock}</p>
                             )}
                             <div className="flex items-end justify-between mt-auto pt-1">
                               <div>
                                 {promoP.promoActive ? (
                                   <>
                                     <p className="text-[11px] font-bold text-emerald-600 tabular-nums leading-tight">{fmtBRL(promoP.effectivePrice)}</p>
-                                    <p className="text-[10px] text-slate-400 line-through tabular-nums leading-tight">{fmtBRL(promoP.originalPrice!)}</p>
+                                    <p className="text-[10px] text-muted-foreground line-through tabular-nums leading-tight">{fmtBRL(promoP.originalPrice!)}</p>
                                   </>
                                 ) : (
-                                  <p className={`text-[13px] font-bold tabular-nums ${isSuspended ? "text-slate-400" : "text-emerald-600"}`}>
+                                  <p className={`text-[13px] font-bold tabular-nums ${isSuspended ? "text-muted-foreground" : "text-emerald-600"}`}>
                                     {fmtBRL(parseFloat(product.price))}
                                   </p>
                                 )}
                               </div>
                               <span className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
                                 isSuspended
-                                  ? "border border-slate-200 text-slate-300"
-                                  : "border border-slate-200 text-slate-400 group-hover:bg-emerald-500 group-hover:border-emerald-500 group-hover:text-white"
+                                  ? "border border-border text-muted-foreground"
+                                  : "border border-border text-muted-foreground group-hover:bg-emerald-500 group-hover:border-emerald-500 group-hover:text-white"
                               }`}>
                                 <Plus className="w-3 h-3" />
                               </span>
@@ -826,7 +826,7 @@ function PDVPage() {
           )}
 
           {/* ── Barra de atalhos ── */}
-          <div className="shrink-0 hidden sm:flex items-center gap-3 px-4 py-2 border-t border-slate-200 bg-white flex-wrap">
+          <div className="shrink-0 hidden sm:flex items-center gap-3 px-4 py-2 border-t border-border bg-card flex-wrap">
             {[
               { key: "F1", label: "Buscar" },
               { key: "F2", label: "Pagamento" },
@@ -835,8 +835,8 @@ function PDVPage() {
               { key: "F5", label: "Mesas" },
               { key: "ESC", label: "Fechar" },
             ].map(s => (
-              <span key={s.key} className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                <kbd className="bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 font-mono text-[10px] text-slate-500">{s.key}</kbd>
+              <span key={s.key} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <kbd className="bg-secondary border border-border rounded px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{s.key}</kbd>
                 {s.label}
               </span>
             ))}
@@ -846,7 +846,7 @@ function PDVPage() {
         {/* ═══════════════════════════════════════════
             COLUNA DIREITA — Abertura de Caixa ou Carrinho
         ════════════════════════════════════════════ */}
-        <div className="hidden lg:flex w-[360px] shrink-0 border-l border-slate-200 flex-col h-full">
+        <div className="hidden lg:flex w-[360px] shrink-0 border-l border-border flex-col h-full">
           {sessao
             ? <CartPanel {...cartProps} />
             : <PainelAbrirCaixa onAberto={handleCaixaAberto} />}
@@ -857,7 +857,7 @@ function PDVPage() {
       {showCart && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setShowCart(false)} />
-          <div className="relative ml-auto w-full max-w-sm h-full bg-white shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="relative ml-auto w-full max-w-sm h-full bg-card shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
             {sessao
               ? <CartPanel {...cartProps} onClose={() => setShowCart(false)} />
               : <PainelAbrirCaixa onAberto={handleCaixaAberto} />}

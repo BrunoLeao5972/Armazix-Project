@@ -98,16 +98,16 @@ function ReportCard({
 
   if (isLocked) {
     return (
-      <div className="group relative p-4 rounded-xl border border-slate-100 bg-slate-50/50 opacity-60">
+      <div className="group relative p-4 rounded-xl border border-border bg-secondary/50 opacity-60">
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-            <Lock className="w-4 h-4 text-slate-400" />
+          <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+            <Lock className="w-4 h-4 text-muted-foreground" />
           </div>
           <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-sm text-slate-600 truncate">
+            <h4 className="font-semibold text-sm text-muted-foreground truncate">
               {report.nome}
             </h4>
-            <p className="text-xs text-slate-400 mt-1">Acesso restrito</p>
+            <p className="text-xs text-muted-foreground mt-1">Acesso restrito</p>
           </div>
         </div>
       </div>
@@ -115,33 +115,33 @@ function ReportCard({
   }
 
   return (
-    <div className="group relative p-4 rounded-xl border border-slate-100 bg-white hover:border-blue-200 hover:shadow-sm transition-all duration-200">
+    <div className="group relative p-4 rounded-xl border border-border bg-card hover:border-blue-200 hover:shadow-sm transition-all duration-200">
       <div className="flex items-start gap-3">
         <div
           className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
             categoria?.cor.replace("text-", "bg-").replace("600", "100") ||
-            "bg-slate-100"
+            "bg-secondary"
           }`}
         >
           <Icon
             className={`w-4 h-4 ${
-              categoria?.cor || "text-slate-600"
+              categoria?.cor || "text-muted-foreground"
             }`}
           />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h4 className="font-semibold text-sm text-slate-700 truncate">
+            <h4 className="font-semibold text-sm text-foreground truncate">
               {report.nome}
             </h4>
           </div>
-          <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
             {report.descricao}
           </p>
           <div className="flex items-center gap-1.5 mt-2">
             <Badge
               variant="secondary"
-              className="text-[10px] px-1.5 py-0 rounded-md bg-slate-100 text-slate-600"
+              className="text-[10px] px-1.5 py-0 rounded-md bg-secondary text-muted-foreground"
             >
               {categoria?.label}
             </Badge>
@@ -156,7 +156,7 @@ function ReportCard({
             className={`p-1.5 rounded-lg transition-all duration-200 ${
               isFavorito
                 ? "text-amber-400"
-                : "text-slate-200 hover:text-amber-400 opacity-0 group-hover:opacity-100"
+                : "text-muted-foreground hover:text-amber-400 opacity-0 group-hover:opacity-100"
             }`}
           >
             <Star
@@ -167,10 +167,10 @@ function ReportCard({
       </div>
 
       {/* Ações flutuantes no hover */}
-      <div className="flex items-center gap-1 mt-3 pt-3 border-t border-slate-100 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-1 mt-3 pt-3 border-t border-border opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={onVisualizar}
-          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-50"
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-secondary"
         >
           <Eye className="w-3.5 h-3.5" /> Ver
         </button>
@@ -264,12 +264,13 @@ function ReportsDashboardPage() {
   // Agrupar por módulo
   const relatoriosPorModulo = useMemo(() => {
     const grupos: Record<ModuloReport, ReportItem[]> = {
-      gerencial: [],
-      financeiro: [],
+      estoque: [],
       clientes: [],
-      suprimentos: [],
-      comercial: [],
-      operacoes: [],
+      produtos: [],
+      vendas: [],
+      financeiro: [],
+      fiscal: [],
+      auditoria: [],
     };
     relatoriosFiltrados.forEach((r) => grupos[r.modulo].push(r));
     return grupos;
@@ -321,15 +322,15 @@ function ReportsDashboardPage() {
   // ============================================
 
   return (
-    <div className="min-h-screen bg-slate-50/50">
+    <div className="min-h-screen bg-secondary/50">
       {/* Header */}
-      <div className="bg-white border-b border-slate-100 px-6 py-4">
+      <div className="bg-card border-b border-border px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">
+            <h1 className="text-xl font-semibold text-foreground">
               Central de Relatórios
             </h1>
-            <p className="text-sm text-slate-500 mt-0.5">
+            <p className="text-sm text-muted-foreground mt-0.5">
               Análises e inteligência de negócios do Armazix
             </p>
           </div>
@@ -337,7 +338,7 @@ function ReportsDashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              className="text-slate-600 border-slate-200"
+              className="text-muted-foreground border-border"
             >
               <Download className="w-4 h-4 mr-1.5" />
               Exportar Lista
@@ -348,16 +349,16 @@ function ReportsDashboardPage() {
 
       <div className="p-6 max-w-7xl mx-auto space-y-6">
         {/* Barra de Busca e Filtros */}
-        <Card className="bg-white border-slate-100 shadow-sm">
+        <Card className="bg-card border-border shadow-sm">
           <CardContent className="p-4">
             <div className="flex flex-col md:flex-row gap-3">
               <div className="flex-1 relative">
-                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" />
                 <Input
                   placeholder="Buscar relatórios por nome, descrição ou tags..."
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
-                  className="pl-9 h-10 bg-slate-50 border-slate-200 focus:bg-white"
+                  className="pl-9 h-10 bg-secondary border-border focus:bg-card"
                 />
               </div>
               <div className="flex gap-2">
@@ -366,7 +367,7 @@ function ReportsDashboardPage() {
                   onChange={(e) =>
                     setFiltroModulo(e.target.value as ModuloReport | "todos")
                   }
-                  className="h-10 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 focus:ring-2 focus:ring-blue-100"
+                  className="h-10 px-3 rounded-lg border border-border bg-card text-sm text-foreground focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="todos">Todos os Módulos</option>
                   {REPORT_CATEGORIES.map((cat) => (
@@ -378,7 +379,7 @@ function ReportsDashboardPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-10 px-3 border-slate-200 text-slate-600"
+                  className="h-10 px-3 border-border text-muted-foreground"
                 >
                   <Filter className="w-4 h-4 mr-1.5" />
                   Filtros
@@ -393,7 +394,7 @@ function ReportsDashboardPage() {
           <section id="secao-favoritos" className="space-y-3">
             <div className="flex items-center gap-2">
               <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
-              <h2 className="text-base font-semibold text-slate-800">
+              <h2 className="text-base font-semibold text-foreground">
                 Meus Relatórios Favoritos
               </h2>
               <Badge className="bg-amber-100 text-amber-700 text-xs">
@@ -422,14 +423,14 @@ function ReportsDashboardPage() {
 
             return (
               <section key={categoria.id} className="space-y-3">
-                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                <div className="flex items-center gap-2 border-b border-border pb-2">
                   <categoria.icone className={`w-5 h-5 ${categoria.cor}`} />
-                  <h2 className="text-base font-semibold text-slate-800">
+                  <h2 className="text-base font-semibold text-foreground">
                     {categoria.emoji} {categoria.label}
                   </h2>
                   <Badge
                     variant="secondary"
-                    className="bg-slate-100 text-slate-600 text-xs"
+                    className="bg-secondary text-muted-foreground text-xs"
                   >
                     {relatorios.length}
                   </Badge>
@@ -452,9 +453,9 @@ function ReportsDashboardPage() {
 
         {/* Estado vazio */}
         {relatoriosFiltrados.length === 0 && (
-          <div className="text-center py-12 bg-white rounded-xl border border-slate-100">
-            <Search className="w-12 h-12 mx-auto text-slate-300 mb-4" />
-            <p className="text-slate-500">
+          <div className="text-center py-12 bg-card rounded-xl border border-border">
+            <Search className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">
               Nenhum relatório encontrado para os filtros selecionados.
             </p>
             <Button

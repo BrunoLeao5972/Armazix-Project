@@ -41,6 +41,22 @@
 
 :root {
   --radius: 1rem;
+}
+
+/*
+ * Paleta clara — fonte única, compartilhada por :root (estado padrão da
+ * página) e .theme-light-locked (loja pública, landing e telas de auth, que
+ * NUNCA devem herdar o modo escuro do painel administrativo).
+ *
+ * .theme-light-locked re-declara estas mesmas variáveis para reafirmar os
+ * valores claros mesmo quando um ancestral tem a classe .dark — a cascata de
+ * custom properties do CSS resolve pelo ancestral mais próximo que declara a
+ * propriedade, então isso neutraliza a herança de .dark vinda de <html> sem
+ * precisar de !important. Não usar classes dark: literais fora do admin, pois
+ * essas continuariam ativando enquanto <html> carregar .dark.
+ */
+:root,
+.theme-light-locked {
   --background: oklch(0.98 0.005 270);
   --foreground: oklch(0.18 0.02 260);
   --surface: oklch(1 0 0);
@@ -62,6 +78,31 @@
   --border: oklch(0.92 0.008 260);
   --input: oklch(0.92 0.008 260);
   --ring: oklch(0.72 0.21 145);
+}
+
+/*
+ * `body { color: var(--color-foreground); }` (mais abaixo) só reafirma a
+ * VARIÁVEL — mas `color` é propriedade herdada em CSS, e qualquer texto sem
+ * classe própria (ex: um <h1> sem text-foreground) herda o `color` já
+ * COMPUTADO no <body>, não a variável em si. Se <html> estiver com .dark, o
+ * <body> computa color branco, e esse branco desce por herança até dentro de
+ * .theme-light-locked (a variável reafirmada lá não desfaz um `color` que já
+ * foi resolvido lá em cima). Por isso precisa re-assertar o `color` de novo
+ * aqui, não só a variável — é o que efetivamente rompe a corrente de herança.
+ *
+ * Importante: usa var(--foreground) (a variável crua), NÃO
+ * var(--color-foreground) — o alias --color-foreground vem do @theme inline
+ * lá em cima e só é declarado uma vez, em :root; seu var(--foreground)
+ * interno resolve usando a cascata DE :root (onde .dark, escrito depois,
+ * vence por especificidade igual) e o resultado já sai fixo — reatribuir
+ * --foreground aqui embaixo não muda mais nada. --foreground puro, por outro
+ * lado, é redeclarado em cada ponto da árvore (:root, .dark, .theme-light-
+ * locked) e resolve dinamicamente a cada uso — é isso que as utilities do
+ * Tailwind (.text-foreground etc.) usam de verdade, por isso elas funcionam
+ * e esta regra, do jeito que estava, não funcionava.
+ */
+.theme-light-locked {
+  color: var(--foreground);
 }
 
 .dark {
@@ -98,8 +139,12 @@
   }
 
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    /* Variáveis cruas (--background/--foreground), não os aliases
+       --color-X do @theme inline — ver comentário perto de
+       .theme-light-locked, acima, sobre por que só a variável crua
+       resolve corretamente em cada ponto da árvore. */
+    background-color: var(--background);
+    color: var(--foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;

@@ -5,11 +5,13 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { ThemeProvider, NO_FLASH_THEME_SCRIPT } from "@/lib/theme";
 
 function NotFoundComponent() {
   return (
@@ -102,6 +104,17 @@ function RootShell({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
+        {/* Script síncrono (sem async/defer) dentro de <head>: o parser HTML
+            executa isto durante o parse do próprio <head>, e o navegador só
+            pinta a página depois que o <head> termina de ser parseado E o
+            CSS termina de carregar — então a classe .dark já está aplicada
+            antes do primeiro paint, não importa a posição exata em que este
+            script acabe aparecendo no HTML final (o React 19 promove
+            <link rel="stylesheet"> para o topo do <head>, à frente de tags
+            comuns como esta, mas isso não afeta a garantia acima). O SSR não
+            tem acesso a localStorage/matchMedia, então isso só pode ser
+            resolvido no client — ver src/lib/theme.tsx. */}
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME_SCRIPT }} />
         <HeadContent />
       </head>
       <body>
@@ -114,10 +127,23 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  // Modo escuro é exclusivo do painel administrativo — a loja pública, a
+  // landing page e as telas de autenticação (login, cadastro, convite...)
+  // sempre ficam no claro, mesmo que .dark esteja ativo em <html> por causa
+  // do admin ter sido usado na mesma aba. "contents" tira este wrapper do
+  // fluxo de layout (não afeta flex/grid dos filhos); .theme-light-locked só
+  // reafirma as variáveis de cor claras (ver styles.css) — não interfere no
+  // <html class="dark"> em si, que o admin continua controlando normalmente.
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isAdminRoute = pathname.startsWith("/admin");
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <ThemeProvider>
+        <div className={isAdminRoute ? "contents" : "contents theme-light-locked"}>
+          <Outlet />
+        </div>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
