@@ -83,7 +83,15 @@ export const AuditActions = {
   // Auth
   LOGIN: "LOGIN",
   LOGOUT: "LOGOUT",
-  /** SuperAdmin do Gerenciador Armazix acessou o painel como o lojista, via /api/auth/impersonate-consume */
+  /**
+   * SuperAdmin do Gerenciador Armazix acessou o painel como o lojista, via
+   * /api/auth/impersonate-consume — registrado só pra rastreabilidade interna
+   * da plataforma (ex: investigar uma reclamação). NUNCA deve aparecer pro
+   * lojista: ele não pode achar que alguém descobriu a senha dele. Qualquer
+   * endpoint/tela que liste audit_logs pro próprio lojista (ex: a aba
+   * Auditoria em /admin/configuracoes) tem que excluir esta action — ver
+   * MERCHANT_HIDDEN_ACTIONS logo abaixo.
+   */
   IMPERSONATE: "IMPERSONATE",
   REGISTER: "REGISTER",
   PASSWORD_CHANGE: "PASSWORD_CHANGE",
@@ -199,6 +207,16 @@ export const AuditActions = {
   // ── Configurações ──────────────────────────────────────────────
   CONFIG_ATUALIZAR:  "CONFIG_ATUALIZAR",
 } as const;
+
+/**
+ * Actions que existem em audit_logs mas NUNCA podem ser expostas numa tela
+ * que o próprio lojista vê (ex: a aba Auditoria em /admin/configuracoes).
+ * Continuam gravadas normalmente — servem só de rastro interno da
+ * plataforma — mas qualquer query/endpoint que liste audit_logs pro lojista
+ * tem que filtrar por `sql\`action NOT IN ${MERCHANT_HIDDEN_ACTIONS}\`` (ou
+ * equivalente) antes de devolver os dados.
+ */
+export const MERCHANT_HIDDEN_ACTIONS: readonly string[] = [AuditActions.IMPERSONATE];
 
 // Resource types for consistency
 export const ResourceTypes = {
