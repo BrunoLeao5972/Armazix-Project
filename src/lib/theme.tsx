@@ -24,8 +24,15 @@ const STORAGE_KEY = "armazix-theme";
  * Script estático (sem interpolação de dado nenhum) injetado como primeiro
  * filho de <head>. Roda antes de qualquer paint: lê a preferência salva, ou
  * cai para prefers-color-scheme do SO se o usuário nunca escolheu antes.
+ *
+ * Modo escuro é exclusivo do painel administrativo — fora de /admin, .dark
+ * nunca é aplicado em <html>, nem para reafirmar depois via CSS mais abaixo
+ * na árvore. Decidir isso aqui (a primeira coisa que roda na página, antes
+ * até do React montar) garante que uma tela de auth/loja nunca renderiza
+ * um único frame escuro, em vez de depender de um override baixo na árvore
+ * corrigir a cor depois que ela já apareceu.
  */
-export const NO_FLASH_THEME_SCRIPT = `(function(){try{var k='${STORAGE_KEY}';var s=localStorage.getItem(k);var dark=s==='dark'||(s!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',dark);}catch(e){}})();`;
+export const NO_FLASH_THEME_SCRIPT = `(function(){try{if(location.pathname.indexOf('/admin')!==0){document.documentElement.classList.remove('dark');return;}var k='${STORAGE_KEY}';var s=localStorage.getItem(k);var dark=s==='dark'||(s!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',dark);}catch(e){}})();`;
 
 function getSystemTheme(): Theme {
   if (typeof window === "undefined") return "light";
@@ -50,15 +57,19 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children, active = true }: { children: ReactNode; active?: boolean }) {
   // O valor inicial não decide nada visualmente — a classe .dark já foi
   // aplicada pelo NO_FLASH_THEME_SCRIPT antes deste componente sequer montar.
   // Isso só sincroniza o estado do React com o que já está no DOM.
   const [theme, setThemeState] = useState<Theme>(() => readStoredTheme() ?? getSystemTheme());
 
+  // Fora do admin (active=false), força claro em <html> mesmo que o estado
+  // React ainda esteja "dark" (ex.: acabou de sair do admin via navegação
+  // client-side) — mesma garantia do NO_FLASH_THEME_SCRIPT, só que para
+  // depois da primeira pintura.
   useEffect(() => {
-    applyThemeClass(theme);
-  }, [theme]);
+    applyThemeClass(active ? theme : "light");
+  }, [theme, active]);
 
   // Enquanto o usuário nunca tiver escolhido manualmente (sem valor salvo),
   // acompanha em tempo real se o SO mudar de tema com a aba aberta.

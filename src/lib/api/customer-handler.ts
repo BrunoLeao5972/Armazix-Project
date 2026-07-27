@@ -165,6 +165,7 @@ export async function getCustomerOrderDetailHandler(request: Request): Promise<R
         items: order.items.map(i => ({
           productName: i.productName,
           productEmoji: i.productEmoji,
+          productImage: i.productImage,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
           total: i.total,

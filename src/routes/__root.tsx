@@ -144,7 +144,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
+      <ThemeProvider active={isAdminRoute}>
         <div
           ref={setPortalContainer}
           className={isAdminRoute ? "contents" : "contents theme-light-locked"}

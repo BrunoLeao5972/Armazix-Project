@@ -40,6 +40,54 @@ export function useCustomerOrders(token: string | null) {
   return { orders, loading, refetch };
 }
 
+// ─── Detalhe de um pedido ───────────────────────────────────────────────────
+export interface CustomerOrderItem {
+  productName: string;
+  productEmoji: string | null;
+  productImage: string | null;
+  quantity: number;
+  unitPrice: string;
+  total: string;
+}
+
+export interface CustomerOrderDetail {
+  id: string;
+  number: number;
+  status: string;
+  type: string;
+  paymentMethod: string | null;
+  subtotal: string;
+  deliveryFee: string;
+  discount: string;
+  total: string;
+  createdAt: string;
+  items: CustomerOrderItem[];
+}
+
+export function useCustomerOrderDetail(token: string | null, orderId: string | null) {
+  const [order, setOrder] = useState<CustomerOrderDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!token || !orderId) { setOrder(null); return; }
+    let cancelled = false;
+    setLoading(true); setNotFound(false);
+    fetch(`/api/customer/order-detail?orderId=${orderId}`, { headers: authHeaders(token) })
+      .then(r => r.json())
+      .then((data: { order?: CustomerOrderDetail }) => {
+        if (cancelled) return;
+        if (data.order) { setOrder(data.order); setNotFound(false); }
+        else { setOrder(null); setNotFound(true); }
+      })
+      .catch(() => { if (!cancelled) setNotFound(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [token, orderId]);
+
+  return { order, loading, notFound };
+}
+
 // ─── Favoritos ──────────────────────────────────────────────────────────────
 export function useCustomerFavoriteProducts(token: string | null) {
   const [products, setProducts] = useState<StoreProduct[]>([]);

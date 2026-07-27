@@ -746,7 +746,15 @@ function StoreLayout() {
               </Link>
 
               {/* Perfil — desktop only */}
-              {customerToken ? (
+              {storeLoading ? (
+                // Enquanto a loja carrega, configuracaoVitrine.corPrimaria ainda
+                // está no azul padrão (#2A69E5) — mostra um skeleton neutro em
+                // vez do botão "Criar conta" com a cor errada por um instante.
+                <div className="hidden md:flex items-center gap-1.5">
+                  <div className="h-9 w-20 rounded-xl bg-slate-100 animate-pulse" />
+                  <div className="h-9 w-32 rounded-xl bg-slate-100 animate-pulse" />
+                </div>
+              ) : customerToken ? (
                 <button
                   onClick={() => setProfileOpen(true)}
                   aria-label={`Perfil de ${customerName}`}

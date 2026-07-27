@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import { Package, Loader2, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { CustomerOrder } from "@/lib/customer-profile-hooks";
@@ -15,11 +14,11 @@ const STATUS_MAP: Record<string, { label: string; cls: string }> = {
 };
 
 export function OrdersHistoryView({
-  orders, loading, onNavigate,
+  orders, loading, onSelectOrder,
 }: {
   orders: CustomerOrder[];
   loading: boolean;
-  onNavigate?: () => void;
+  onSelectOrder: (orderId: string) => void;
 }) {
   if (loading) {
     return (
@@ -41,11 +40,9 @@ export function OrdersHistoryView({
   return (
     <div className="space-y-2 px-1">
       {orders.map(order => (
-        <Link key={order.id}
-          to="/store/order/$orderId"
-          params={{ orderId: order.id }}
-          onClick={onNavigate}
-          className="flex items-center gap-3 p-3 rounded-2xl bg-surface border border-border hover:border-primary/30 hover:shadow-sm transition-all">
+        <button key={order.id}
+          onClick={() => onSelectOrder(order.id)}
+          className="w-full flex items-center gap-3 p-3 rounded-2xl bg-surface border border-border hover:border-primary/30 hover:shadow-sm transition-all text-left">
           <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center shrink-0">
             <Package className="w-5 h-5 text-muted-foreground" />
           </div>
@@ -66,7 +63,7 @@ export function OrdersHistoryView({
             </p>
             <ChevronRight className="w-4 h-4 text-muted-foreground/60 ml-auto mt-0.5" />
           </div>
-        </Link>
+        </button>
       ))}
     </div>
   );

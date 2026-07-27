@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
   User, Package, Heart, MapPin, Tag, ChevronRight,
   Clock, Loader2, Lock, Phone, CheckCircle2, Search, ArrowLeft,
@@ -11,19 +11,23 @@ import { FavoritesView } from "@/components/storefront/profile/FavoritesView";
 import { CouponsView } from "@/components/storefront/profile/CouponsView";
 import { AddressesView } from "@/components/storefront/profile/AddressesView";
 import { OrdersHistoryView } from "@/components/storefront/profile/OrdersHistoryView";
+import { OrderDetailView } from "@/components/storefront/profile/OrderDetailView";
+import { PersonalDataView } from "@/components/storefront/profile/PersonalDataView";
 import { useCustomerOrders } from "@/lib/customer-profile-hooks";
 
 export const Route = createFileRoute("/store/account")({
   component: AccountPage,
 });
 
-type ProfileView = "main" | "orders" | "favorites" | "coupons" | "addresses";
+type ProfileView = "main" | "orders" | "orderDetail" | "favorites" | "coupons" | "addresses" | "personal";
 
 const VIEW_TITLES: Record<Exclude<ProfileView, "main">, string> = {
   orders: "Meus pedidos",
+  orderDetail: "Detalhes do pedido",
   favorites: "Favoritos",
   coupons: "Cupons",
   addresses: "Endereços",
+  personal: "Dados pessoais",
 };
 
 interface AddressFields {
@@ -90,7 +94,13 @@ function AccountPage() {
 
   // ── Sub-view (Histórico completo, Favoritos, Cupons, Endereços) ────────────
   const [view, setView] = useState<ProfileView>("main");
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const { orders, loading: ordersLoading } = useCustomerOrders(customerToken);
+
+  const openOrderDetail = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    setView("orderDetail");
+  };
 
   // Detecta cliente sem nome preenchido (nome = número de telefone)
   const isNameUnset = !customerName || /^\d+$/.test(customerName.trim());
@@ -428,7 +438,8 @@ function AccountPage() {
           </button>
           <h2 className="text-lg font-bold">{VIEW_TITLES[view]}</h2>
         </div>
-        {view === "orders" && <OrdersHistoryView orders={orders} loading={ordersLoading} />}
+        {view === "orders" && <OrdersHistoryView orders={orders} loading={ordersLoading} onSelectOrder={openOrderDetail} />}
+        {view === "orderDetail" && <OrderDetailView token={customerToken} orderId={selectedOrderId} />}
         {view === "favorites" && (
           <FavoritesView
             token={customerToken}
@@ -439,6 +450,9 @@ function AccountPage() {
         )}
         {view === "coupons" && <CouponsView token={customerToken} />}
         {view === "addresses" && <AddressesView token={customerToken} />}
+        {view === "personal" && (
+          <PersonalDataView token={customerToken} customerName={customerName} onNameUpdated={(n) => loginCustomer(customerToken!, n)} />
+        )}
       </div>
     );
   }
@@ -468,11 +482,10 @@ function AccountPage() {
         ) : (
           <div className="space-y-2">
             {recentOrders.map(order => (
-              <Link
+              <button
                 key={order.id}
-                to="/store/order/$orderId"
-                params={{ orderId: order.id }}
-                className="flex items-center gap-3 p-3 rounded-2xl bg-surface border border-border/40 hover:shadow-soft transition-shadow"
+                onClick={() => openOrderDetail(order.id)}
+                className="w-full flex items-center gap-3 p-3 rounded-2xl bg-surface border border-border/40 hover:shadow-soft transition-shadow text-left"
               >
                 <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
                   <Package className="w-5 h-5 text-muted-foreground" />
@@ -494,7 +507,7 @@ function AccountPage() {
                   </p>
                   <ChevronRight className="w-4 h-4 text-muted-foreground ml-auto" />
                 </div>
-              </Link>
+              </button>
             ))}
           </div>
         )}
@@ -507,7 +520,7 @@ function AccountPage() {
           { icon: MapPin, label: "Endereços",       desc: "Gerenciar endereços",                 target: "addresses" },
           { icon: Tag,    label: "Cupons",          desc: "Cupons disponíveis",                  target: "coupons" },
           { icon: Clock,  label: "Histórico",       desc: "Todos os pedidos",                    target: "orders" },
-          { icon: User,   label: "Dados pessoais",  desc: "Nome, e-mail, telefone",               target: "main" },
+          { icon: User,   label: "Dados pessoais",  desc: "Nome, e-mail, telefone",               target: "personal" },
         ] as { icon: typeof Heart; label: string; desc: string; target: ProfileView }[]).map(item => (
           <button
             key={item.label}

@@ -5,12 +5,13 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "@tanstack/react-router";
 import { PhoneAuthModal } from "./PhoneAuthModal";
 import { FavoritesView } from "./profile/FavoritesView";
 import { CouponsView } from "./profile/CouponsView";
 import { AddressesView } from "./profile/AddressesView";
 import { OrdersHistoryView } from "./profile/OrdersHistoryView";
+import { OrderDetailView } from "./profile/OrderDetailView";
+import { PersonalDataView } from "./profile/PersonalDataView";
 import { useCustomerOrders } from "@/lib/customer-profile-hooks";
 import type { CartItem, ConfiguracaoVitrine } from "@/lib/store-context";
 
@@ -64,13 +65,15 @@ export interface ProfileDrawerProps {
   configuracaoVitrine: ConfiguracaoVitrine;
 }
 
-type ProfileView = "main" | "orders" | "favorites" | "coupons" | "addresses";
+type ProfileView = "main" | "orders" | "orderDetail" | "favorites" | "coupons" | "addresses" | "personal";
 
 const VIEW_TITLES: Record<Exclude<ProfileView, "main">, string> = {
   orders: "Meus pedidos",
+  orderDetail: "Detalhes do pedido",
   favorites: "Favoritos",
   coupons: "Cupons",
   addresses: "Endereços",
+  personal: "Dados pessoais",
 };
 
 export function ProfileDrawer({
@@ -87,7 +90,13 @@ export function ProfileDrawer({
   const [onboardingLoading, setOnboardingLoading] = useState(false);
   const [onboardingError, setOnboardingError] = useState("");
   const [view, setView]                       = useState<ProfileView>("main");
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const { orders, loading: ordersLoading } = useCustomerOrders(token);
+
+  const openOrderDetail = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    setView("orderDetail");
+  };
 
   const isNameUnset = !customerName || /^\d+$/.test(customerName.trim());
 
@@ -359,7 +368,10 @@ export function ProfileDrawer({
             {token && !showOnboarding && view !== "main" && (
               <div className="px-6 py-5 animate-in fade-in duration-300">
                 {view === "orders" && (
-                  <OrdersHistoryView orders={orders} loading={ordersLoading} onNavigate={() => onOpenChange(false)} />
+                  <OrdersHistoryView orders={orders} loading={ordersLoading} onSelectOrder={openOrderDetail} />
+                )}
+                {view === "orderDetail" && (
+                  <OrderDetailView token={token} orderId={selectedOrderId} />
                 )}
                 {view === "favorites" && (
                   <FavoritesView
@@ -371,6 +383,9 @@ export function ProfileDrawer({
                 )}
                 {view === "coupons" && <CouponsView token={token} />}
                 {view === "addresses" && <AddressesView token={token} />}
+                {view === "personal" && (
+                  <PersonalDataView token={token} customerName={customerName} onNameUpdated={(n) => onLogin(token, n)} />
+                )}
               </div>
             )}
 
@@ -404,11 +419,9 @@ export function ProfileDrawer({
                   ) : (
                     <div className="space-y-2">
                       {orders.slice(0, 5).map(order => (
-                        <Link key={order.id}
-                          to="/store/order/$orderId"
-                          params={{ orderId: order.id }}
-                          onClick={() => onOpenChange(false)}
-                          className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all">
+                        <button key={order.id}
+                          onClick={() => openOrderDetail(order.id)}
+                          className="w-full flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all text-left">
                           <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0">
                             <Package className="w-5 h-5 text-slate-400" />
                           </div>
@@ -429,7 +442,7 @@ export function ProfileDrawer({
                             </p>
                             <ChevronRight className="w-4 h-4 text-slate-300 ml-auto mt-0.5" />
                           </div>
-                        </Link>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -444,7 +457,7 @@ export function ProfileDrawer({
                       { icon: MapPin, label: "Endereços",      desc: "Gerenciar endereços",                 target: "addresses" },
                       { icon: Tag,    label: "Cupons",         desc: "Cupons disponíveis",                  target: "coupons" },
                       { icon: Clock,  label: "Histórico",      desc: "Todos os pedidos",                    target: "orders" },
-                      { icon: User,   label: "Dados pessoais", desc: "Nome, telefone e mais",                target: "main" },
+                      { icon: User,   label: "Dados pessoais", desc: "Nome, telefone e mais",                target: "personal" },
                     ] as { icon: typeof Heart; label: string; desc: string; target: ProfileView }[]).map(item => (
                       <button key={item.label}
                         onClick={() => setView(item.target)}
