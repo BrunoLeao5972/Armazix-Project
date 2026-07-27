@@ -53,7 +53,14 @@ import {
   getNextPdvCodeHandler,
   backfillPdvCodesHandler,
 } from "./api/crud-handler";
-import { getCustomerOrdersHandler, getCustomerOrderDetailHandler, getCustomerProfileHandler, requestOtpHandler, verifyOtpHandler, patchCustomerProfileHandler } from "./api/customer-handler";
+import {
+  getCustomerOrdersHandler, getCustomerOrderDetailHandler, getCustomerProfileHandler,
+  requestOtpHandler, verifyOtpHandler, patchCustomerProfileHandler,
+  getCustomerFavoritesHandler, toggleCustomerFavoriteHandler,
+  getCustomerAddressesHandler, createCustomerAddressHandler,
+  deleteCustomerAddressHandler, setDefaultCustomerAddressHandler,
+  getCustomerCouponsHandler,
+} from "./api/customer-handler";
 import { saveBannersHandler } from "./api/banners-handler";
 import {
   listStoreUsersHandler,
@@ -164,6 +171,10 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/customer/auth/request-code": requestOtpHandler,       // Solicita OTP via WhatsApp
   "/api/customer/auth/verify-code": verifyOtpHandler,         // Valida OTP e retorna JWT
   "/api/customer/profile": patchCustomerProfileHandler,       // Salva nome e endereço (auth via Bearer)
+  "/api/customer/favorites/toggle": toggleCustomerFavoriteHandler, // Favorita/desfavorita produto (auth via Bearer)
+  "/api/customer/addresses/create": createCustomerAddressHandler, // Cria endereço, limite 5 (auth via Bearer)
+  "/api/customer/addresses/delete": deleteCustomerAddressHandler, // Remove endereço (auth via Bearer)
+  "/api/customer/addresses/set-default": setDefaultCustomerAddressHandler, // Define endereço padrão (auth via Bearer)
   "/api/payments/mp-webhook": mpWebhookHandler, // Webhook do MercadoPago
   "/api/subscriptions/mp-webhook": subscriptionWebhookHandler, // Webhook de assinaturas
   "/api/subscriptions/pix-webhook": pixWebhookHandler, // Webhook PIX avulso
@@ -183,6 +194,9 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/customer/orders": getCustomerOrdersHandler,     // Central do cliente (auth própria via Bearer)
   "/api/customer/order-detail": getCustomerOrderDetailHandler, // Tela de acompanhamento de um pedido (auth própria via Bearer)
   "/api/customer/profile": getCustomerProfileHandler, // Perfil do cliente logado, pra pré-preencher o checkout (auth própria via Bearer)
+  "/api/customer/favorites": getCustomerFavoritesHandler, // Produtos favoritados do cliente (auth própria via Bearer)
+  "/api/customer/addresses": getCustomerAddressesHandler, // Lista de endereços do cliente (auth própria via Bearer)
+  "/api/customer/coupons": getCustomerCouponsHandler, // Cupons ativos da loja do cliente (auth própria via Bearer)
   "/api/store-users/invite-info": getInviteInfoHandler, // Tela pública de aceite lê os dados do convite
 };
 

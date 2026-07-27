@@ -12,6 +12,7 @@ import {
 
 import appCss from "../styles.css?url";
 import { ThemeProvider, NO_FLASH_THEME_SCRIPT } from "@/lib/theme";
+import { PortalContainerContext } from "@/lib/portal-container";
 
 function NotFoundComponent() {
   return (
@@ -136,12 +137,21 @@ function RootComponent() {
   // <html class="dark"> em si, que o admin continua controlando normalmente.
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isAdminRoute = pathname.startsWith("/admin");
+  // Vira o container do Portal do Radix (ver src/lib/portal-container.tsx) —
+  // precisa ser estado (não só ref) para que o Provider seja re-renderizado
+  // assim que o nó existir no DOM.
+  const [portalContainer, setPortalContainer] = React.useState<HTMLDivElement | null>(null);
 
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <div className={isAdminRoute ? "contents" : "contents theme-light-locked"}>
-          <Outlet />
+        <div
+          ref={setPortalContainer}
+          className={isAdminRoute ? "contents" : "contents theme-light-locked"}
+        >
+          <PortalContainerContext.Provider value={portalContainer}>
+            <Outlet />
+          </PortalContainerContext.Provider>
         </div>
       </ThemeProvider>
     </QueryClientProvider>

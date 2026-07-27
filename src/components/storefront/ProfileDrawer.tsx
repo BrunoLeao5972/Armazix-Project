@@ -1,21 +1,18 @@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   User, Package, Heart, MapPin, Tag, ChevronRight,
-  Clock, Loader2, Lock, Phone, CheckCircle2, Search, LogOut,
+  Clock, Loader2, Lock, Phone, CheckCircle2, Search, LogOut, ArrowLeft,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { PhoneAuthModal } from "./PhoneAuthModal";
-
-interface OrderData {
-  id: string;
-  number: number;
-  status: string;
-  total: string;
-  createdAt: string;
-  items: { productName: string; quantity: number }[];
-}
+import { FavoritesView } from "./profile/FavoritesView";
+import { CouponsView } from "./profile/CouponsView";
+import { AddressesView } from "./profile/AddressesView";
+import { OrdersHistoryView } from "./profile/OrdersHistoryView";
+import { useCustomerOrders } from "@/lib/customer-profile-hooks";
+import type { CartItem, ConfiguracaoVitrine } from "@/lib/store-context";
 
 interface AddressFields {
   cep: string; street: string; number: string;
@@ -62,10 +59,23 @@ export interface ProfileDrawerProps {
   onLogin: (token: string, name: string) => void;
   onLogout: () => void;
   favorites: string[];
+  toggleFavorite: (id: string) => void;
+  addToCart: (item: Omit<CartItem, "qty">) => void;
+  configuracaoVitrine: ConfiguracaoVitrine;
 }
 
+type ProfileView = "main" | "orders" | "favorites" | "coupons" | "addresses";
+
+const VIEW_TITLES: Record<Exclude<ProfileView, "main">, string> = {
+  orders: "Meus pedidos",
+  favorites: "Favoritos",
+  coupons: "Cupons",
+  addresses: "Endereços",
+};
+
 export function ProfileDrawer({
-  open, onOpenChange, storeId, token, customerName, onLogin, onLogout, favorites,
+  open, onOpenChange, storeId, token, customerName, onLogin, onLogout,
+  favorites, toggleFavorite, addToCart, configuracaoVitrine,
 }: ProfileDrawerProps) {
   const [authOpen, setAuthOpen]               = useState(false);
   const [showOnboarding, setShowOnboarding]   = useState(false);
@@ -76,8 +86,8 @@ export function ProfileDrawer({
   const [cepError, setCepError]               = useState("");
   const [onboardingLoading, setOnboardingLoading] = useState(false);
   const [onboardingError, setOnboardingError] = useState("");
-  const [orders, setOrders]                   = useState<OrderData[]>([]);
-  const [ordersLoading, setOrdersLoading]     = useState(false);
+  const [view, setView]                       = useState<ProfileView>("main");
+  const { orders, loading: ordersLoading } = useCustomerOrders(token);
 
   const isNameUnset = !customerName || /^\d+$/.test(customerName.trim());
 
@@ -87,24 +97,10 @@ export function ProfileDrawer({
     if (flag === "1" || isNameUnset) setShowOnboarding(true);
   }, [storeId, token, isNameUnset]);
 
-  const fetchOrders = useCallback(async () => {
-    if (!token) return;
-    setOrdersLoading(true);
-    try {
-      const res = await fetch("/api/customer/orders", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json() as { orders: OrderData[] };
-        setOrders(data.orders || []);
-      }
-    } catch {}
-    finally { setOrdersLoading(false); }
-  }, [token]);
-
+  // Volta pro menu principal sempre que o drawer fecha ou desloga.
   useEffect(() => {
-    if (open && token && !showOnboarding) fetchOrders();
-  }, [open, token, showOnboarding, fetchOrders]);
+    if (!open || !token) setView("main");
+  }, [open, token]);
 
   // ── CEP lookup ────────────────────────────────────────────────────────────
   const lookupCep = useCallback(async (digits: string) => {
@@ -199,13 +195,28 @@ export function ProfileDrawer({
           {/* Header */}
           <SheetHeader className="px-6 py-4 border-b border-slate-100 shrink-0">
             <SheetTitle className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                {token
-                  ? <span className="text-xs font-bold text-primary">{initials}</span>
-                  : <User className="w-4 h-4 text-primary" />
-                }
-              </div>
-              {token ? `Olá, ${firstName}!` : "Meu Perfil"}
+              {view !== "main" && token && !showOnboarding ? (
+                <>
+                  <button
+                    onClick={() => setView("main")}
+                    aria-label="Voltar"
+                    className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0 hover:bg-secondary/70 transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  {VIEW_TITLES[view]}
+                </>
+              ) : (
+                <>
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    {token
+                      ? <span className="text-xs font-bold text-primary">{initials}</span>
+                      : <User className="w-4 h-4 text-primary" />
+                    }
+                  </div>
+                  {token ? `Olá, ${firstName}!` : "Meu Perfil"}
+                </>
+              )}
             </SheetTitle>
           </SheetHeader>
 
@@ -344,8 +355,27 @@ export function ProfileDrawer({
               </div>
             )}
 
+            {/* ── Sub-views (Histórico completo, Favoritos, Cupons, Endereços) ── */}
+            {token && !showOnboarding && view !== "main" && (
+              <div className="px-6 py-5 animate-in fade-in duration-300">
+                {view === "orders" && (
+                  <OrdersHistoryView orders={orders} loading={ordersLoading} onNavigate={() => onOpenChange(false)} />
+                )}
+                {view === "favorites" && (
+                  <FavoritesView
+                    token={token}
+                    configuracaoVitrine={configuracaoVitrine}
+                    addToCart={addToCart}
+                    toggleFavorite={toggleFavorite}
+                  />
+                )}
+                {view === "coupons" && <CouponsView token={token} />}
+                {view === "addresses" && <AddressesView token={token} />}
+              </div>
+            )}
+
             {/* ── Perfil completo ───────────────────────────────────────── */}
-            {token && !showOnboarding && (
+            {token && !showOnboarding && view === "main" && (
               <div className="px-6 py-5 space-y-5 animate-in fade-in duration-300">
 
                 {/* Saudação */}
@@ -357,22 +387,6 @@ export function ProfileDrawer({
                     <p className="font-bold truncate">Olá, {firstName}!</p>
                     <p className="text-sm text-slate-500">Bem-vindo de volta</p>
                   </div>
-                </div>
-
-                {/* Atalhos rápidos */}
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { n: ordersLoading ? "…" : String(orders.length), label: "Pedidos",   icon: Package },
-                    { n: String(favorites.length),                     label: "Favoritos", icon: Heart },
-                    { n: "0",                                           label: "Cupons",    icon: Tag },
-                  ].map(({ n, label, icon: Icon }) => (
-                    <div key={label}
-                      className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-center flex flex-col items-center gap-1">
-                      <Icon className="w-4 h-4 text-primary mb-0.5" />
-                      <p className="text-lg font-bold leading-none">{n}</p>
-                      <p className="text-[10px] text-slate-500">{label}</p>
-                    </div>
-                  ))}
                 </div>
 
                 {/* Pedidos recentes */}
@@ -425,14 +439,15 @@ export function ProfileDrawer({
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Minha conta</p>
                   <div className="rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
-                    {[
-                      { icon: Heart,  label: "Favoritos",     desc: `${favorites.length} produtos salvos` },
-                      { icon: MapPin, label: "Endereços",      desc: "Gerenciar endereços" },
-                      { icon: Tag,    label: "Cupons",         desc: "Cupons disponíveis" },
-                      { icon: Clock,  label: "Histórico",      desc: "Todos os pedidos" },
-                      { icon: User,   label: "Dados pessoais", desc: "Nome, telefone e mais" },
-                    ].map(item => (
+                    {([
+                      { icon: Heart,  label: "Favoritos",     desc: `${favorites.length} produtos salvos`, target: "favorites" },
+                      { icon: MapPin, label: "Endereços",      desc: "Gerenciar endereços",                 target: "addresses" },
+                      { icon: Tag,    label: "Cupons",         desc: "Cupons disponíveis",                  target: "coupons" },
+                      { icon: Clock,  label: "Histórico",      desc: "Todos os pedidos",                    target: "orders" },
+                      { icon: User,   label: "Dados pessoais", desc: "Nome, telefone e mais",                target: "main" },
+                    ] as { icon: typeof Heart; label: string; desc: string; target: ProfileView }[]).map(item => (
                       <button key={item.label}
+                        onClick={() => setView(item.target)}
                         className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50 transition-colors text-left">
                         <div className="w-8 h-8 rounded-xl bg-primary/8 flex items-center justify-center shrink-0">
                           <item.icon className="w-4 h-4 text-primary" />

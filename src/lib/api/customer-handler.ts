@@ -5,7 +5,9 @@ import { waitUntil } from "@/lib/execution-context";
 import { storeOtp, consumeOtp } from "@/lib/cache/redis";
 import { sendWppText, normalizePhone } from "@/lib/whatsapp-sender";
 
-const { customers, orders, orderItems, customerOtps, addresses } = schema;
+const { customers, orders, orderItems, customerOtps, addresses, favorites, products, coupons } = schema;
+
+const MAX_ADDRESSES = 5;
 
 async function authenticateCustomer(request: Request): Promise<{ customerId: string; storeId: string } | Response> {
   const raw = request.headers.get("Authorization");
@@ -381,6 +383,243 @@ export async function patchCustomerProfileHandler(request: Request): Promise<Res
     return json({ customer: { id: updated.id, name: updated.name } }, 200);
   } catch (err) {
     console.error("[customer/profile]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── GET /api/customer/favorites ──────────────────────────────────────────────
+// Retorna os produtos favoritados pelo cliente, na mesma projeção da vitrine
+// pública (StoreProduct) — permite reaproveitar o <ProductCard> já existente.
+export async function getCustomerFavoritesHandler(request: Request): Promise<Response> {
+  const auth = await authenticateCustomer(request);
+  if (auth instanceof Response) return auth;
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const rows = await db
+      .select({
+        id: products.id, name: products.name, description: products.description,
+        price: products.price, compareAtPrice: products.compareAtPrice,
+        categoryId: products.categoryId, imageUrl: products.imageUrl, images: products.images,
+        emoji: products.emoji, badge: products.badge, promoConfig: products.promoConfig,
+        stock: products.stock, lowStockThreshold: products.lowStockThreshold,
+        active: products.active, featured: products.featured,
+        rating: products.rating, reviewCount: products.reviewCount,
+        allowObservation: products.allowObservation, variationGroups: products.variationGroups,
+        trackStock: products.trackStock,
+      })
+      .from(favorites)
+      .innerJoin(products, eq(favorites.productId, products.id))
+      .where(eq(favorites.customerId, auth.customerId))
+      .orderBy(desc(favorites.createdAt));
+
+    return json({ products: rows }, 200);
+  } catch (err) {
+    console.error("[customer/favorites]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── POST /api/customer/favorites/toggle ──────────────────────────────────────
+export async function toggleCustomerFavoriteHandler(request: Request): Promise<Response> {
+  const auth = await authenticateCustomer(request);
+  if (auth instanceof Response) return auth;
+
+  const body = await request.json() as { productId?: string };
+  const productId = body.productId;
+  if (!productId) return json({ error: "productId obrigatório" }, 400);
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const existing = await db.select({ productId: favorites.productId }).from(favorites)
+      .where(and(eq(favorites.customerId, auth.customerId), eq(favorites.productId, productId)))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db.delete(favorites).where(
+        and(eq(favorites.customerId, auth.customerId), eq(favorites.productId, productId)),
+      );
+      return json({ favorited: false }, 200);
+    }
+
+    await db.insert(favorites).values({ customerId: auth.customerId, productId });
+    return json({ favorited: true }, 200);
+  } catch (err) {
+    console.error("[customer/favorites/toggle]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── GET /api/customer/addresses ───────────────────────────────────────────────
+export async function getCustomerAddressesHandler(request: Request): Promise<Response> {
+  const auth = await authenticateCustomer(request);
+  if (auth instanceof Response) return auth;
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const rows = await db
+      .select({
+        id: addresses.id, label: addresses.label, street: addresses.street, number: addresses.number,
+        complement: addresses.complement, neighborhood: addresses.neighborhood, city: addresses.city,
+        state: addresses.state, zip: addresses.zip, isDefault: addresses.isDefault,
+      })
+      .from(addresses)
+      .where(eq(addresses.customerId, auth.customerId))
+      .orderBy(desc(addresses.isDefault), desc(addresses.createdAt));
+
+    return json({ addresses: rows, max: MAX_ADDRESSES }, 200);
+  } catch (err) {
+    console.error("[customer/addresses]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── POST /api/customer/addresses/create ───────────────────────────────────────
+export async function createCustomerAddressHandler(request: Request): Promise<Response> {
+  const auth = await authenticateCustomer(request);
+  if (auth instanceof Response) return auth;
+
+  const body = await request.json() as {
+    label?: string; cep?: string; street?: string; number?: string;
+    neighborhood?: string; city?: string; state?: string; complement?: string;
+    isDefault?: boolean;
+  };
+
+  if (!body.street?.trim() || !body.number?.trim() || !body.city?.trim() || !body.state?.trim()) {
+    return json({ error: "Preencha rua, número, cidade e estado" }, 400);
+  }
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(addresses)
+      .where(eq(addresses.customerId, auth.customerId));
+
+    if (Number(count) >= MAX_ADDRESSES) {
+      return json({ error: `Limite de ${MAX_ADDRESSES} endereços atingido` }, 400);
+    }
+
+    const cepDigits = (body.cep ?? "").replace(/\D/g, "");
+    const zip = cepDigits.length === 8
+      ? `${cepDigits.slice(0, 5)}-${cepDigits.slice(5)}`
+      : (body.cep || "00000-000").slice(0, 9);
+
+    const makeDefault = Number(count) === 0 || body.isDefault === true;
+    if (makeDefault) {
+      await db.update(addresses).set({ isDefault: false }).where(eq(addresses.customerId, auth.customerId));
+    }
+
+    const [created] = await db.insert(addresses).values({
+      customerId:   auth.customerId,
+      label:        (body.label?.trim() || "Endereço").slice(0, 30),
+      street:       body.street.trim().slice(0, 200),
+      number:       body.number.trim().slice(0, 20),
+      neighborhood: (body.neighborhood?.trim() || "-").slice(0, 80),
+      city:         body.city.trim().slice(0, 80),
+      state:        body.state.trim().toUpperCase().slice(0, 2),
+      zip,
+      complement:   body.complement?.trim() ? body.complement.trim().slice(0, 80) : null,
+      isDefault:    makeDefault,
+    }).returning();
+
+    return json({ address: created }, 201);
+  } catch (err) {
+    console.error("[customer/addresses/create]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── POST /api/customer/addresses/delete ───────────────────────────────────────
+export async function deleteCustomerAddressHandler(request: Request): Promise<Response> {
+  const auth = await authenticateCustomer(request);
+  if (auth instanceof Response) return auth;
+
+  const body = await request.json() as { id?: string };
+  if (!body.id) return json({ error: "id obrigatório" }, 400);
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const [deleted] = await db.delete(addresses)
+      .where(and(eq(addresses.id, body.id), eq(addresses.customerId, auth.customerId)))
+      .returning({ id: addresses.id, isDefault: addresses.isDefault });
+
+    if (!deleted) return json({ error: "Endereço não encontrado" }, 404);
+
+    // Promove o mais recente restante a padrão, se o excluído era o padrão.
+    if (deleted.isDefault) {
+      const [next] = await db.select({ id: addresses.id }).from(addresses)
+        .where(eq(addresses.customerId, auth.customerId))
+        .orderBy(desc(addresses.createdAt)).limit(1);
+      if (next) await db.update(addresses).set({ isDefault: true }).where(eq(addresses.id, next.id));
+    }
+
+    return json({ success: true }, 200);
+  } catch (err) {
+    console.error("[customer/addresses/delete]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── POST /api/customer/addresses/set-default ──────────────────────────────────
+export async function setDefaultCustomerAddressHandler(request: Request): Promise<Response> {
+  const auth = await authenticateCustomer(request);
+  if (auth instanceof Response) return auth;
+
+  const body = await request.json() as { id?: string };
+  if (!body.id) return json({ error: "id obrigatório" }, 400);
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const [own] = await db.select({ id: addresses.id }).from(addresses)
+      .where(and(eq(addresses.id, body.id), eq(addresses.customerId, auth.customerId))).limit(1);
+    if (!own) return json({ error: "Endereço não encontrado" }, 404);
+
+    await db.update(addresses).set({ isDefault: false }).where(eq(addresses.customerId, auth.customerId));
+    await db.update(addresses).set({ isDefault: true }).where(eq(addresses.id, body.id));
+
+    return json({ success: true }, 200);
+  } catch (err) {
+    console.error("[customer/addresses/set-default]", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ─── GET /api/customer/coupons ──────────────────────────────────────────────────
+// Cupons ativos, não expirados e não esgotados da loja do cliente autenticado.
+export async function getCustomerCouponsHandler(request: Request): Promise<Response> {
+  const auth = await authenticateCustomer(request);
+  if (auth instanceof Response) return auth;
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  try {
+    const rows = await db.select().from(coupons).where(
+      and(eq(coupons.storeId, auth.storeId), eq(coupons.active, true)),
+    ).orderBy(desc(coupons.createdAt));
+
+    const now = new Date();
+    const valid = rows.filter(c =>
+      (!c.expiresAt || new Date(c.expiresAt) > now) &&
+      (c.maxUses == null || (c.usedCount ?? 0) < c.maxUses),
+    );
+
+    return json({
+      coupons: valid.map(c => ({
+        id: c.id,
+        code: c.code,
+        type: c.type,
+        discount: c.discount,
+        minOrderValue: c.minOrderValue,
+        expiresAt: c.expiresAt,
+      })),
+    }, 200);
+  } catch (err) {
+    console.error("[customer/coupons]", err);
     return json({ error: "Internal server error" }, 500);
   }
 }

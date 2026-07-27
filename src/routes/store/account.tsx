@@ -1,25 +1,30 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   User, Package, Heart, MapPin, Tag, ChevronRight,
-  Clock, Loader2, Lock, Phone, CheckCircle2, Search,
+  Clock, Loader2, Lock, Phone, CheckCircle2, Search, ArrowLeft,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useCallback } from "react";
 import { useStore } from "../store";
 import { PhoneAuthModal } from "@/components/storefront/PhoneAuthModal";
+import { FavoritesView } from "@/components/storefront/profile/FavoritesView";
+import { CouponsView } from "@/components/storefront/profile/CouponsView";
+import { AddressesView } from "@/components/storefront/profile/AddressesView";
+import { OrdersHistoryView } from "@/components/storefront/profile/OrdersHistoryView";
+import { useCustomerOrders } from "@/lib/customer-profile-hooks";
 
 export const Route = createFileRoute("/store/account")({
   component: AccountPage,
 });
 
-interface OrderData {
-  id: string;
-  number: number;
-  status: string;
-  total: string;
-  createdAt: string;
-  items: { productName: string; quantity: number }[];
-}
+type ProfileView = "main" | "orders" | "favorites" | "coupons" | "addresses";
+
+const VIEW_TITLES: Record<Exclude<ProfileView, "main">, string> = {
+  orders: "Meus pedidos",
+  favorites: "Favoritos",
+  coupons: "Cupons",
+  addresses: "Endereços",
+};
 
 interface AddressFields {
   cep: string;
@@ -68,7 +73,7 @@ function Field({
 
 // ── AccountPage ────────────────────────────────────────────────────────────────
 function AccountPage() {
-  const { store, favorites, customerToken, customerName, loginCustomer } = useStore();
+  const { store, favorites, toggleFavorite, addToCart, configuracaoVitrine, customerToken, customerName, loginCustomer } = useStore();
 
   // ── Auth modal ─────────────────────────────────────────────────────────────
   const [authOpen, setAuthOpen] = useState(false);
@@ -83,9 +88,9 @@ function AccountPage() {
   const [onboardingLoading, setOnboardingLoading] = useState(false);
   const [onboardingError, setOnboardingError]   = useState("");
 
-  // ── Orders state ───────────────────────────────────────────────────────────
-  const [orders, setOrders]           = useState<OrderData[]>([]);
-  const [ordersLoading, setOrdersLoading] = useState(false);
+  // ── Sub-view (Histórico completo, Favoritos, Cupons, Endereços) ────────────
+  const [view, setView] = useState<ProfileView>("main");
+  const { orders, loading: ordersLoading } = useCustomerOrders(customerToken);
 
   // Detecta cliente sem nome preenchido (nome = número de telefone)
   const isNameUnset = !customerName || /^\d+$/.test(customerName.trim());
@@ -96,24 +101,9 @@ function AccountPage() {
     if (flag === "1" || isNameUnset) setShowOnboarding(true);
   }, [store?.id, customerToken, isNameUnset]);
 
-  const fetchOrders = useCallback(async () => {
-    if (!customerToken) return;
-    setOrdersLoading(true);
-    try {
-      const res = await fetch("/api/customer/orders", {
-        headers: { Authorization: `Bearer ${customerToken}` },
-      });
-      if (res.ok) {
-        const data = await res.json() as { orders: OrderData[] };
-        setOrders(data.orders || []);
-      }
-    } catch {}
-    finally { setOrdersLoading(false); }
-  }, [customerToken]);
-
   useEffect(() => {
-    if (customerToken && !showOnboarding) fetchOrders();
-  }, [customerToken, showOnboarding, fetchOrders]);
+    if (!customerToken) setView("main");
+  }, [customerToken]);
 
   // ── CEP lookup (ViaCEP) ────────────────────────────────────────────────────
   const lookupCep = useCallback(async (digits: string) => {
@@ -425,6 +415,34 @@ function AccountPage() {
   const recentOrders = orders.slice(0, 5);
   const firstName    = customerName?.split(" ")[0] || "Você";
 
+  if (view !== "main") {
+    return (
+      <div className="px-4 pt-4 pb-10 animate-in fade-in duration-300">
+        <div className="flex items-center gap-3 mb-5">
+          <button
+            onClick={() => setView("main")}
+            aria-label="Voltar"
+            className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0 hover:bg-secondary/70 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <h2 className="text-lg font-bold">{VIEW_TITLES[view]}</h2>
+        </div>
+        {view === "orders" && <OrdersHistoryView orders={orders} loading={ordersLoading} />}
+        {view === "favorites" && (
+          <FavoritesView
+            token={customerToken}
+            configuracaoVitrine={configuracaoVitrine}
+            addToCart={addToCart}
+            toggleFavorite={toggleFavorite}
+          />
+        )}
+        {view === "coupons" && <CouponsView token={customerToken} />}
+        {view === "addresses" && <AddressesView token={customerToken} />}
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 pt-4 pb-4 animate-in fade-in duration-300">
       {/* Saudação */}
@@ -435,22 +453,6 @@ function AccountPage() {
         <div className="min-w-0">
           <p className="text-sm font-bold truncate">Olá, {firstName}!</p>
           <p className="text-xs text-muted-foreground">Bem-vindo de volta</p>
-        </div>
-      </div>
-
-      {/* Contadores */}
-      <div className="grid grid-cols-3 gap-2 mb-5">
-        <div className="p-3 rounded-2xl bg-surface border border-border/40 text-center">
-          <p className="text-lg font-bold">{ordersLoading ? "…" : orders.length}</p>
-          <p className="text-[10px] text-muted-foreground">Pedidos</p>
-        </div>
-        <div className="p-3 rounded-2xl bg-surface border border-border/40 text-center">
-          <p className="text-lg font-bold">{favorites.length}</p>
-          <p className="text-[10px] text-muted-foreground">Favoritos</p>
-        </div>
-        <div className="p-3 rounded-2xl bg-surface border border-border/40 text-center">
-          <p className="text-lg font-bold">0</p>
-          <p className="text-[10px] text-muted-foreground">Cupons</p>
         </div>
       </div>
 
@@ -500,15 +502,16 @@ function AccountPage() {
 
       {/* Menu */}
       <div className="space-y-1">
-        {[
-          { icon: Heart,  label: "Favoritos",      desc: `${favorites.length} produtos salvos` },
-          { icon: MapPin, label: "Endereços",       desc: "Gerenciar endereços" },
-          { icon: Tag,    label: "Cupons",          desc: "Cupons disponíveis" },
-          { icon: Clock,  label: "Histórico",       desc: "Todos os pedidos" },
-          { icon: User,   label: "Dados pessoais",  desc: "Nome, e-mail, telefone" },
-        ].map(item => (
+        {([
+          { icon: Heart,  label: "Favoritos",      desc: `${favorites.length} produtos salvos`, target: "favorites" },
+          { icon: MapPin, label: "Endereços",       desc: "Gerenciar endereços",                 target: "addresses" },
+          { icon: Tag,    label: "Cupons",          desc: "Cupons disponíveis",                  target: "coupons" },
+          { icon: Clock,  label: "Histórico",       desc: "Todos os pedidos",                    target: "orders" },
+          { icon: User,   label: "Dados pessoais",  desc: "Nome, e-mail, telefone",               target: "main" },
+        ] as { icon: typeof Heart; label: string; desc: string; target: ProfileView }[]).map(item => (
           <button
             key={item.label}
+            onClick={() => setView(item.target)}
             className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-secondary transition-colors"
           >
             <item.icon className="w-5 h-5 text-muted-foreground" />

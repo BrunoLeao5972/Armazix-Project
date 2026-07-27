@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MessageCircle, Loader2, ArrowLeft } from "lucide-react";
 
 interface PhoneAuthModalProps {
@@ -104,13 +104,13 @@ export function PhoneAuthModal({ open, onOpenChange, storeId, onSuccess }: Phone
   })();
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="rounded-t-3xl max-h-[92dvh] overflow-y-auto">
-        <SheetHeader className="text-left pb-2">
-          <SheetTitle className="text-lg">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-sm rounded-3xl max-h-[85dvh] overflow-y-auto">
+        <DialogHeader className="text-left pb-2">
+          <DialogTitle className="text-lg">
             {step === "phone" ? "Entrar com Telefone" : "Confirmar código"}
-          </SheetTitle>
-        </SheetHeader>
+          </DialogTitle>
+        </DialogHeader>
 
         {step === "phone" ? (
           <div className="space-y-4 pt-2 pb-6">
@@ -207,7 +207,7 @@ export function PhoneAuthModal({ open, onOpenChange, storeId, onSuccess }: Phone
             </div>
           </div>
         )}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
