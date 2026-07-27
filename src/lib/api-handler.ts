@@ -9,6 +9,7 @@ import { forgotPasswordHandler } from "./api/auth/forgot-password-handler";
 import { resetPasswordHandler } from "./api/auth/reset-password-handler";
 import { resendVerificationHandler } from "./api/auth/resend-verification-handler";
 import { changePendingEmailHandler } from "./api/auth/change-pending-email-handler";
+import { impersonateConsumeHandler } from "./api/auth/impersonate-consume-handler";
 import { getStoreHandler, updateStoreHandler, getDashboardStatsHandler, getUserStoreHandler, savePaymentConfigHandler } from "./api/store-handler";
 import {
   getStockStatsHandler,
@@ -184,6 +185,7 @@ const publicPostRoutes: Record<string, ApiHandler> = {
 const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/auth/check-email": checkEmailHandler,
   "/api/auth/refresh-csrf": refreshCsrfHandler,
+  "/api/auth/impersonate-consume": impersonateConsumeHandler, // Gerenciador Armazix (SuperAdmin) troca o token curto por sessão real aqui
   "/api/store/get": getStoreHandler,
   "/api/store/check-slug": checkStoreSlugHandler,
   "/api/validate-cep": validateCepHandler,

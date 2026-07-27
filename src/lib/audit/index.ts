@@ -83,6 +83,8 @@ export const AuditActions = {
   // Auth
   LOGIN: "LOGIN",
   LOGOUT: "LOGOUT",
+  /** SuperAdmin do Gerenciador Armazix acessou o painel como o lojista, via /api/auth/impersonate-consume */
+  IMPERSONATE: "IMPERSONATE",
   REGISTER: "REGISTER",
   PASSWORD_CHANGE: "PASSWORD_CHANGE",
   PASSWORD_RESET: "PASSWORD_RESET",

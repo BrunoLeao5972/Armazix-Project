@@ -235,6 +235,11 @@ const migrations = [
   { name: "0024b_printers_idx", query: `CREATE INDEX IF NOT EXISTS "printers_store_idx" ON "printers"("store_id")` },
   // Tipo de produto e compatibilidade com balança
   { name: "0025_product_type_weight", query: `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "product_type" varchar(50) NOT NULL DEFAULT 'Produto', ADD COLUMN IF NOT EXISTS "is_weight_scale" boolean NOT NULL DEFAULT false` },
+  // Código PDV: busca rápida no caixa, único por loja
+  { name: "0026_pdv_code", query: `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "pdv_code" varchar(20)` },
+  { name: "0026b_pdv_code_idx", query: `CREATE UNIQUE INDEX IF NOT EXISTS "store_pdv_code_idx" ON "products"("store_id", "pdv_code") WHERE "pdv_code" IS NOT NULL` },
+  // Flag de acesso ao Gerenciador Armazix (portal SuperAdmin, projeto separado)
+  { name: "0027_superadmin", query: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "is_superadmin" boolean NOT NULL DEFAULT false` },
 ];
 
 for (const m of migrations) {

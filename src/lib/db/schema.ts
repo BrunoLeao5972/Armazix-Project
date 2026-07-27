@@ -488,6 +488,8 @@ export const users = pgTable("users", {
   role: varchar("role", { length: 20 }).notNull().default("merchant"), // merchant | customer | admin
   emailVerified: boolean("email_verified").default(false),
   active: boolean("active").default(true),
+  /** Acesso ao Gerenciador Armazix (portal SuperAdmin, projeto separado) — nunca confundir com `role`. */
+  isSuperadmin: boolean("is_superadmin").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
