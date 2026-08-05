@@ -1,6 +1,6 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { requireStoreAccess, requireStoreOwner } from "@/lib/auth/require-store-access";
 import { hashPassword, validatePasswordPolicy } from "@/lib/auth";
 import { logAudit, AuditActions, ResourceTypes } from "@/lib/audit";
@@ -253,7 +253,7 @@ export async function adminChangeUserPasswordHandler(
 
   await db
     .update(users)
-    .set({ passwordHash, updatedAt: new Date() })
+    .set({ passwordHash, updatedAt: new Date(), sessionVersion: sql`${users.sessionVersion} + 1` })
     .where(eq(users.id, body.userId));
 
   return json({ success: true });

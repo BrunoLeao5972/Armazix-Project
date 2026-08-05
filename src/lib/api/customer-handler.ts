@@ -4,18 +4,25 @@ import { signCustomerJWT, verifyCustomerJWT } from "@/lib/auth";
 import { waitUntil } from "@/lib/execution-context";
 import { storeOtp, consumeOtp } from "@/lib/cache/redis";
 import { sendWppText, normalizePhone } from "@/lib/whatsapp-sender";
+import { requireJwtSecret } from "@/lib/env";
 
 const { customers, orders, orderItems, customerOtps, addresses, favorites, products, coupons } = schema;
 
 const MAX_ADDRESSES = 5;
+// Mesmo teto usado pelos códigos de e-mail (verificação/reset) em src/lib/auth/index.ts.
+const OTP_MAX_ATTEMPTS = 5;
 
 async function authenticateCustomer(request: Request): Promise<{ customerId: string; storeId: string } | Response> {
   const raw = request.headers.get("Authorization");
   const token = raw?.startsWith("Bearer ") ? raw.slice(7) : null;
   if (!token) return json({ error: "Não autorizado" }, 401);
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return json({ error: "Configuração inválida" }, 500);
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    return json({ error: "Configuração inválida" }, 500);
+  }
 
   const auth = await verifyCustomerJWT(token, secret);
   if (!auth) return json({ error: "Token inválido ou expirado" }, 401);
@@ -44,18 +51,28 @@ async function consumeOtpFromDb(
   code: string,
 ): Promise<boolean> {
   const [record] = await db
-    .select({ id: customerOtps.id })
+    .select({ id: customerOtps.id, code: customerOtps.code, attempts: customerOtps.attempts })
     .from(customerOtps)
     .where(
       and(
         eq(customerOtps.storeId, storeId),
         eq(customerOtps.phone, phone),
-        eq(customerOtps.code, code),
         gt(customerOtps.expiresAt, new Date()),
       ),
     )
     .limit(1);
   if (!record) return false;
+
+  if (record.attempts >= OTP_MAX_ATTEMPTS) {
+    await db.delete(customerOtps).where(eq(customerOtps.id, record.id)); // esgotou — exige reenvio
+    return false;
+  }
+
+  if (record.code !== code) {
+    await db.update(customerOtps).set({ attempts: record.attempts + 1 }).where(eq(customerOtps.id, record.id));
+    return false;
+  }
+
   await db.delete(customerOtps).where(eq(customerOtps.id, record.id));
   return true;
 }
@@ -68,8 +85,12 @@ export async function getCustomerOrdersHandler(request: Request): Promise<Respon
   const token = raw?.startsWith("Bearer ") ? raw.slice(7) : null;
   if (!token) return json({ error: "Não autorizado" }, 401);
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return json({ error: "Configuração inválida" }, 500);
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    return json({ error: "Configuração inválida" }, 500);
+  }
 
   const auth = await verifyCustomerJWT(token, secret);
   if (!auth) return json({ error: "Token inválido ou expirado" }, 401);
@@ -126,8 +147,12 @@ export async function getCustomerOrderDetailHandler(request: Request): Promise<R
   const token = raw?.startsWith("Bearer ") ? raw.slice(7) : null;
   if (!token) return json({ error: "Não autorizado" }, 401);
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return json({ error: "Configuração inválida" }, 500);
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    return json({ error: "Configuração inválida" }, 500);
+  }
 
   const auth = await verifyCustomerJWT(token, secret);
   if (!auth) return json({ error: "Token inválido ou expirado" }, 401);
@@ -248,7 +273,7 @@ export async function requestOtpHandler(request: Request): Promise<Response> {
 }
 
 // ─── POST /api/customer/auth/verify-code ─────────────────────────────────────
-// Valida o OTP, faz upsert do cliente e retorna um JWT de 30 dias.
+// Valida o OTP, faz upsert do cliente e retorna um JWT de 7 dias.
 export async function verifyOtpHandler(request: Request): Promise<Response> {
   const body = await request.json() as { phone?: string; storeId?: string; code?: string; name?: string };
   const rawPhone = body.phone?.replace(/\D/g, "");
@@ -259,8 +284,12 @@ export async function verifyOtpHandler(request: Request): Promise<Response> {
     return json({ error: "Telefone, loja e código obrigatórios" }, 400);
   }
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return json({ error: "Configuração inválida" }, 500);
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    return json({ error: "Configuração inválida" }, 500);
+  }
 
   const phone = normalizePhone(rawPhone);
   const db = createDb(process.env.DATABASE_URL!);
@@ -321,8 +350,12 @@ export async function patchCustomerProfileHandler(request: Request): Promise<Res
   const token = raw?.startsWith("Bearer ") ? raw.slice(7) : null;
   if (!token) return json({ error: "Não autorizado" }, 401);
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return json({ error: "Configuração inválida" }, 500);
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    return json({ error: "Configuração inválida" }, 500);
+  }
 
   const auth = await verifyCustomerJWT(token, secret);
   if (!auth) return json({ error: "Token inválido ou expirado" }, 401);

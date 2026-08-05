@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { isValidCPF, isValidCNPJ } from "@/lib/document-validation";
 
 export const Route = createFileRoute("/register")({
   component: RegisterPage,
@@ -125,11 +126,26 @@ function RegisterPage() {
   };
 
   const handleDocChange = (v: string) => {
-    setDocNumber(docType === "cpf" ? formatCPF(v) : formatCNPJ(v));
+    const formatted = docType === "cpf" ? formatCPF(v) : formatCNPJ(v);
+    setDocNumber(formatted);
+
+    // Valida em tempo real assim que o número atinge o tamanho esperado —
+    // não espera o clique em "Continuar" pra avisar que o CPF/CNPJ é inválido.
+    const digits = formatted.replace(/\D/g, "");
+    const expectedLength = docType === "cpf" ? 11 : 14;
+    if (digits.length < expectedLength) {
+      setErrors((p) => ({ ...p, docNumber: "" }));
+    } else {
+      const valid = docType === "cpf" ? isValidCPF(digits) : isValidCNPJ(digits);
+      setErrors((p) => ({ ...p, docNumber: valid ? "" : (docType === "cpf" ? "CPF inválido" : "CNPJ inválido") }));
+    }
   };
 
   const [cepLoading, setCepLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Step 5
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const handleCepChange = async (v: string) => {
     const formatted = formatCEP(v);
@@ -177,9 +193,8 @@ function RegisterPage() {
       if (!category) e.category = "Selecione uma categoria";
     }
     if (s === 3) {
-      const digits = docNumber.replace(/\D/g, "");
-      if (docType === "cpf" && digits.length !== 11) e.docNumber = "CPF inválido";
-      if (docType === "cnpj" && digits.length !== 14) e.docNumber = "CNPJ inválido";
+      if (docType === "cpf" && !isValidCPF(docNumber)) e.docNumber = "CPF inválido";
+      if (docType === "cnpj" && !isValidCNPJ(docNumber)) e.docNumber = "CNPJ inválido";
     }
     if (s === 4) {
       if (cep.replace(/\D/g, "").length !== 8) e.cep = "CEP inválido";
@@ -214,6 +229,7 @@ function RegisterPage() {
   // "free" → direto pro painel; qualquer plano pago → aba de Planos em
   // Configurações, onde o fluxo de cobrança via Mercado Pago já funciona.
   const handleFinish = async (planId: string) => {
+    if (!termsAccepted) return;
     setStep(6);
     setLoading(true);
     try {
@@ -231,6 +247,7 @@ function RegisterPage() {
           storeColor,
           docType,
           docNumber,
+          termsAccepted,
           address: cep ? { street, number, complement, neighborhood, city, state, zip: cep } : undefined,
         }),
       });
@@ -242,6 +259,12 @@ function RegisterPage() {
       }
       if (data.csrfToken) {
         localStorage.setItem("csrf_token", data.csrfToken);
+      }
+      // Grava o storeId da loja recém-criada — sem isso, o painel usaria
+      // qualquer valor antigo que já estivesse em cache no navegador (ex: de
+      // outra conta testada ali antes) e mostraria dados da loja errada.
+      if (data.store?.id) {
+        localStorage.setItem("storeId", data.store.id);
       }
       // Conta criada e já logada (cookie definido pelo /api/auth/register) —
       // falta só validar o email antes de liberar o painel de verdade.
@@ -467,9 +490,11 @@ function RegisterPage() {
                       <Input
                         placeholder="Uma frase sobre sua loja"
                         value={description}
-                        onChange={(e) => setDescription(e.target.value)}
+                        onChange={(e) => setDescription(e.target.value.slice(0, 500))}
+                        maxLength={500}
                         className="h-11 rounded-xl"
                       />
+                      <p className="text-xs text-muted-foreground text-right">{description.length}/500</p>
                     </div>
                     <div className="space-y-2">
                       <Label className="flex items-center gap-1.5">
@@ -538,7 +563,7 @@ function RegisterPage() {
                       <Input
                         placeholder={docType === "cpf" ? "000.000.000-00" : "00.000.000/0001-00"}
                         value={docNumber}
-                        onChange={(e) => { handleDocChange(e.target.value); setErrors(p => ({ ...p, docNumber: "" })); }}
+                        onChange={(e) => handleDocChange(e.target.value)}
                         className={`pl-10 h-11 rounded-xl ${errors.docNumber ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                       />
                     </Field>
@@ -605,7 +630,8 @@ function RegisterPage() {
                         <Input
                           placeholder="Apto, sala..."
                           value={complement}
-                          onChange={(e) => setComplement(e.target.value)}
+                          onChange={(e) => setComplement(e.target.value.slice(0, 70))}
+                          maxLength={70}
                           className="h-11 rounded-xl"
                         />
                       </div>
@@ -662,7 +688,7 @@ function RegisterPage() {
                       <button
                         key={plan.id}
                         type="button"
-                        disabled={loading}
+                        disabled={loading || !termsAccepted}
                         onClick={() => handleFinish(plan.id)}
                         className={`w-full flex items-center justify-between p-4 rounded-xl border-2 text-left transition-colors hover:border-primary/60 disabled:opacity-50 disabled:pointer-events-none ${
                           plan.highlight ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/30"
@@ -682,6 +708,22 @@ function RegisterPage() {
                   <p className="text-xs text-muted-foreground text-center mt-4">
                     Teste grátis por 10 dias no plano Free. Assinatura mensal nos demais. Cancele quando quiser.
                   </p>
+
+                  <label className="flex items-start gap-2.5 mt-5 p-3.5 rounded-xl border border-border bg-secondary/30 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={termsAccepted}
+                      onChange={(e) => setTermsAccepted(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-border text-primary focus:ring-primary/30 shrink-0"
+                    />
+                    <span className="text-xs text-muted-foreground leading-relaxed">
+                      Li e concordo com os{" "}
+                      <Link to="/termos-de-uso" target="_blank" className="text-primary font-medium hover:underline">
+                        Termos de Uso
+                      </Link>{" "}
+                      da Armazix.
+                    </span>
+                  </label>
                 </StepWrapper>
               )}
 

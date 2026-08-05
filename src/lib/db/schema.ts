@@ -63,6 +63,12 @@ export const stores = pgTable("stores", {
   deliveryPaymentEnabled: boolean("delivery_payment_enabled").default(true),
   deliveryRules: jsonb("delivery_rules").$type<Array<{ bairro: string; taxa: number }>>(),
   freeShippingAbove: numeric("free_shipping_above", { precision: 10, scale: 2 }),
+  /** Localização física da loja — ponto de referência único, compartilhado
+   *  pelos modelos de frete por distância (dinâmica, raio, bairro no mapa,
+   *  matriz). Definido manualmente (pino arrastável) ou geocodificado a
+   *  partir do endereço cadastrado. */
+  latitude:  numeric("latitude", { precision: 10, scale: 7 }),
+  longitude: numeric("longitude", { precision: 10, scale: 7 }),
   /** Modelo v2 de configuração de pagamento — substitui paymentMethodsConfig + deliveryPaymentEnabled */
   paymentConfig: jsonb("payment_config").$type<import("@/lib/store-context").PaymentConfig>(),
   wppConfig: jsonb("wpp_config").$type<import("@/lib/whatsapp-sender").WppConfig>(),
@@ -182,7 +188,8 @@ export const products = pgTable("products", {
   rating: numeric("rating", { precision: 2, scale: 1 }).default("0"),
   reviewCount: integer("review_count").default(0),
   allowObservation: boolean("allow_observation").default(false),
-  variationGroups: jsonb("variation_groups").$type<Array<{ id: string; groupName: string; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }> }> }>>().default([]).notNull(),
+  /** priceType do grupo: "adicional" (padrão, soma ao preço do produto) ou "opcional" (substitui o preço do produto). required: undefined = true (compatibilidade — grupos antigos sempre foram obrigatórios). */
+  variationGroups: jsonb("variation_groups").$type<Array<{ id: string; groupName: string; priceType?: "adicional" | "opcional"; required?: boolean; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }>; promoConfig?: import("@/lib/promo-engine").PromoConfig | null }> }>>().default([]).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -275,6 +282,8 @@ export const customerOtps = pgTable("customer_otps", {
   storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
   phone: varchar("phone", { length: 20 }).notNull(),
   code: varchar("code", { length: 6 }).notNull(),
+  /** Tentativas erradas contra este código. Ao estourar o teto, ele é queimado. */
+  attempts: integer("attempts").default(0).notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
@@ -490,6 +499,11 @@ export const users = pgTable("users", {
   active: boolean("active").default(true),
   /** Acesso ao Gerenciador Armazix (portal SuperAdmin, projeto separado) — nunca confundir com `role`. */
   isSuperadmin: boolean("is_superadmin").notNull().default(false),
+  /** Prova de aceite dos Termos de Uso no cadastro — ver src/lib/legal.ts */
+  termsAcceptedAt: timestamp("terms_accepted_at"),
+  termsVersion: varchar("terms_version", { length: 10 }),
+  /** Incrementado a cada troca de senha — embutido no JWT para revogar sessões antigas. */
+  sessionVersion: integer("session_version").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [

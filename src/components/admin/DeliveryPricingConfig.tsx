@@ -370,21 +370,174 @@ function BairroMapConfig({
   );
 }
 
+// ─── Localização da Loja — pino compartilhado pelos 4 modelos por distância ──
+// Ponto de referência único (stores.latitude/longitude): dinâmica, raio,
+// bairro no mapa e matriz calculam a distância do cliente até aqui.
+
+export function StoreLocationPicker({
+  lat,
+  lng,
+  onChange,
+  onLocateFromAddress,
+}: {
+  lat: number | null;
+  lng: number | null;
+  onChange: (lat: number, lng: number) => void;
+  onLocateFromAddress: () => Promise<{ lat: number; lng: number } | null>;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
+  const leafletRef = useRef<any>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locateError, setLocateError] = useState("");
+
+  const hasLocation = lat !== null && lng !== null;
+  const center: [number, number] = hasLocation ? [lat, lng] : [-15.7801, -47.9292];
+
+  useEffect(() => {
+    if (!containerRef.current || typeof window === "undefined") return;
+    let cancelled = false;
+
+    const init = async () => {
+      if (!document.getElementById("leaflet-css")) {
+        const link = document.createElement("link");
+        link.id = "leaflet-css";
+        link.rel = "stylesheet";
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        document.head.appendChild(link);
+      }
+
+      const L = (await import("leaflet")).default;
+      if (cancelled || !containerRef.current) return;
+
+      delete (L.Icon.Default.prototype as any)._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+      });
+
+      const map = L.map(containerRef.current, { center, zoom: hasLocation ? 15 : 4 });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors",
+        maxZoom: 19,
+      }).addTo(map);
+
+      const marker = L.marker(center, { draggable: true }).addTo(map);
+      marker.bindPopup("Arraste para a localização do seu estabelecimento");
+      marker.on("dragend", () => {
+        const { lat: newLat, lng: newLng } = marker.getLatLng();
+        onChange(newLat, newLng);
+      });
+      map.on("click", (e: any) => {
+        marker.setLatLng(e.latlng);
+        onChange(e.latlng.lat, e.latlng.lng);
+      });
+
+      markerRef.current = marker;
+      mapRef.current = map;
+      leafletRef.current = L;
+      setMapReady(true);
+    };
+
+    void init();
+    return () => {
+      cancelled = true;
+      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reposiciona o marcador quando lat/lng mudam por fora (ex: botão "Localizar")
+  useEffect(() => {
+    if (!mapRef.current || !markerRef.current || !hasLocation) return;
+    markerRef.current.setLatLng([lat, lng]);
+    mapRef.current.setView([lat, lng], Math.max(mapRef.current.getZoom(), 15));
+  }, [lat, lng]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleLocate = async () => {
+    setLocating(true);
+    setLocateError("");
+    try {
+      const point = await onLocateFromAddress();
+      if (!point) {
+        setLocateError("Não foi possível localizar o endereço cadastrado. Ajuste manualmente no mapa.");
+        return;
+      }
+      onChange(point.lat, point.lng);
+    } catch {
+      setLocateError("Serviço de geolocalização indisponível no momento.");
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  return (
+    <Card className="rounded-2xl border-border/50 shadow-soft">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
+          <MapPin className="w-4 h-4" />
+          Localização da Loja
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Ponto de referência usado para calcular a distância até o cliente nos modelos Dinâmica, Raio, Por Bairro (mapa) e Matriz.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!hasLocation && (
+          <InfoBanner text="Defina a localização do estabelecimento — clique no mapa, arraste o pino ou use o endereço já cadastrado." />
+        )}
+        <div
+          ref={containerRef}
+          className="w-full rounded-xl overflow-hidden border border-border/50"
+          style={{ height: 320 }}
+        />
+        {!mapReady && (
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-4">
+            <Loader2 className="w-4 h-4 animate-spin" /> Carregando mapa…
+          </div>
+        )}
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button type="button" variant="outline" size="sm" onClick={handleLocate} disabled={locating} className="rounded-xl gap-2">
+            {locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+            Localizar pelo endereço cadastrado
+          </Button>
+          {hasLocation && (
+            <span className="text-xs text-muted-foreground">
+              {lat.toFixed(6)}, {lng.toFixed(6)}
+            </span>
+          )}
+        </div>
+        {locateError && <p className="text-xs text-destructive">{locateError}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Por Raio ─────────────────────────────────────────────────────────────────
 
 function RaioMapConfig({
   value,
   onChange,
+  storeLat,
+  storeLng,
 }: {
   value: RaioSettings;
   onChange: (v: RaioSettings) => void;
+  /** Localização compartilhada da loja (seção "Localização da Loja" acima) — os
+   *  círculos são desenhados em torno dela, não de um pino próprio deste modelo. */
+  storeLat: number | null;
+  storeLng: number | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
-  const markerRef = useRef<any>(null);
   const circlesRef = useRef<any[]>([]);
   const leafletRef = useRef<any>(null);
   const [mapReady, setMapReady] = useState(false);
+
+  const hasLocation = storeLat !== null && storeLng !== null;
+  const center: [number, number] = hasLocation ? [storeLat, storeLng] : [-15.7801, -47.9292];
 
   const redrawCircles = (L: any, map: any, raios: RaioItem[], lat: number, lng: number) => {
     circlesRef.current.forEach((c) => c.remove());
@@ -415,34 +568,15 @@ function RaioMapConfig({
       const L = (await import("leaflet")).default;
       if (cancelled || !containerRef.current) return;
 
-      delete (L.Icon.Default.prototype as any)._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-      });
-
-      const map = L.map(containerRef.current, {
-        center: [value.storeLat, value.storeLng],
-        zoom: 13,
-      });
+      const map = L.map(containerRef.current, { center, zoom: hasLocation ? 13 : 4 });
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap contributors",
         maxZoom: 19,
       }).addTo(map);
 
-      const marker = L.marker([value.storeLat, value.storeLng], { draggable: true }).addTo(map);
-      marker.bindPopup("Arraste para a localização do seu estabelecimento").openPopup();
-      marker.on("dragend", () => {
-        const { lat, lng } = marker.getLatLng();
-        onChange({ ...value, storeLat: lat, storeLng: lng });
-        redrawCircles(L, map, value.raios, lat, lng);
-      });
-
-      markerRef.current = marker;
       mapRef.current = map;
       leafletRef.current = L;
-      redrawCircles(L, map, value.raios, value.storeLat, value.storeLng);
+      if (hasLocation) redrawCircles(L, map, value.raios, storeLat, storeLng);
       setMapReady(true);
     };
 
@@ -453,11 +587,12 @@ function RaioMapConfig({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-draw circles when raios change after init
+  // Re-draw circles quando os raios ou a localização compartilhada mudam
   useEffect(() => {
-    if (!mapRef.current || !leafletRef.current) return;
-    redrawCircles(leafletRef.current, mapRef.current, value.raios, value.storeLat, value.storeLng);
-  }, [value.raios, value.storeLat, value.storeLng]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!mapRef.current || !leafletRef.current || !hasLocation) return;
+    mapRef.current.setView(center, Math.max(mapRef.current.getZoom(), 13));
+    redrawCircles(leafletRef.current, mapRef.current, value.raios, storeLat, storeLng);
+  }, [value.raios, storeLat, storeLng]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addRaio = () => {
     const newRaio: RaioItem = {
@@ -480,7 +615,7 @@ function RaioMapConfig({
 
   return (
     <div className="space-y-4">
-      <InfoBanner text="Defina círculos concêntricos ao redor do seu estabelecimento com taxas diferentes por raio. Arraste o marcador no mapa para a localização correta." />
+      <InfoBanner text="Defina círculos concêntricos ao redor do seu estabelecimento com taxas diferentes por raio. A localização usada é a definida na seção 'Localização da Loja' acima." />
       <div
         ref={containerRef}
         className="w-full rounded-xl overflow-hidden border border-border/50"
@@ -490,6 +625,11 @@ function RaioMapConfig({
         <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-4">
           <Loader2 className="w-4 h-4 animate-spin" /> Carregando mapa…
         </div>
+      )}
+      {!hasLocation && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Defina a localização do estabelecimento na seção acima para os raios aparecerem no mapa.
+        </p>
       )}
 
       <div className="space-y-3 pt-1">
@@ -844,10 +984,15 @@ export function DeliveryPricingConfig({
   model,
   value,
   onChange,
+  storeLat = null,
+  storeLng = null,
 }: {
   model: string;
   value: DeliveryModelConfig;
   onChange: (v: DeliveryModelConfig) => void;
+  /** Localização compartilhada da loja — usada pelo modelo "raio" (círculos). */
+  storeLat?: number | null;
+  storeLng?: number | null;
 }) {
   const modelKey = model as ModelKey;
 
@@ -880,6 +1025,8 @@ export function DeliveryPricingConfig({
       <RaioMapConfig
         value={value.raio}
         onChange={(v) => onChange({ ...value, raio: v })}
+        storeLat={storeLat}
+        storeLng={storeLng}
       />
     );
   }

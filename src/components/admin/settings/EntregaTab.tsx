@@ -7,9 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api-client";
-import { DeliveryPricingConfig } from "@/components/admin/DeliveryPricingConfig";
+import { DeliveryPricingConfig, StoreLocationPicker } from "@/components/admin/DeliveryPricingConfig";
 import type { DeliveryModelConfig } from "@/components/admin/DeliveryPricingConfig";
 import type { StoreData } from "./types";
+
+const GEO_MODELS = ["dinamica", "raio", "bairro", "matriz"];
 
 const DELIVERY_MODELS = [
   { key: "fixa",       label: "Taxa Fixa",    sub: "Valor único"          },
@@ -29,13 +31,15 @@ interface EntregaTabProps {
   freeShippingAbove: string; setFreeShippingAbove: (v: string) => void;
   modeloCobranca: string; setModeloCobranca: (v: string) => void;
   deliveryModelConfig: DeliveryModelConfig; setDeliveryModelConfig: (v: DeliveryModelConfig) => void;
+  storeLat: number | null; setStoreLat: (v: number | null) => void;
+  storeLng: number | null; setStoreLng: (v: number | null) => void;
 }
 
 export function EntregaTab({
   store, modalidadeEntrega, setModalidadeEntrega, consumirNoLocal, setConsumirNoLocal,
   entregaUber, setEntregaUber, freeShippingEnabled, setFreeShippingEnabled,
   freeShippingAbove, setFreeShippingAbove, modeloCobranca, setModeloCobranca,
-  deliveryModelConfig, setDeliveryModelConfig,
+  deliveryModelConfig, setDeliveryModelConfig, storeLat, setStoreLat, storeLng, setStoreLng,
 }: EntregaTabProps) {
   const [deliverySaving, setDeliverySaving] = useState(false);
   const [deliverySuccess, setDeliverySuccess] = useState(false);
@@ -58,6 +62,8 @@ export function EntregaTab({
           modelConfig: deliveryModelConfig,
         },
         freeShippingAbove: freeShippingEnabled ? freeShippingAbove : null,
+        latitude: storeLat,
+        longitude: storeLng,
       });
       const data = await res.json();
       if (res.ok) {
@@ -208,18 +214,35 @@ export function EntregaTab({
         </CardContent>
       </Card>
 
-      {/* Seção 3: Configuração do modelo selecionado */}
+      {/* Seção 3: Localização da loja — só relevante pros modelos por distância */}
+      {GEO_MODELS.includes(modeloCobranca) && (
+        <StoreLocationPicker
+          lat={storeLat}
+          lng={storeLng}
+          onChange={(lat, lng) => { setStoreLat(lat); setStoreLng(lng); }}
+          onLocateFromAddress={async () => {
+            const res = await api.post("/api/store/geocode-address", {});
+            if (!res.ok) return null;
+            const data = await res.json() as { lat: number; lng: number };
+            return data;
+          }}
+        />
+      )}
+
+      {/* Seção 4: Configuração do modelo selecionado */}
       <Card className="rounded-2xl border-border/50 shadow-soft animate-in fade-in duration-200">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold">
             {DELIVERY_MODELS.find((m) => m.key === modeloCobranca)?.label ?? "Configuração"}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <DeliveryPricingConfig
             model={modeloCobranca}
             value={deliveryModelConfig}
             onChange={setDeliveryModelConfig}
+            storeLat={storeLat}
+            storeLng={storeLng}
           />
         </CardContent>
       </Card>

@@ -1,4 +1,4 @@
-import { createDb, createTenantDb } from "@/lib/db";
+import { createDb, createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, notInArray } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
@@ -141,7 +141,7 @@ export async function savePaymentMethodsHandler(request: Request, auth?: AuthCon
   if (!Array.isArray(body.methods)) return json({ error: "methods obrigatório" }, 400);
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const incomingKeys = body.methods.map(m => m.key);

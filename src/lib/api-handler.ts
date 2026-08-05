@@ -1,3 +1,4 @@
+import { estimateDeliveryHandler } from "./api/delivery-estimate-handler";
 import { registerHandler } from "./api/auth/register-handler";
 import { checkEmailHandler } from "./api/auth/check-email-handler";
 import { refreshCsrfHandler } from "./api/auth/refresh-csrf-handler";
@@ -10,7 +11,7 @@ import { resetPasswordHandler } from "./api/auth/reset-password-handler";
 import { resendVerificationHandler } from "./api/auth/resend-verification-handler";
 import { changePendingEmailHandler } from "./api/auth/change-pending-email-handler";
 import { impersonateConsumeHandler } from "./api/auth/impersonate-consume-handler";
-import { getStoreHandler, updateStoreHandler, getDashboardStatsHandler, getUserStoreHandler, savePaymentConfigHandler } from "./api/store-handler";
+import { getStoreHandler, updateStoreHandler, getDashboardStatsHandler, getUserStoreHandler, savePaymentConfigHandler, geocodeStoreAddressHandler } from "./api/store-handler";
 import {
   getStockStatsHandler,
   getReportsStatsHandler,
@@ -169,6 +170,15 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/auth/resend-verification": resendVerificationHandler,
   "/api/auth/mock-login": mockLoginHandler,
   "/api/orders/create": createOrderHandler, // Público para checkout da loja
+  // Checkout via Mercado Pago (redireciona pro init_point). Cliente final,
+  // anônimo ou autenticado só via customerToken (Bearer) — nunca tem cookie
+  // armazix_token. Estava em protectedPostRoutes por engano: exigia sessão
+  // de admin (armazix_token + CSRF) pra uma chamada que o próprio frontend já
+  // monta como pública (skipCsrf:true) — na prática bloqueava o pagamento via
+  // MP pra qualquer cliente sem sessão de admin aberta no navegador. body.storeId
+  // é seguro aqui pelo mesmo motivo de /api/orders/create: preço e itens são
+  // sempre recalculados no servidor (priceOrder), nunca confiados do corpo.
+  "/api/payments/mp-checkout": createMpCheckoutHandler,
   "/api/customer/auth/request-code": requestOtpHandler,       // Solicita OTP via WhatsApp
   "/api/customer/auth/verify-code": verifyOtpHandler,         // Valida OTP e retorna JWT
   "/api/customer/profile": patchCustomerProfileHandler,       // Salva nome e endereço (auth via Bearer)
@@ -189,6 +199,7 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/store/get": getStoreHandler,
   "/api/store/check-slug": checkStoreSlugHandler,
   "/api/validate-cep": validateCepHandler,
+  "/api/delivery/estimate": estimateDeliveryHandler, // Público — preview de frete no checkout
   "/api/products/list": listProductsHandler, // Público para vitrine
   "/api/categories/list": listCategoriesHandler, // Público para vitrine
   "/api/coupons/validate": validatePublicCouponHandler, // Público para vitrine
@@ -207,6 +218,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/auth/logout": logoutHandler,
   "/api/auth/change-pending-email": changePendingEmailHandler,
   "/api/store/update": updateStoreHandler,
+  "/api/store/geocode-address": geocodeStoreAddressHandler,
   "/api/store/update-address": updateAddressHandler,
   "/api/store/update-business-hours": updateBusinessHoursHandler,
   "/api/store/update-slug": updateStoreSlugHandler,
@@ -233,7 +245,6 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/stock/entry":      stockEntryHandler,
   "/api/stock/exit":       stockExitHandler,
   "/api/stock/adjustment": stockAdjustmentHandler,
-  "/api/payments/mp-checkout": createMpCheckoutHandler,
   "/api/payments/mp-token": saveMpTokenHandler,
   "/api/store/payment-config": savePaymentConfigHandler,
   "/api/banners/save": saveBannersHandler,
@@ -323,10 +334,32 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/auth/verify-email": "verify-email",
   "/api/auth/forgot-password": "forgot-password",
   "/api/auth/reset-password": "reset-password",
+  // Reenvia e-mail para o próprio endereço informado — mesmo perfil de risco
+  // de "forgot-password" (dispara comunicação externa, sem custo pro atacante).
+  "/api/auth/resend-verification": "forgot-password",
+  // Oráculo de enumeração de e-mail (disponibilidade) — tier restritivo evita
+  // varredura em massa mantendo o uso normal do form de cadastro fluido.
+  "/api/auth/check-email": "sensitive",
   // Aceite valida a senha atual de quem já tem conta — trata como auth.
   "/api/store-users/accept-invite": "auth",
   // Dispara e-mail para terceiros: limita spam de convite.
   "/api/store-users/invite": "sensitive",
+  // Dispara mensagem de WhatsApp para o telefone informado — mesmo perfil de
+  // "forgot-password" (evita bombing de OTP contra números de terceiros).
+  "/api/customer/auth/request-code": "forgot-password",
+  // Código de 6 dígitos — mesmo tier de verify-email (10 tentativas/15min),
+  // o teto real de tentativas por código está em consumeOtp/consumeOtpFromDb.
+  "/api/customer/auth/verify-code": "verify-email",
+  // Agora pública (era protegida por engano) — tier "payments" evita card
+  // testing / flood de preferências de pagamento contra o token do lojista.
+  "/api/payments/mp-checkout": "payments",
+  // Mesmo perfil de mp-checkout: pública, cria pedido real, sem custo pro
+  // atacante repetir. O teto de itens por pedido já é aplicado dentro de
+  // priceOrder() (MAX_ITENS_POR_PEDIDO) — isto cobre só a frequência.
+  "/api/orders/create": "payments",
+  // Oráculo que devolve nome+telefone de cliente real — mesmo tier do
+  // check-email, evita varredura em massa de PII sem exigir credencial.
+  "/api/customer/check": "sensitive",
   "/api/payments/mp-webhook": "webhook",
   "/api/subscriptions/mp-webhook": "webhook",
   "/api/subscriptions/pix-webhook": "webhook",

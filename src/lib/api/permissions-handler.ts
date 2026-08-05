@@ -116,7 +116,7 @@ export async function saveRoleProfileHandler(
   await db
     .update(roleProfiles)
     .set({ permissions: sanitized, updatedAt: new Date() })
-    .where(eq(roleProfiles.id, body.profileId));
+    .where(and(eq(roleProfiles.id, body.profileId), eq(roleProfiles.storeId, storeAccess.storeId)));
 
   return json({ success: true });
 }
@@ -221,7 +221,7 @@ export async function deleteRoleProfileHandler(
 
   await db
     .delete(roleProfiles)
-    .where(eq(roleProfiles.id, body.profileId));
+    .where(and(eq(roleProfiles.id, body.profileId), eq(roleProfiles.storeId, storeAccess.storeId)));
 
   return json({ success: true });
 }

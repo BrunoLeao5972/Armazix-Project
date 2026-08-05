@@ -7,7 +7,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../store";
 import { type StoreProduct, formatPrice } from "@/lib/store-context";
-import { getEffectivePrice } from "@/lib/promo-engine";
+import { getEffectivePrice, type PromoConfig } from "@/lib/promo-engine";
 
 export const Route = createFileRoute("/store/product/$productId")({
   component: ProductPage,
@@ -18,8 +18,13 @@ interface ProductAddition {
 }
 
 type VarImage  = { url: string; isPrimary: boolean };
-type VarOption = { id: string; name: string; price: string; images?: VarImage[] };
-type VGroup    = { id: string; groupName: string; options: VarOption[] };
+type VarOption = { id: string; name: string; price: string; images?: VarImage[]; promoConfig?: PromoConfig | null };
+/** "adicional" (padrão) soma ao preço do produto; "opcional" substitui o preço do produto pelo da opção escolhida. */
+type VGroup    = { id: string; groupName: string; priceType?: "adicional" | "opcional"; required?: boolean; options: VarOption[] };
+
+/** Preço efetivo do adicional da variação — mesma promoção do produto, aplicada ao valor do adicional. */
+const variationOptionPrice = (opt: VarOption): number =>
+  getEffectivePrice(opt.price || "0", opt.promoConfig, "store").effectivePrice;
 
 const isValidImg = (v: unknown): v is string =>
   typeof v === "string" && v.trim() !== "";
@@ -46,7 +51,7 @@ function ProductPage() {
 
   useEffect(() => {
     if (!store?.id) return;
-    fetch(`/api/products/list?storeId=${store.id}&scope=public`)
+    fetch(`/api/products/list?storeId=${store.id}&scope=public&productId=${productId}`)
       .then(r => r.json())
       .then(d => {
         if (d.products) {
@@ -176,15 +181,32 @@ function ProductPage() {
     .filter(a => selectedAdditions.includes(a.id))
     .reduce((s, a) => s + parseFloat(a.price), 0);
 
-  // ── Variações (preço total) ───────────────────────────────────────────────
-  const variationsTotal = variationGroups.reduce((sum, g) => {
-    const opt = g.options.find(o => o.id === selectedVariations[g.id]);
-    return sum + (opt ? parseFloat(opt.price || "0") : 0);
+  // ── Variações: grupo "opcional" substitui o preço do produto, "adicional"
+  // (padrão) soma. Se houver mais de um grupo opcional selecionado, os dois
+  // substitutos somam entre si e formam o novo preço-base juntos.
+  const selectedOptionOf = (g: VGroup) => g.options.find(o => o.id === selectedVariations[g.id]);
+  const substitutiveGroups = variationGroups.filter(g => (g.priceType ?? "adicional") === "opcional");
+  const hasSubstitutiveSelection = substitutiveGroups.some(g => !!selectedVariations[g.id]);
+  const substitutiveTotal = substitutiveGroups.reduce((sum, g) => {
+    const opt = selectedOptionOf(g);
+    return sum + (opt ? variationOptionPrice(opt) : 0);
   }, 0);
+  const variationsAdditionalTotal = variationGroups
+    .filter(g => (g.priceType ?? "adicional") !== "opcional")
+    .reduce((sum, g) => {
+      const opt = selectedOptionOf(g);
+      return sum + (opt ? variationOptionPrice(opt) : 0);
+    }, 0);
+
+  // required=undefined trata como obrigatório (compatibilidade com grupos
+  // criados antes desse campo existir — sempre foram obrigatórios).
   const allGroupsSelected = variationGroups.every(
-    g => g.options.length === 0 || !!selectedVariations[g.id]
+    g => g.options.length === 0 || (g.required ?? true) === false || !!selectedVariations[g.id]
   );
-  const totalItem = (displayPrice + additionsTotal + variationsTotal) * qty;
+
+  // Preço-base exibido: substituído pela variação "opcional" quando aplicável.
+  const baseUnitPrice = hasSubstitutiveSelection ? substitutiveTotal : displayPrice;
+  const totalItem = (baseUnitPrice + additionsTotal + variationsAdditionalTotal) * qty;
 
   // ── Estado do estoque ─────────────────────────────────────────────────────
   const isFavorite = favorites.includes(productId);
@@ -198,7 +220,7 @@ function ProductPage() {
     if (outOfStock || !allGroupsSelected) return;
     const chosenVariations = variationGroups.flatMap(g => {
       const opt = g.options.find(o => o.id === selectedVariations[g.id]);
-      return opt ? [{ name: `${g.groupName}: ${opt.name}`, price: parseFloat(opt.price || "0") }] : [];
+      return opt ? [{ name: `${g.groupName}: ${opt.name}`, price: variationOptionPrice(opt) }] : [];
     });
     const chosenAdditions = activeAdditions
       .filter(a => selectedAdditions.includes(a.id))
@@ -207,7 +229,7 @@ function ProductPage() {
     addToCart({
       id:        product.id,
       name:      product.name,
-      price:     displayPrice + additionsTotal + variationsTotal,
+      price:     baseUnitPrice + additionsTotal + variationsAdditionalTotal,
       image:     product.imageUrl || null,
       emoji:     product.emoji || "📦",
       obs:       obs || undefined,
@@ -396,12 +418,12 @@ function ProductPage() {
             <p className="text-sm text-muted-foreground leading-relaxed">{product.description}</p>
           )}
 
-          {/* Preço */}
+          {/* Preço — substituído pela variação "opcional" quando selecionada */}
           <div className="flex items-end gap-2.5">
             <span className="text-[2rem] font-black text-emerald-600 tabular-nums leading-none">
-              R$ {formatPrice(displayPrice)}
+              R$ {formatPrice(baseUnitPrice)}
             </span>
-            {displayOld && displayOld > displayPrice && (
+            {!hasSubstitutiveSelection && displayOld && displayOld > displayPrice && (
               <span className="text-base text-slate-400 line-through tabular-nums mb-0.5">
                 R$ {formatPrice(displayOld)}
               </span>
@@ -508,15 +530,42 @@ function ProductPage() {
                 const groupHasImages = group.options.some(
                   o => o.images?.some(img => isValidImg(img.url))
                 );
+                // Grupo "opcional" substitui o preço do produto — o rótulo mostra
+                // o preço cheio da opção, não um "+" de adicional.
+                const isSubstitutiveGroup = (group.priceType ?? "adicional") === "opcional";
+                const isRequiredGroup = (group.required ?? true) !== false;
                 return (
                   <div key={group.id}>
                     <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">
-                      {group.groupName} <span className="text-destructive">*</span>
+                      {group.groupName}{" "}
+                      {isRequiredGroup ? (
+                        <span className="text-destructive">*</span>
+                      ) : (
+                        <span className="text-muted-foreground/70 normal-case font-normal tracking-normal">(opcional)</span>
+                      )}
                     </p>
                     <div className="flex flex-wrap gap-2">
+                      {!isRequiredGroup && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedVariations(prev => {
+                            const next = { ...prev };
+                            delete next[group.id];
+                            return next;
+                          })}
+                          className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all ${
+                            !selectedVariations[group.id]
+                              ? "border-primary bg-primary/5 text-primary"
+                              : "border-border/60 text-muted-foreground hover:border-border"
+                          }`}
+                        >
+                          Sem opcional
+                        </button>
+                      )}
                       {group.options.map(option => {
-                        const sel      = selectedVariations[group.id] === option.id;
-                        const optPrice = parseFloat(option.price || "0");
+                        const sel = selectedVariations[group.id] === option.id;
+                        const { effectivePrice: optPrice, promoActive: optPromoActive } =
+                          getEffectivePrice(option.price || "0", option.promoConfig, "store");
 
                         // Determina thumbnail: primeira imagem válida (primária preferida)
                         const validImgs = (option.images ?? []).filter(img => isValidImg(img.url));
@@ -547,9 +596,11 @@ function ProductPage() {
                             }`}>
                               {option.name}
                             </div>
-                            {optPrice > 0 && (
-                              <div className="absolute top-0.5 right-0.5 bg-emerald-500 text-white text-[8px] font-bold px-1 rounded leading-tight">
-                                +{formatPrice(optPrice)}
+                            {(optPrice > 0 || optPromoActive) && (
+                              <div className={`absolute top-0.5 right-0.5 text-white text-[8px] font-bold px-1 rounded leading-tight ${
+                                optPromoActive ? "bg-violet-600" : "bg-emerald-500"
+                              }`}>
+                                {isSubstitutiveGroup ? "" : "+"}{formatPrice(optPrice)}
                               </div>
                             )}
                           </button>
@@ -565,9 +616,16 @@ function ProductPage() {
                             }`}
                           >
                             {option.name}
-                            {optPrice > 0 && (
+                            {optPromoActive ? (
+                              <span className="ml-1 text-[11px] font-semibold">
+                                <span className="line-through text-muted-foreground mr-1">
+                                  {isSubstitutiveGroup ? "" : "+"}R$ {formatPrice(parseFloat(option.price || "0"))}
+                                </span>
+                                <span className="text-violet-600">{isSubstitutiveGroup ? "" : "+"}R$ {formatPrice(optPrice)}</span>
+                              </span>
+                            ) : optPrice > 0 && (
                               <span className="ml-1 text-[11px] font-semibold text-emerald-600">
-                                +R$ {formatPrice(optPrice)}
+                                {isSubstitutiveGroup ? "" : "+"}R$ {formatPrice(optPrice)}
                               </span>
                             )}
                           </button>

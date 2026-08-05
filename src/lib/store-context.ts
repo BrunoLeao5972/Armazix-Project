@@ -174,6 +174,10 @@ export interface StorePublicData {
   // regras de frete por bairro + limiar para frete grátis
   deliveryRules: DeliveryRule[] | null;
   freeShippingAbove: string | null;
+  // config rica de frete (6 modelos) — usada pelo checkout só pra saber se o
+  // modelo ativo é geo-based (nesse caso o frete vem de /api/delivery/estimate,
+  // não do cálculo local por bairro).
+  deliveryConfig?: { modeloCobranca?: string } | null;
 }
 
 export interface ConfiguracaoVitrine {

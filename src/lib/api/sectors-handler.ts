@@ -1,6 +1,6 @@
-import { createDb, createTenantDb } from "@/lib/db";
+import { createDb, createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 
 const { sectors, productSectors, products } = schema;
@@ -58,7 +58,7 @@ export async function createSectorHandler(request: Request, auth?: AuthContext):
   if (!body.name?.trim()) return json({ error: "name obrigatório" }, 400);
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const [sector] = await db.insert(sectors).values({
@@ -215,9 +215,20 @@ export async function setProductSectorsHandler(request: Request, auth?: AuthCont
     await db.delete(productSectors).where(eq(productSectors.productId, body.productId));
 
     if (body.sectorIds?.length > 0) {
-      await db.insert(productSectors).values(
-        body.sectorIds.map(sectorId => ({ productId: body.productId, sectorId }))
-      );
+      // Nunca inserir um sectorId sem confirmar que pertence a esta loja —
+      // sem isso, o body poderia vincular o produto a um setor de outra loja.
+      const owned = await db
+        .select({ id: sectors.id })
+        .from(sectors)
+        .where(and(inArray(sectors.id, body.sectorIds), eq(sectors.storeId, storeId)));
+      const ownedIds = new Set(owned.map(s => s.id));
+      const validSectorIds = body.sectorIds.filter(id => ownedIds.has(id));
+
+      if (validSectorIds.length > 0) {
+        await db.insert(productSectors).values(
+          validSectorIds.map(sectorId => ({ productId: body.productId, sectorId }))
+        );
+      }
     }
 
     return json({ success: true });

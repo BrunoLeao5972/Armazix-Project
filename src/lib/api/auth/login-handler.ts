@@ -2,6 +2,7 @@ import { createDb, schema } from "@/lib/db";
 import { findUserByEmail, verifyPassword, signJWT } from "@/lib/auth";
 import { generateCsrfToken, createCsrfCookie } from "@/lib/middleware/csrf";
 import { logAudit, AuditActions } from "@/lib/audit";
+import { requireJwtSecret } from "@/lib/env";
 import { eq } from "drizzle-orm";
 
 const { storeUsers } = schema;
@@ -76,9 +77,18 @@ export async function loginHandler(request: Request): Promise<Response> {
   const storeId = storeUserRecord?.storeId;
 
   // Sign JWT with storeId embedded — NEVER read storeId from request
-  const secret = process.env.JWT_SECRET!;
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    console.error("[login] JWT_SECRET ausente — recusando emitir sessão");
+    return new Response(JSON.stringify({ error: "Erro de configuração do servidor" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+  }
   const token = await signJWT(
-    { userId: user.id, email: user.email, role: user.role, storeId },
+    { userId: user.id, email: user.email, role: user.role, storeId, sessionVersion: user.sessionVersion },
     secret,
   );
 
@@ -100,7 +110,6 @@ export async function loginHandler(request: Request): Promise<Response> {
 
   return new Response(JSON.stringify({
     success: true,
-    token,
     csrfToken, // Frontend precisa enviar isso no header x-csrf-token
     user: {
       id: user.id,

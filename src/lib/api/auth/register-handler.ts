@@ -3,11 +3,14 @@ import { schema } from "@/lib/db";
 import { hashPassword, findUserByEmail, createVerificationCode, validatePasswordPolicy, signJWT } from "@/lib/auth";
 import { sendVerificationEmail } from "@/lib/auth/email";
 import { sanitizeString } from "@/lib/validation/schemas";
+import { isValidCPF, isValidCNPJ } from "@/lib/document-validation";
 import { logAudit, AuditActions } from "@/lib/audit";
 import { generateCsrfToken, createCsrfCookie } from "@/lib/middleware/csrf";
 import { eq, sql } from "drizzle-orm";
 import { generateCleanSlug } from "@/lib/slug";
 import { TRIAL_DAYS } from "@/lib/plans";
+import { CURRENT_TERMS_VERSION } from "@/lib/legal";
+import { requireJwtSecret } from "@/lib/env";
 
 const { users, stores, storeUsers } = schema;
 
@@ -27,6 +30,7 @@ export async function registerHandler(request: Request): Promise<Response> {
     storeColor?: string;
     docType?: string;
     docNumber?: string;
+    termsAccepted?: boolean;
     address?: {
       street: string;
       number: string;
@@ -37,6 +41,28 @@ export async function registerHandler(request: Request): Promise<Response> {
       complement?: string;
     };
   };
+
+  if (!body.termsAccepted) {
+    return new Response(JSON.stringify({ error: "É necessário aceitar os Termos de Uso para criar a conta" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  // Mesmos limites do formulário — validados de novo aqui porque o client
+  // pode ser contornado por quem chamar a API direto.
+  if (body.description && body.description.length > 500) {
+    return new Response(JSON.stringify({ error: "Descrição deve ter no máximo 500 caracteres" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  if (body.address?.complement && body.address.complement.length > 70) {
+    return new Response(JSON.stringify({ error: "Complemento deve ter no máximo 70 caracteres" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = createDb(dbUrl);
@@ -59,6 +85,16 @@ export async function registerHandler(request: Request): Promise<Response> {
   // Documento do responsável/empresa, sempre armazenado apenas com dígitos
   const rawDocNumber = body.docNumber?.replace(/\D/g, "") || null;
   const isCnpj = body.docType === "cnpj";
+
+  // CPF/CNPJ é obrigatório e precisa passar no dígito verificador — a
+  // validação do formulário roda no client e pode ser contornada por quem
+  // chamar a API direto, então valida de novo aqui antes de qualquer escrita.
+  if (!rawDocNumber || !(isCnpj ? isValidCNPJ(rawDocNumber) : isValidCPF(rawDocNumber))) {
+    return new Response(JSON.stringify({ error: isCnpj ? "CNPJ inválido" : "CPF inválido" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   // Check if email already exists
   const existing = await findUserByEmail(db, normalizedEmail);
@@ -118,6 +154,8 @@ export async function registerHandler(request: Request): Promise<Response> {
     role: "merchant",
     emailVerified: false,
     cpf: !isCnpj ? rawDocNumber : null,
+    termsAcceptedAt: new Date(),
+    termsVersion: CURRENT_TERMS_VERSION,
   }).returning();
 
   // Create store - clean slug without hyphens or special characters
@@ -180,9 +218,18 @@ export async function registerHandler(request: Request): Promise<Response> {
   }, request);
 
   // Sign JWT so the user is immediately logged in
-  const secret = process.env.JWT_SECRET!;
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    console.error("[register] JWT_SECRET ausente — recusando emitir sessão");
+    return new Response(JSON.stringify({ error: "Erro de configuração do servidor" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+  }
   const token = await signJWT(
-    { userId: user.id, email: user.email, role: user.role, storeId: store.id },
+    { userId: user.id, email: user.email, role: user.role, storeId: store.id, sessionVersion: user.sessionVersion },
     secret,
   );
 
@@ -196,6 +243,7 @@ export async function registerHandler(request: Request): Promise<Response> {
     success: true,
     csrfToken,
     user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    store: { id: store.id },
   }), {
     status: 201,
     headers: responseHeaders,

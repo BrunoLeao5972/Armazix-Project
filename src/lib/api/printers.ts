@@ -1,4 +1,4 @@
-import { createTenantDb } from "@/lib/db";
+import { createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, desc, and } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
@@ -17,7 +17,7 @@ export async function listPrintersHandler(request: Request, auth?: AuthContext):
     });
   }
 
-  const db = await createTenantDb(process.env.DATABASE_URL!, storeId);
+  const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
   try {
     const rows = await db
       .select()
@@ -69,7 +69,7 @@ export async function createPrinterHandler(request: Request, auth?: AuthContext)
     });
   }
 
-  const db = await createTenantDb(process.env.DATABASE_URL!, storeId);
+  const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
 
   try {
     // Generate sequential code IMP001, IMP002...
@@ -133,7 +133,7 @@ export async function updatePrinterHandler(request: Request, auth?: AuthContext)
     });
   }
 
-  const db = await createTenantDb(process.env.DATABASE_URL!, storeId);
+  const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
 
   try {
     const existing = await db.query.printers.findFirst({
@@ -189,7 +189,7 @@ export async function deletePrinterHandler(request: Request, auth?: AuthContext)
     });
   }
 
-  const db = await createTenantDb(process.env.DATABASE_URL!, storeId);
+  const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
   try {
     await db.update(printers)
       .set({ active: false, updatedAt: new Date() })

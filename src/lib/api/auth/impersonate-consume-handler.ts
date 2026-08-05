@@ -4,6 +4,7 @@ import { createDb, schema } from "@/lib/db";
 import { signJWT } from "@/lib/auth";
 import { generateCsrfToken, createCsrfCookie } from "@/lib/middleware/csrf";
 import { logAudit, AuditActions } from "@/lib/audit";
+import { requireJwtSecret } from "@/lib/env";
 
 const { users, storeUsers } = schema;
 
@@ -47,8 +48,12 @@ export async function impersonateConsumeHandler(request: Request): Promise<Respo
   const token = url.searchParams.get("token");
   if (!token) return new Response("Token ausente", { status: 400 });
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) return new Response("Configuração inválida", { status: 500 });
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    return new Response("Configuração inválida", { status: 500 });
+  }
 
   const claims = await verifyImpersonationToken(token, secret);
   if (!claims) return new Response("Token de impersonation inválido ou expirado", { status: 401 });
@@ -74,7 +79,10 @@ export async function impersonateConsumeHandler(request: Request): Promise<Respo
   }
 
   // Sessão de suporte — vida curta de propósito (2h, contra 7d do login normal).
-  const jwt = await signJWT({ userId: user.id, email: user.email, role: user.role, storeId }, secret, "2h");
+  const jwt = await signJWT(
+    { userId: user.id, email: user.email, role: user.role, storeId, sessionVersion: user.sessionVersion },
+    secret, "2h",
+  );
   const csrfToken = generateCsrfToken();
 
   logAudit({

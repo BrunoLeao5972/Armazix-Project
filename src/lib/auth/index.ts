@@ -117,7 +117,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
 
 // ─── JWT ─────────────────────────────────────────────────────────────────────
 export async function signJWT(
-  payload: { userId: string; email: string; role: string; storeId?: string },
+  payload: { userId: string; email: string; role: string; storeId?: string; sessionVersion: number },
   secret: string,
   expiresIn = "7d",
 ): Promise<string> {
@@ -132,11 +132,11 @@ export async function signJWT(
 export async function verifyJWT(
   token: string,
   secret: string,
-): Promise<{ userId: string; email: string; role: string; storeId?: string } | null> {
+): Promise<{ userId: string; email: string; role: string; storeId?: string; sessionVersion: number } | null> {
   try {
     const key = await getHmacKey(secret);
     const { payload } = await jwtVerify(token, key);
-    return payload as unknown as { userId: string; email: string; role: string; storeId?: string };
+    return payload as unknown as { userId: string; email: string; role: string; storeId?: string; sessionVersion: number };
   } catch {
     return null;
   }
@@ -251,7 +251,9 @@ function timingSafeEqual(a: string, b: string): boolean {
 export async function signCustomerJWT(
   payload: { customerId: string; storeId: string },
   secret: string,
-  expiresIn = "30d",
+  // Token vive em localStorage (sem HttpOnly) — janela de exposição a roubo
+  // via XSS reduzida de 30d para 7d. Cliente reloga via novo OTP ao expirar.
+  expiresIn = "7d",
 ): Promise<string> {
   const key = await getHmacKey(secret);
   return new SignJWT({ ...payload, role: "customer" })

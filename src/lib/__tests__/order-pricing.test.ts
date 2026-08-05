@@ -30,6 +30,9 @@ interface StoreRow {
   deliveryFee: string | null;
   deliveryRules: Array<{ bairro: string; taxa: number }> | null;
   freeShippingAbove: string | null;
+  deliveryConfig?: Record<string, unknown> | null;
+  latitude?: string | null;
+  longitude?: string | null;
 }
 
 let productRows: ProductRow[] = [];
@@ -61,7 +64,7 @@ vi.mock("@/lib/db", () => {
   });
   return {
     createDb: mockDb,
-    createTenantDb: () => Promise.resolve(mockDb()),
+    createUnscopedDb: () => Promise.resolve(mockDb()),
     schema: {
       products:         { __name: "products", id: "id", storeId: "storeId" },
       productAdditions: { __name: "product_additions", productId: "productId" },
@@ -70,6 +73,15 @@ vi.mock("@/lib/db", () => {
     },
   };
 });
+
+// ─── Mock de geocodificação — controlado por teste, nunca bate na API real ──
+let geocodeResult: { lat: number; lng: number } | null | (() => never) = null;
+vi.mock("@/lib/geocoding", () => ({
+  geocodeAddress: vi.fn(async () => {
+    if (typeof geocodeResult === "function") return geocodeResult();
+    return geocodeResult;
+  }),
+}));
 
 import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
 import { createDb } from "@/lib/db";
@@ -99,7 +111,13 @@ beforeEach(() => {
   additionRows = [];
   couponRows   = [];
   storeRows    = [{ deliveryFee: "10.00", deliveryRules: null, freeShippingAbove: null }];
+  geocodeResult = null;
 });
+
+const ENDERECO_CLIENTE = {
+  street: "Rua das Flores", number: "100", neighborhood: "Centro",
+  city: "Fortaleza", state: "CE", zip: "60000-000",
+};
 
 // ─── O ataque principal ─────────────────────────────────────────
 
@@ -239,6 +257,103 @@ describe("priceOrder — adicionais e variação", () => {
         productId: "prod-1", quantity: 1,
         additionsSnapshot: [{ name: "Borda recheada", price: "8.00" }],
       }],
+    });
+
+    expect(isPricingFailure(r)).toBe(true);
+  });
+});
+
+// ─── Grupo "opcional" (substitui) vs "adicional" (soma) + obrigatoriedade ─
+
+describe("priceOrder — priceType do grupo e obrigatoriedade", () => {
+  it("grupo opcional substitui o preço do produto, não soma", async () => {
+    productRows = [produto({
+      variationGroups: [{
+        id: "g1", groupName: "Tamanho", priceType: "opcional", required: true,
+        options: [{ name: "Grande", price: "40.00" }],
+      }],
+    })];
+
+    const r = await price({
+      storeId: LOJA, type: "pickup",
+      items: [{
+        productId: "prod-1", quantity: 1,
+        additionsSnapshot: [{ name: "Tamanho: Grande", price: "0.00" }],
+      }],
+    });
+
+    if (isPricingFailure(r)) throw new Error("não deveria falhar");
+    // Preço do produto é 50.00 — se somasse, daria 90.00. Substituindo, é só o da opção.
+    expect(r.items[0].unitPrice).toBe("40.00");
+  });
+
+  it("grupo opcional + adicional no mesmo pedido: substitui a base e soma o adicional por cima", async () => {
+    productRows = [produto({
+      variationGroups: [
+        { id: "g1", groupName: "Tamanho", priceType: "opcional", required: true, options: [{ name: "Grande", price: "40.00" }] },
+        { id: "g2", groupName: "Borda",   priceType: "adicional", required: false, options: [{ name: "Recheada", price: "8.00" }] },
+      ],
+    })];
+
+    const r = await price({
+      storeId: LOJA, type: "pickup",
+      items: [{
+        productId: "prod-1", quantity: 1,
+        additionsSnapshot: [
+          { name: "Tamanho: Grande", price: "0.00" },
+          { name: "Borda: Recheada", price: "0.00" },
+        ],
+      }],
+    });
+
+    if (isPricingFailure(r)) throw new Error("não deveria falhar");
+    expect(r.items[0].unitPrice).toBe("48.00"); // 40 (substituto) + 8 (adicional)
+  });
+
+  it("grupo obrigatório sem opção selecionada é recusado", async () => {
+    productRows = [produto({
+      variationGroups: [{
+        id: "g1", groupName: "Tamanho", priceType: "adicional", required: true,
+        options: [{ name: "Grande", price: "12.00" }],
+      }],
+    })];
+
+    const r = await price({
+      storeId: LOJA, type: "pickup",
+      items: [{ productId: "prod-1", quantity: 1, additionsSnapshot: [] }],
+    });
+
+    expect(isPricingFailure(r)).toBe(true);
+  });
+
+  it("grupo com required=false pode ficar sem seleção — cobra só o preço base", async () => {
+    productRows = [produto({
+      variationGroups: [{
+        id: "g1", groupName: "Adicionais Extras", priceType: "adicional", required: false,
+        options: [{ name: "Bacon", price: "3.50" }],
+      }],
+    })];
+
+    const r = await price({
+      storeId: LOJA, type: "pickup",
+      items: [{ productId: "prod-1", quantity: 1, additionsSnapshot: [] }],
+    });
+
+    if (isPricingFailure(r)) throw new Error("não deveria falhar — grupo não é obrigatório");
+    expect(r.items[0].unitPrice).toBe("50.00");
+  });
+
+  it("grupo sem o campo required (compatibilidade) continua obrigatório", async () => {
+    productRows = [produto({
+      variationGroups: [{
+        id: "g1", groupName: "Tamanho", priceType: "adicional",
+        options: [{ name: "Grande", price: "12.00" }],
+      }],
+    })];
+
+    const r = await price({
+      storeId: LOJA, type: "pickup",
+      items: [{ productId: "prod-1", quantity: 1, additionsSnapshot: [] }],
     });
 
     expect(isPricingFailure(r)).toBe(true);
@@ -460,5 +575,210 @@ describe("priceOrder — total consolidado", () => {
     expect(r.deliveryFee).toBe("12.00");
     expect(r.discount).toBe("10.00");
     expect(r.total).toBe("72.00");
+  });
+});
+
+// ─── Frete por distância — 4 modelos geo-based ────────────────────
+
+describe("priceOrder — frete geo-based (dinâmica, raio, bairro no mapa, matriz)", () => {
+  const LOJA_PONTO = { lat: -3.7327, lng: -38.5267 }; // Fortaleza
+
+  it("modelo dinâmica: cobra taxa base + km excedente", async () => {
+    geocodeResult = { lat: -3.7500, lng: -38.5267 }; // ~1.9km ao sul da loja
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
+      latitude: String(LOJA_PONTO.lat), longitude: String(LOJA_PONTO.lng),
+      deliveryConfig: {
+        modeloCobranca: "dinamica",
+        modelConfig: { dinamica: { taxaBasica: "5.00", distanciaBase: "1", valorPorKmAdicional: "2.00" } },
+      },
+    }];
+
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    if (isPricingFailure(r)) throw new Error(`não deveria falhar: ${r.error}`);
+    // ~1.92km de distância, base cobre 1km → (1.92-1) * 2.00 ≈ 1.85 + 5.00 base
+    const fee = parseFloat(r.deliveryFee);
+    expect(fee).toBeGreaterThan(5.00); // sempre cobra pelo menos a base
+    expect(fee).toBeLessThan(10.00);   // mas não descontrola pra uma distância pequena
+  });
+
+  it("modelo raio: aplica a taxa do círculo correto", async () => {
+    geocodeResult = { lat: -3.7500, lng: -38.5267 }; // dentro do primeiro raio (~1.9km)
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
+      latitude: String(LOJA_PONTO.lat), longitude: String(LOJA_PONTO.lng),
+      deliveryConfig: {
+        modeloCobranca: "raio",
+        modelConfig: { raio: { raios: [
+          { raioMetros: 3000, tipoCobranca: "fixa", valorFixo: "8.00" },
+          { raioMetros: 8000, tipoCobranca: "fixa", valorFixo: "15.00" },
+        ] } },
+      },
+    }];
+
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    if (isPricingFailure(r)) throw new Error(`não deveria falhar: ${r.error}`);
+    expect(r.deliveryFee).toBe("8.00"); // caiu no primeiro raio (3km), não no segundo
+  });
+
+  it("modelo raio: endereço fora de todos os raios é recusado", async () => {
+    geocodeResult = { lat: -4.5000, lng: -39.5000 }; // bem longe da loja
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
+      latitude: String(LOJA_PONTO.lat), longitude: String(LOJA_PONTO.lng),
+      deliveryConfig: {
+        modeloCobranca: "raio",
+        modelConfig: { raio: { raios: [{ raioMetros: 3000, tipoCobranca: "fixa", valorFixo: "8.00" }] } },
+      },
+    }];
+
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    expect(isPricingFailure(r)).toBe(true);
+  });
+
+  it("modelo matriz: aplica a faixa de distância correta", async () => {
+    geocodeResult = { lat: -3.7500, lng: -38.5267 };
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
+      latitude: String(LOJA_PONTO.lat), longitude: String(LOJA_PONTO.lng),
+      deliveryConfig: {
+        modeloCobranca: "matriz",
+        modelConfig: { matriz: [
+          { de: 0, ate: 3000, valor: "6.00" },
+          { de: 3000, ate: 8000, valor: "12.00" },
+        ] },
+      },
+    }];
+
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    if (isPricingFailure(r)) throw new Error(`não deveria falhar: ${r.error}`);
+    expect(r.deliveryFee).toBe("6.00");
+  });
+
+  it("modelo bairro (polígono): dentro da área cobra o valor configurado", async () => {
+    geocodeResult = { lat: -3.7327, lng: -38.5267 }; // exatamente no ponto da loja — dentro de qualquer polígono ao redor
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
+      latitude: String(LOJA_PONTO.lat), longitude: String(LOJA_PONTO.lng),
+      deliveryConfig: {
+        modeloCobranca: "bairro",
+        modelConfig: { bairroDesenho: {
+          poligonos: [[[-3.80, -38.60], [-3.80, -38.45], [-3.65, -38.45], [-3.65, -38.60]]],
+          tipoCobranca: "fixa", valorFixo: "9.00", valorPorKm: "0",
+        } },
+      },
+    }];
+
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    if (isPricingFailure(r)) throw new Error(`não deveria falhar: ${r.error}`);
+    expect(r.deliveryFee).toBe("9.00");
+  });
+
+  it("modelo bairro (polígono): fora de todos os polígonos é recusado", async () => {
+    geocodeResult = { lat: 10, lng: 10 }; // longe de qualquer polígono desenhado
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
+      latitude: String(LOJA_PONTO.lat), longitude: String(LOJA_PONTO.lng),
+      deliveryConfig: {
+        modeloCobranca: "bairro",
+        modelConfig: { bairroDesenho: {
+          poligonos: [[[-3.80, -38.60], [-3.80, -38.45], [-3.65, -38.45], [-3.65, -38.60]]],
+          tipoCobranca: "fixa", valorFixo: "9.00", valorPorKm: "0",
+        } },
+      },
+    }];
+
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    expect(isPricingFailure(r)).toBe(true);
+  });
+
+  it("loja sem localização configurada recusa modelo geo-based", async () => {
+    geocodeResult = { lat: -3.75, lng: -38.52 };
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
+      latitude: null, longitude: null,
+      deliveryConfig: { modeloCobranca: "dinamica", modelConfig: { dinamica: { taxaBasica: "5.00" } } },
+    }];
+
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    expect(isPricingFailure(r)).toBe(true);
+  });
+
+  it("endereço não encontrado na geocodificação recusa o pedido", async () => {
+    geocodeResult = null; // Nominatim não achou nada
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
+      latitude: String(LOJA_PONTO.lat), longitude: String(LOJA_PONTO.lng),
+      deliveryConfig: { modeloCobranca: "dinamica", modelConfig: { dinamica: { taxaBasica: "5.00" } } },
+    }];
+
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    expect(isPricingFailure(r)).toBe(true);
+  });
+
+  it("falha na consulta de geocodificação vira erro 503, não uma cobrança silenciosa", async () => {
+    geocodeResult = () => { throw new Error("Nominatim indisponível"); };
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
+      latitude: String(LOJA_PONTO.lat), longitude: String(LOJA_PONTO.lng),
+      deliveryConfig: { modeloCobranca: "dinamica", modelConfig: { dinamica: { taxaBasica: "5.00" } } },
+    }];
+
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    if (!isPricingFailure(r)) throw new Error("deveria falhar");
+    expect(r.status).toBe(503);
+  });
+
+  it("frete grátis acima de X vale pra modelo geo-based e não geocodifica à toa", async () => {
+    storeRows = [{
+      deliveryFee: "0", deliveryRules: null, freeShippingAbove: "50.00",
+      latitude: String(LOJA_PONTO.lat), longitude: String(LOJA_PONTO.lng),
+      deliveryConfig: { modeloCobranca: "dinamica", modelConfig: { dinamica: { taxaBasica: "5.00" } } },
+    }];
+    // produto de 50 (>= freeShippingAbove) — se tentasse geocodificar, o mock
+    // lançaria (geocodeResult continua null desde o beforeEach) e o teste falharia.
+    const r = await price({
+      storeId: LOJA, type: "delivery", addressSnapshot: ENDERECO_CLIENTE,
+      items: [{ productId: "prod-1", quantity: 1 }],
+    });
+
+    if (isPricingFailure(r)) throw new Error(`não deveria falhar: ${r.error}`);
+    expect(r.deliveryFee).toBe("0.00");
   });
 });

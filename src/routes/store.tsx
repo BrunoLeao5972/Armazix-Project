@@ -628,6 +628,14 @@ function StoreLayout() {
         "--cor-primaria": configuracaoVitrine.corPrimaria,
         "--cor-fundo": configuracaoVitrine.corFundo,
         "--cor-texto": configuracaoVitrine.corTextos,
+        // Sobrescreve as variáveis globais de marca da Armazix (--primary e
+        // afins) só dentro da vitrine — assim todo componente padrão (Sheet,
+        // Dialog, Button) que usa bg-primary/text-primary/shadow-glow segue a
+        // cor da loja em vez do verde fixo da plataforma. A vitrine é white
+        // label: o cliente final nunca deveria ver a marca da Armazix nela.
+        "--primary": configuracaoVitrine.corPrimaria,
+        "--primary-foreground": "#ffffff",
+        "--primary-glow": configuracaoVitrine.corPrimaria,
       }) as CSSProperties,
     [configuracaoVitrine.corFundo, configuracaoVitrine.corPrimaria, configuracaoVitrine.corTextos]
   );
@@ -683,7 +691,7 @@ function StoreLayout() {
       >
         <PortalContainerContext.Provider value={portalContainer}>
         {/* Header */}
-        <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200/80">
+        <header className="sticky top-0 z-40 bg-[var(--cor-fundo)]/95 backdrop-blur-md border-b border-[var(--cor-texto)]/10">
           <div className="max-w-7xl mx-auto px-3 md:px-6 h-14 md:h-16 flex items-center justify-between gap-3">
             {/* Logo + Store Name */}
             <div className="flex items-center gap-2.5 min-w-0">
@@ -740,9 +748,9 @@ function StoreLayout() {
             <div className="flex items-center gap-1">
               <Link
                 to="/store/search"
-                className="md:hidden w-9 h-9 rounded-xl flex items-center justify-center hover:bg-slate-100 transition-colors"
+                className="md:hidden w-9 h-9 rounded-xl flex items-center justify-center hover:bg-[var(--cor-primaria)]/10 transition-colors"
               >
-                <Search className="w-4.5 h-4.5 text-slate-600" />
+                <Search className="w-4.5 h-4.5 text-[var(--cor-texto)]" />
               </Link>
 
               {/* Perfil — desktop only */}
@@ -758,14 +766,14 @@ function StoreLayout() {
                 <button
                   onClick={() => setProfileOpen(true)}
                   aria-label={`Perfil de ${customerName}`}
-                  className="hidden md:flex items-center gap-2 h-9 px-3 rounded-xl hover:bg-slate-100 transition-colors"
+                  className="hidden md:flex items-center gap-2 h-9 px-3 rounded-xl hover:bg-[var(--cor-primaria)]/10 transition-colors"
                 >
                   <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
                     <span className="text-[11px] font-bold text-primary">
                       {customerName.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?"}
                     </span>
                   </div>
-                  <span className="hidden lg:inline text-sm font-medium text-slate-700 max-w-[90px] truncate">
+                  <span className="hidden lg:inline text-sm font-medium text-[var(--cor-texto)] max-w-[90px] truncate">
                     Olá, {customerName.split(" ")[0] || "você"}
                   </span>
                 </button>
@@ -774,10 +782,10 @@ function StoreLayout() {
                   <button
                     onClick={() => setProfileOpen(true)}
                     aria-label="Entrar"
-                    className="flex items-center gap-2 h-9 px-3 rounded-xl hover:bg-slate-100 transition-colors"
+                    className="flex items-center gap-2 h-9 px-3 rounded-xl hover:bg-[var(--cor-primaria)]/10 transition-colors"
                   >
-                    <User className="w-4 h-4 text-slate-600" />
-                    <span className="text-sm font-medium text-slate-700">Entrar</span>
+                    <User className="w-4 h-4 text-[var(--cor-texto)]" />
+                    <span className="text-sm font-medium text-[var(--cor-texto)]">Entrar</span>
                   </button>
                   <button
                     onClick={() => setProfileOpen(true)}
@@ -794,10 +802,10 @@ function StoreLayout() {
               {/* Cart — oculto no mobile (acessível pelo Carrinho na bottom nav) */}
               <Sheet>
                 <SheetTrigger asChild>
-                  <button className="hidden md:flex w-9 h-9 rounded-xl items-center justify-center hover:bg-slate-100 transition-colors relative">
-                    <ShoppingCart className="w-4.5 h-4.5 text-slate-700" />
+                  <button className="hidden md:flex w-9 h-9 rounded-xl items-center justify-center hover:bg-[var(--cor-primaria)]/10 transition-colors relative">
+                    <ShoppingCart className="w-4.5 h-4.5 text-[var(--cor-texto)]" />
                     {cartCount > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 grid place-items-center min-w-[18px] h-[18px] rounded-full bg-[#163B78] text-white text-[10px] font-bold leading-none px-1">
+                      <span className="absolute -top-0.5 -right-0.5 grid place-items-center min-w-[18px] h-[18px] rounded-full bg-[var(--cor-primaria)] text-white text-[10px] font-bold leading-none px-1">
                         {cartCount}
                       </span>
                     )}

@@ -274,11 +274,16 @@ export async function redisRateLimit(
 
 // OTP — armazena/verifica/consome códigos temporários por telefone+store.
 const OTP_TTL = 300;
+// Tentativas erradas antes de queimar o código e exigir reenvio — mesmo teto
+// usado para os códigos de e-mail (verificação/reset) em src/lib/auth/index.ts.
+const OTP_MAX_ATTEMPTS = 5;
 
 export async function storeOtp(storeId: string, phone: string, code: string): Promise<boolean> {
   const redis = getRedis();
   if (!redis) return false;
   try {
+    // Nova solicitação reinicia o contador de tentativas do código anterior.
+    await redis.del(`otp-attempts:${storeId}:${phone}`);
     await redis.set(`otp:${storeId}:${phone}`, code, { ex: OTP_TTL });
     return true;
   } catch { return false; }
@@ -288,10 +293,21 @@ export async function consumeOtp(storeId: string, phone: string, code: string): 
   const redis = getRedis();
   if (!redis) return false;
   try {
-    const key    = `otp:${storeId}:${phone}`;
+    const key = `otp:${storeId}:${phone}`;
+    const attemptsKey = `otp-attempts:${storeId}:${phone}`;
+
+    const attempts = await redis.incr(attemptsKey);
+    if (attempts === 1) await redis.expire(attemptsKey, OTP_TTL);
+    if (attempts > OTP_MAX_ATTEMPTS) {
+      await redis.del(key); // esgotou as tentativas — código queimado, exige reenvio
+      return false;
+    }
+
     const stored = await redis.get<string>(key);
     if (!stored || stored !== code) return false;
+
     await redis.del(key);
+    await redis.del(attemptsKey);
     return true;
   } catch { return false; }
 }

@@ -1,7 +1,7 @@
 import { createDb } from "@/lib/db";
 import { validateVerificationCode, hashPassword, findUserByEmail, validatePasswordPolicy } from "@/lib/auth";
 import { schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { logAudit, AuditActions } from "@/lib/audit";
 
 const { users } = schema;
@@ -60,7 +60,7 @@ export async function resetPasswordHandler(request: Request): Promise<Response> 
   const passwordHash = await hashPassword(newPassword);
   await db
     .update(users)
-    .set({ passwordHash, updatedAt: new Date() })
+    .set({ passwordHash, updatedAt: new Date(), sessionVersion: sql`${users.sessionVersion} + 1` })
     .where(eq(users.id, user.id));
 
   logAudit({

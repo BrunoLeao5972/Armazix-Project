@@ -109,15 +109,29 @@ function SettingsPage() {
   const [freeShippingAbove, setFreeShippingAbove] = useState("0.00");
   const [modeloCobranca, setModeloCobranca] = useState("fixa");
   const [deliveryModelConfig, setDeliveryModelConfig] = useState<DeliveryModelConfig>(DEFAULT_DELIVERY_MODEL_CONFIG);
+  const [storeLat, setStoreLat] = useState<number | null>(null);
+  const [storeLng, setStoreLng] = useState<number | null>(null);
 
   useEffect(() => {
-    const storeId = localStorage.getItem("storeId");
-    if (storeId) {
-      fetchStore(storeId);
-    } else {
+    // Nunca confia no storeId que possa estar em cache no localStorage (pode
+    // ser de uma conta anterior testada no mesmo navegador) — resolve sempre
+    // pela sessão autenticada e realinha o cache a partir do resultado.
+    api.get("/api/store/user").then(async (res) => {
+      if (res.ok) {
+        const data = await res.json() as { store?: { id: string } };
+        const storeId = data.store?.id;
+        if (storeId) {
+          localStorage.setItem("storeId", storeId);
+          fetchStore(storeId);
+          return;
+        }
+      }
       setLoading(false);
       setError("Loja não encontrada");
-    }
+    }).catch(() => {
+      setLoading(false);
+      setError("Loja não encontrada");
+    });
 
     api.get("/api/user/get").then(async (res) => {
       if (res.ok) {
@@ -162,6 +176,8 @@ function SettingsPage() {
           setFreeShippingEnabled(true);
           setFreeShippingAbove(data.store.freeShippingAbove);
         }
+        if (data.store.latitude != null) setStoreLat(parseFloat(data.store.latitude));
+        if (data.store.longitude != null) setStoreLng(parseFloat(data.store.longitude));
         if (data.store.deliveryConfig) {
           const dc = data.store.deliveryConfig;
           if (dc.modalidade) setModalidadeEntrega(dc.modalidade);
@@ -336,6 +352,8 @@ function SettingsPage() {
                   freeShippingAbove={freeShippingAbove} setFreeShippingAbove={setFreeShippingAbove}
                   modeloCobranca={modeloCobranca} setModeloCobranca={setModeloCobranca}
                   deliveryModelConfig={deliveryModelConfig} setDeliveryModelConfig={setDeliveryModelConfig}
+                  storeLat={storeLat} setStoreLat={setStoreLat}
+                  storeLng={storeLng} setStoreLng={setStoreLng}
                 />
               </Suspense>
             </TabsContent>

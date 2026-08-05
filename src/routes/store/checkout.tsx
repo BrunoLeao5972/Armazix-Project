@@ -34,6 +34,12 @@ const maskCep = (v: string) => {
 };
 
 // ── Delivery fee engine ───────────────────────────────────────────────────────
+// Modelos que dependem de distância real (geocodificação) — calculados no
+// servidor via /api/delivery/estimate, nunca localmente (o navegador não tem
+// como geocodificar). "fixa"/"bairroFixo"/sem modelo continuam no cálculo
+// síncrono local de sempre, sem depender de rede.
+const GEO_MODELS = ["dinamica", "raio", "bairro", "matriz"];
+
 interface FeeResult { taxa: number; isGratis: boolean; label: string }
 function calcDeliveryFee(bairro: string, subtotal: number, taxaGlobal: number, freeAbove: number | null, regras: DeliveryRule[]): FeeResult {
   const key = bairro.trim().toLowerCase();
@@ -42,6 +48,12 @@ function calcDeliveryFee(bairro: string, subtotal: number, taxaGlobal: number, f
   if (freeAbove !== null && subtotal >= freeAbove) return { taxa: 0, isGratis: true, label: "Frete Grátis!" };
   if (taxa === 0) return { taxa: 0, isGratis: true, label: "Grátis" };
   return { taxa, isGratis: false, label: `R$ ${formatPrice(taxa)}` };
+}
+
+interface GeoEstimateState {
+  status: "idle" | "loading" | "ok" | "error";
+  fee: number;
+  error?: string;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -205,22 +217,77 @@ function CheckoutPage() {
   const payCfg = store?.paymentConfig ?? DEFAULT_PAYMENT_CONFIG;
 
   // ── Frete ─────────────────────────────────────────────────────────────────
+  const modeloCobranca = store?.deliveryConfig?.modeloCobranca;
+  const isGeoModel = !!modeloCobranca && GEO_MODELS.includes(modeloCobranca);
+
+  const [geoEstimate, setGeoEstimate] = useState<GeoEstimateState>({ status: "idle", fee: 0 });
+
+  const enderecoCompleto = !!(address.street && address.city && address.state);
+
+  // Debounced: recalcula a estimativa de frete geo-based conforme o cliente
+  // preenche o endereço — mesmo cálculo que o servidor fará de verdade na
+  // hora de fechar o pedido (estimateDelivery), então nunca diverge.
+  useEffect(() => {
+    if (!isGeoModel || deliveryType !== "delivery" || !enderecoCompleto) {
+      setGeoEstimate({ status: "idle", fee: 0 });
+      return;
+    }
+    const storeId = store?.id || localStorage.getItem("storeId");
+    if (!storeId) return;
+
+    let cancelled = false;
+    setGeoEstimate(prev => ({ ...prev, status: "loading" }));
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          storeId,
+          subtotal: cartTotal.toFixed(2),
+          street: address.street, number: address.number, neighborhood: address.neighborhood,
+          city: address.city, state: address.state, zip: address.zip,
+        });
+        const res = await fetch(`/api/delivery/estimate?${params.toString()}`);
+        const data = await res.json() as { fee?: string; error?: string };
+        if (cancelled) return;
+        if (!res.ok) {
+          setGeoEstimate({ status: "error", fee: 0, error: data.error || "Não foi possível calcular o frete para este endereço" });
+          return;
+        }
+        setGeoEstimate({ status: "ok", fee: parseFloat(data.fee ?? "0") });
+      } catch {
+        if (!cancelled) setGeoEstimate({ status: "error", fee: 0, error: "Erro ao calcular o frete" });
+      }
+    }, 600);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [isGeoModel, deliveryType, enderecoCompleto, store?.id, cartTotal, address.street, address.number, address.neighborhood, address.city, address.state, address.zip]);
+
   const feeResult = useMemo<FeeResult>(() => {
     if (deliveryType === "pickup") return { taxa: 0, isGratis: true, label: "Grátis" };
+    if (isGeoModel) {
+      if (geoEstimate.status === "ok") {
+        return geoEstimate.fee === 0
+          ? { taxa: 0, isGratis: true, label: "Grátis" }
+          : { taxa: geoEstimate.fee, isGratis: false, label: `R$ ${formatPrice(geoEstimate.fee)}` };
+      }
+      return { taxa: 0, isGratis: false, label: "—" };
+    }
     const taxaGlobal = parseFloat(store?.deliveryFee || "0");
     const freeAbove = store?.freeShippingAbove ? parseFloat(store.freeShippingAbove) : null;
     const regras: DeliveryRule[] = store?.deliveryRules || [];
     return calcDeliveryFee(address.neighborhood, cartTotal, taxaGlobal, freeAbove, regras);
-  }, [deliveryType, address.neighborhood, cartTotal, store]);
+  }, [deliveryType, isGeoModel, geoEstimate, address.neighborhood, cartTotal, store]);
 
   const orderTotal = cartTotal + feeResult.taxa - couponDiscount;
 
   // ── Validações ────────────────────────────────────────────────────────────
   const step0Valid = useMemo(() => {
     if (nome.trim().length < 2) return false;
-    if (deliveryType === "delivery") return !!(address.street && address.number && address.neighborhood && address.city);
+    if (deliveryType === "delivery") {
+      if (!(address.street && address.number && address.neighborhood && address.city)) return false;
+      if (isGeoModel && geoEstimate.status !== "ok") return false;
+    }
     return true;
-  }, [nome, deliveryType, address]);
+  }, [nome, deliveryType, address, isGeoModel, geoEstimate.status]);
 
   const step1Valid = useMemo(() => {
     if (!paymentMethod) return false;
@@ -861,12 +928,38 @@ function CheckoutPage() {
                   <Field label="UF"><input value={address.state} onChange={e => setAddress(a => ({ ...a, state: e.target.value.toUpperCase() }))} placeholder="SP" maxLength={2} className={inputCls} /></Field>
                 </div>
 
-                {address.neighborhood && (
-                  <div className={`flex items-center gap-2 p-3 rounded-xl text-sm transition-colors ${feeResult.isGratis ? "bg-emerald-50 border border-emerald-200 text-emerald-700" : "bg-surface border border-border/40 text-muted-foreground"}`}>
-                    <Truck className="w-4 h-4 shrink-0" />
-                    <span className="flex-1">Taxa para <strong>{address.neighborhood}</strong></span>
-                    <span className="font-bold">{feeResult.label}</span>
-                  </div>
+                {isGeoModel ? (
+                  enderecoCompleto && (
+                    <div className={`flex items-center gap-2 p-3 rounded-xl text-sm transition-colors ${
+                      geoEstimate.status === "error"
+                        ? "bg-destructive/10 border border-destructive/30 text-destructive"
+                        : feeResult.isGratis
+                          ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                          : "bg-surface border border-border/40 text-muted-foreground"
+                    }`}>
+                      <Truck className="w-4 h-4 shrink-0" />
+                      {geoEstimate.status === "loading" && (
+                        <span className="flex-1 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Calculando frete…</span>
+                      )}
+                      {geoEstimate.status === "error" && (
+                        <span className="flex-1">{geoEstimate.error}</span>
+                      )}
+                      {geoEstimate.status === "ok" && (
+                        <>
+                          <span className="flex-1">Taxa de entrega</span>
+                          <span className="font-bold">{feeResult.label}</span>
+                        </>
+                      )}
+                    </div>
+                  )
+                ) : (
+                  address.neighborhood && (
+                    <div className={`flex items-center gap-2 p-3 rounded-xl text-sm transition-colors ${feeResult.isGratis ? "bg-emerald-50 border border-emerald-200 text-emerald-700" : "bg-surface border border-border/40 text-muted-foreground"}`}>
+                      <Truck className="w-4 h-4 shrink-0" />
+                      <span className="flex-1">Taxa para <strong>{address.neighborhood}</strong></span>
+                      <span className="font-bold">{feeResult.label}</span>
+                    </div>
+                  )
                 )}
                 {store?.freeShippingAbove && !feeResult.isGratis && (
                   <p className="text-xs text-center text-muted-foreground">Frete grátis a partir de R$ {formatPrice(parseFloat(store.freeShippingAbove))}</p>

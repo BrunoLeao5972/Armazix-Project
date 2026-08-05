@@ -240,6 +240,71 @@ const migrations = [
   { name: "0026b_pdv_code_idx", query: `CREATE UNIQUE INDEX IF NOT EXISTS "store_pdv_code_idx" ON "products"("store_id", "pdv_code") WHERE "pdv_code" IS NOT NULL` },
   // Flag de acesso ao Gerenciador Armazix (portal SuperAdmin, projeto separado)
   { name: "0027_superadmin", query: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "is_superadmin" boolean NOT NULL DEFAULT false` },
+  // Prova de aceite dos Termos de Uso no cadastro
+  { name: "0028_terms_acceptance", query: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "terms_accepted_at" timestamp, ADD COLUMN IF NOT EXISTS "terms_version" varchar(10)` },
+  // Auditoria de segurança: revogação de sessão pós-troca de senha + limite de tentativas de OTP
+  { name: "0029_session_hardening", query: `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "session_version" integer NOT NULL DEFAULT 0` },
+  { name: "0029b_otp_attempts", query: `ALTER TABLE "customer_otps" ADD COLUMN IF NOT EXISTS "attempts" integer NOT NULL DEFAULT 0` },
+
+  // Auditoria de segurança — RLS multi-tenant: a migração 0001 nunca tinha
+  // sido de fato aplicada em produção (só a função existia; nenhuma tabela
+  // tinha RLS habilitado, 0 políticas). Reaplica de forma idempotente.
+  // Requer a role `armazix_tenant` (sem BYPASSRLS) já criada manualmente —
+  // ver comentário em src/lib/db/index.ts. DATABASE_URL_TENANT precisa estar
+  // configurado como secret/env separado.
+  { name: "0030a_rls_function", query: `CREATE OR REPLACE FUNCTION app_current_store_id() RETURNS uuid AS $$ SELECT NULLIF(current_setting('app.current_store_id', true), '')::uuid; $$ LANGUAGE sql STABLE` },
+
+  { name: "0030b_rls_stores_enable", query: `ALTER TABLE stores ENABLE ROW LEVEL SECURITY` },
+  { name: "0030c_rls_stores_drop_select", query: `DROP POLICY IF EXISTS tenant_store_select ON stores` },
+  { name: "0030d_rls_stores_select", query: `CREATE POLICY tenant_store_select ON stores FOR SELECT USING (id = app_current_store_id() OR app_current_store_id() IS NULL)` },
+  { name: "0030e_rls_stores_drop_modify", query: `DROP POLICY IF EXISTS tenant_store_modify ON stores` },
+  { name: "0030f_rls_stores_modify", query: `CREATE POLICY tenant_store_modify ON stores FOR ALL USING (id = app_current_store_id())` },
+
+  { name: "0030g_rls_banners_enable", query: `ALTER TABLE banners ENABLE ROW LEVEL SECURITY` },
+  { name: "0030h_rls_banners_drop", query: `DROP POLICY IF EXISTS tenant_banners ON banners` },
+  { name: "0030i_rls_banners", query: `CREATE POLICY tenant_banners ON banners FOR ALL USING (store_id = app_current_store_id() OR app_current_store_id() IS NULL)` },
+
+  { name: "0030j_rls_categories_enable", query: `ALTER TABLE categories ENABLE ROW LEVEL SECURITY` },
+  { name: "0030k_rls_categories_drop", query: `DROP POLICY IF EXISTS tenant_categories ON categories` },
+  { name: "0030l_rls_categories", query: `CREATE POLICY tenant_categories ON categories FOR ALL USING (store_id = app_current_store_id() OR app_current_store_id() IS NULL)` },
+
+  { name: "0030m_rls_products_enable", query: `ALTER TABLE products ENABLE ROW LEVEL SECURITY` },
+  { name: "0030n_rls_products_drop", query: `DROP POLICY IF EXISTS tenant_products ON products` },
+  { name: "0030o_rls_products", query: `CREATE POLICY tenant_products ON products FOR ALL USING (store_id = app_current_store_id() OR app_current_store_id() IS NULL)` },
+
+  { name: "0030p_rls_product_additions_enable", query: `ALTER TABLE product_additions ENABLE ROW LEVEL SECURITY` },
+  { name: "0030q_rls_product_additions_drop", query: `DROP POLICY IF EXISTS tenant_product_additions ON product_additions` },
+  { name: "0030r_rls_product_additions", query: `CREATE POLICY tenant_product_additions ON product_additions FOR ALL USING (product_id IN (SELECT id FROM products WHERE store_id = app_current_store_id()) OR app_current_store_id() IS NULL)` },
+
+  { name: "0030s_rls_orders_enable", query: `ALTER TABLE orders ENABLE ROW LEVEL SECURITY` },
+  { name: "0030t_rls_orders_drop", query: `DROP POLICY IF EXISTS tenant_orders ON orders` },
+  { name: "0030u_rls_orders", query: `CREATE POLICY tenant_orders ON orders FOR ALL USING (store_id = app_current_store_id() OR app_current_store_id() IS NULL)` },
+
+  { name: "0030v_rls_order_items_enable", query: `ALTER TABLE order_items ENABLE ROW LEVEL SECURITY` },
+  { name: "0030w_rls_order_items_drop", query: `DROP POLICY IF EXISTS tenant_order_items ON order_items` },
+  { name: "0030x_rls_order_items", query: `CREATE POLICY tenant_order_items ON order_items FOR ALL USING (order_id IN (SELECT id FROM orders WHERE store_id = app_current_store_id()) OR app_current_store_id() IS NULL)` },
+
+  { name: "0030y_rls_order_timeline_enable", query: `ALTER TABLE order_timeline ENABLE ROW LEVEL SECURITY` },
+  { name: "0030z_rls_order_timeline_drop", query: `DROP POLICY IF EXISTS tenant_order_timeline ON order_timeline` },
+  { name: "0030za_rls_order_timeline", query: `CREATE POLICY tenant_order_timeline ON order_timeline FOR ALL USING (order_id IN (SELECT id FROM orders WHERE store_id = app_current_store_id()) OR app_current_store_id() IS NULL)` },
+
+  { name: "0030zb_rls_coupons_enable", query: `ALTER TABLE coupons ENABLE ROW LEVEL SECURITY` },
+  { name: "0030zc_rls_coupons_drop", query: `DROP POLICY IF EXISTS tenant_coupons ON coupons` },
+  { name: "0030zd_rls_coupons", query: `CREATE POLICY tenant_coupons ON coupons FOR ALL USING (store_id = app_current_store_id() OR app_current_store_id() IS NULL)` },
+
+  { name: "0030ze_rls_customers_enable", query: `ALTER TABLE customers ENABLE ROW LEVEL SECURITY` },
+  { name: "0030zf_rls_customers_drop", query: `DROP POLICY IF EXISTS tenant_customers ON customers` },
+  { name: "0030zg_rls_customers", query: `CREATE POLICY tenant_customers ON customers FOR ALL USING (store_id = app_current_store_id() OR app_current_store_id() IS NULL)` },
+
+  { name: "0030zh_rls_store_users_enable", query: `ALTER TABLE store_users ENABLE ROW LEVEL SECURITY` },
+  { name: "0030zi_rls_store_users_drop", query: `DROP POLICY IF EXISTS tenant_store_users ON store_users` },
+  { name: "0030zj_rls_store_users", query: `CREATE POLICY tenant_store_users ON store_users FOR ALL USING (store_id = app_current_store_id() OR app_current_store_id() IS NULL)` },
+
+  { name: "0030zk_rls_audit_logs_enable", query: `ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY` },
+  { name: "0030zl_rls_audit_logs_drop", query: `DROP POLICY IF EXISTS tenant_audit_logs ON audit_logs` },
+  { name: "0030zm_rls_audit_logs", query: `CREATE POLICY tenant_audit_logs ON audit_logs FOR SELECT USING (store_id = app_current_store_id() OR app_current_store_id() IS NULL)` },
+  // Localização física da loja — referência pros modelos de frete por distância
+  { name: "0031_store_location", query: `ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "latitude" numeric(10, 7), ADD COLUMN IF NOT EXISTS "longitude" numeric(10, 7)` },
 ];
 
 for (const m of migrations) {

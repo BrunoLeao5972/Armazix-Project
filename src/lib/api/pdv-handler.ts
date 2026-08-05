@@ -1,4 +1,4 @@
-import { createDb, createDbTransactional, createTenantDb } from "@/lib/db";
+import { createDb, createDbTransactional, createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";

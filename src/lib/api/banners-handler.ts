@@ -1,4 +1,4 @@
-import { createTenantDb } from "@/lib/db";
+import { createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { requireStoreAccess, AuthContext } from "@/lib/auth/require-store-access";
@@ -34,7 +34,7 @@ export async function saveBannersHandler(request: Request, auth?: AuthContext): 
     .slice(0, MAX_BANNERS) as string[];
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     // Replace all banners atomically

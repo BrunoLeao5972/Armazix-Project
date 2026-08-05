@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
+import { Route as TermosDeUsoRouteImport } from './routes/termos-de-uso'
 import { Route as StoreRouteImport } from './routes/store'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
@@ -69,6 +70,11 @@ import { Route as AdminEstoqueAjustesRouteImport } from './routes/admin/estoque/
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
   path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermosDeUsoRoute = TermosDeUsoRouteImport.update({
+  id: '/termos-de-uso',
+  path: '/termos-de-uso',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StoreRoute = StoreRouteImport.update({
@@ -362,6 +368,7 @@ export interface FileRoutesByFullPath {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/store': typeof StoreRouteWithChildren
+  '/termos-de-uso': typeof TermosDeUsoRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin/ambientes-impressao': typeof AdminAmbientesImpressaoRoute
   '/admin/categorias': typeof AdminCategoriasRoute
@@ -418,6 +425,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/termos-de-uso': typeof TermosDeUsoRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin/ambientes-impressao': typeof AdminAmbientesImpressaoRoute
   '/admin/categorias': typeof AdminCategoriasRoute
@@ -475,6 +483,7 @@ export interface FileRoutesById {
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
   '/store': typeof StoreRouteWithChildren
+  '/termos-de-uso': typeof TermosDeUsoRoute
   '/verify-email': typeof VerifyEmailRoute
   '/admin/ambientes-impressao': typeof AdminAmbientesImpressaoRoute
   '/admin/categorias': typeof AdminCategoriasRoute
@@ -535,6 +544,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/store'
+    | '/termos-de-uso'
     | '/verify-email'
     | '/admin/ambientes-impressao'
     | '/admin/categorias'
@@ -591,6 +601,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/register'
     | '/reset-password'
+    | '/termos-de-uso'
     | '/verify-email'
     | '/admin/ambientes-impressao'
     | '/admin/categorias'
@@ -647,6 +658,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/reset-password'
     | '/store'
+    | '/termos-de-uso'
     | '/verify-email'
     | '/admin/ambientes-impressao'
     | '/admin/categorias'
@@ -706,6 +718,7 @@ export interface RootRouteChildren {
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   StoreRoute: typeof StoreRouteWithChildren
+  TermosDeUsoRoute: typeof TermosDeUsoRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   LojaSlugOuIdRoute: typeof LojaSlugOuIdRoute
 }
@@ -717,6 +730,13 @@ declare module '@tanstack/react-router' {
       path: '/verify-email'
       fullPath: '/verify-email'
       preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/termos-de-uso': {
+      id: '/termos-de-uso'
+      path: '/termos-de-uso'
+      fullPath: '/termos-de-uso'
+      preLoaderRoute: typeof TermosDeUsoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/store': {
@@ -1244,6 +1264,7 @@ const rootRouteChildren: RootRouteChildren = {
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   StoreRoute: StoreRouteWithChildren,
+  TermosDeUsoRoute: TermosDeUsoRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   LojaSlugOuIdRoute: LojaSlugOuIdRoute,
 }

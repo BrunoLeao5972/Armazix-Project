@@ -1,4 +1,4 @@
-import { createDb, createTenantDb } from "@/lib/db";
+import { createDb, createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, isNull, count } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
@@ -97,7 +97,7 @@ export async function createPrintEnvironmentHandler(request: Request, auth?: Aut
   if (!body.name?.trim())   return json({ error: "Nome obrigatório" }, 400);
   if (!body.categoryId)     return json({ error: "Categoria obrigatória" }, 400);
 
-  const db = await createTenantDb(process.env.DATABASE_URL!, storeId);
+  const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
   try {
     // Verifica ownership da categoria
     const cat = await db.query.categories.findFirst({
@@ -156,7 +156,7 @@ export async function updatePrintEnvironmentHandler(request: Request, auth?: Aut
   };
   if (!body.id) return json({ error: "id obrigatório" }, 400);
 
-  const db = await createTenantDb(process.env.DATABASE_URL!, storeId);
+  const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
   try {
     const existing = await db.query.printEnvironments.findFirst({
       where: and(eq(printEnvironments.id, body.id), eq(printEnvironments.storeId, storeId)),
@@ -212,7 +212,7 @@ export async function deletePrintEnvironmentHandler(request: Request, auth?: Aut
   const body = await request.json() as { id: string };
   if (!body.id) return json({ error: "id obrigatório" }, 400);
 
-  const db = await createTenantDb(process.env.DATABASE_URL!, storeId);
+  const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
   try {
     const existing = await db.query.printEnvironments.findFirst({
       where: and(eq(printEnvironments.id, body.id), eq(printEnvironments.storeId, storeId)),

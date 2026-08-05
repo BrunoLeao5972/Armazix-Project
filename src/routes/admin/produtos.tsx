@@ -67,11 +67,19 @@ export interface VariationOption {
   name: string;
   price: string;
   images: ProductImage[];
+  /** Promoção específica desta opção — mesma estrutura da promoção do produto. */
+  promoConfig?: PromoConfig | null;
 }
+
+/** "adicional" (padrão) soma o preço da opção ao preço do produto principal; "opcional" substitui o preço do produto principal pelo preço da opção. */
+export type VariationPriceType = "adicional" | "opcional";
 
 export interface VariationGroup {
   id: string;
   groupName: string;
+  priceType?: VariationPriceType;
+  /** Exige uma opção selecionada antes de adicionar ao carrinho. undefined = true (compatibilidade). */
+  required?: boolean;
   options: VariationOption[];
 }
 

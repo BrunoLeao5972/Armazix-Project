@@ -53,7 +53,7 @@ vi.mock("@/lib/db", () => {
   });
   return {
     createDb: mockDb,
-    createTenantDb: () => Promise.resolve(mockDb()),
+    createUnscopedDb: () => Promise.resolve(mockDb()),
     schema: {
       users:      { __name: "users",       id: "id", cpf: "cpf", email: "email" },
       storeUsers: { __name: "store_users", userId: "userId", storeId: "storeId", role: "role" },

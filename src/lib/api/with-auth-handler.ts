@@ -161,14 +161,14 @@ export function withAuthHandler(
 
     // 6. Execute Handler with Safe Context
     try {
-      const { createTenantDb } = await import("@/lib/db");
+      const { createUnscopedDb } = await import("@/lib/db");
       const dbUrl = process.env.DATABASE_URL;
       
       if (!dbUrl) {
         throw new Error("Database configuration error");
       }
       
-      const db = await createTenantDb(dbUrl, storeAccess.storeId);
+      const db = await createUnscopedDb(dbUrl, storeAccess.storeId);
       
       const context: HandlerContext = {
         storeAccess,

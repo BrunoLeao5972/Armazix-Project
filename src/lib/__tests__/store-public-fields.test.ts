@@ -64,19 +64,28 @@ vi.mock("@/lib/db", () => {
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: () => Promise.resolve([{ ownerName: STORE_ROW.ownerName }]),
+          // requireAuth() consulta { sessionVersion, active } de users, e
+          // getStoreHandler consulta { ownerName } de stores — o mock não
+          // diferencia por coluna, então devolve um objeto com os dois
+          // conjuntos de campos pra cobrir as duas consultas.
+          limit: () => Promise.resolve([{ ownerName: STORE_ROW.ownerName, active: true }]),
         }),
       }),
     }),
   });
   return {
     createDb: mockDb,
-    createTenantDb: () => Promise.resolve(mockDb()),
+    createUnscopedDb: () => Promise.resolve(mockDb()),
     schema: {
       stores: {
         id: "id", ownerName: "ownerName",
         $inferSelect: {} as typeof STORE_ROW,
       },
+      // requireAuth() consulta users.sessionVersion pra revogar sessões
+      // antigas — os tokens de teste não emitem essa claim, então o mock
+      // também não a retorna (undefined === undefined, checagem não dispara).
+      users: { id: "id", sessionVersion: "sessionVersion", active: "active" },
+      storeUsers: { userId: "userId", storeId: "storeId" },
     },
   };
 });

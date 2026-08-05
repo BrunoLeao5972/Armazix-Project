@@ -410,17 +410,20 @@ function AdminLayout() {
       .catch(() => {});
 
     async function ensureStoreId() {
-      let storeId = localStorage.getItem("storeId");
-      if (!storeId) {
-        try {
-          const r = await api.get("/api/store/user");
-          if (r.ok) {
-            const d = await r.json() as { store?: { id: string } };
-            storeId = d.store?.id ?? null;
-            if (storeId) localStorage.setItem("storeId", storeId);
-          }
-        } catch { /* não crítico */ }
-      }
+      // Sempre revalida contra a sessão autenticada, mesmo com valor em cache
+      // — um storeId de outra conta pode ter ficado no localStorage (ex:
+      // navegador usado para testar mais de uma conta) e nunca deve ser usado
+      // sem confirmar que ainda é o dono logado.
+      let storeId: string | null = null;
+      try {
+        const r = await api.get("/api/store/user");
+        if (r.ok) {
+          const d = await r.json() as { store?: { id: string } };
+          storeId = d.store?.id ?? null;
+          if (storeId) localStorage.setItem("storeId", storeId);
+        }
+      } catch { /* não crítico */ }
+      if (!storeId) storeId = localStorage.getItem("storeId");
       if (storeId) {
         fetch(`/api/subscriptions/status?storeId=${storeId}`)
           .then(r => r.json())

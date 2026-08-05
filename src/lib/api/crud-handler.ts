@@ -1,4 +1,4 @@
-import { createDb, createTenantDb, createTenantDbTransactional } from "@/lib/db";
+import { createDb, createUnscopedDb, createTenantDbTransactional, setTenantContext } from "@/lib/db";
 import type { PromoConfig } from "@/lib/promo-engine";
 import { schema } from "@/lib/db";
 import { eq, desc, sql, and, ne, isNotNull, inArray } from "drizzle-orm";
@@ -48,7 +48,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     promoConfig?: PromoConfig | null;
     productType?: string;
     isWeightScale?: boolean;
-    variationGroups?: Array<{ id: string; groupName: string; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }> }> }>;
+    variationGroups?: Array<{ id: string; groupName: string; priceType?: "adicional" | "opcional"; required?: boolean; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }>; promoConfig?: PromoConfig | null }> }>;
   };
 
   if (!body.name || !body.price) {
@@ -58,7 +58,7 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   // Derive imageUrl from gallery primary, or fall back to explicit imageUrl
   const imagesArr: ProductImageEntry[] = body.images || [];
@@ -166,6 +166,59 @@ export async function listProductsHandler(request: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: "Autenticação necessária para este escopo" }), {
       status: 401, headers: { "content-type": "application/json" },
     });
+  }
+
+  // ── Vitrine pública: um produto específico (tela de detalhe) ─────
+  // Sem isso, a tela de detalhe caía no fetch paginado abaixo (20 por
+  // padrão) e fazia .find() no array — qualquer produto fora da primeira
+  // página (loja com mais de 20 produtos, ordenados por destaque/mais
+  // recente) aparecia como "indisponível" mesmo tendo estoque normal.
+  if (scope === "public" && productId) {
+    const singleCacheKey = `store:${storeId}:product:${productId}`;
+    try {
+      const result = await getCached(
+        singleCacheKey,
+        async () => {
+          const [row] = await db
+            .select({
+              id:                products.id,
+              name:              products.name,
+              description:       products.description,
+              price:             products.price,
+              compareAtPrice:    products.compareAtPrice,
+              categoryId:        products.categoryId,
+              imageUrl:          products.imageUrl,
+              images:            products.images,
+              emoji:             products.emoji,
+              badge:             products.badge,
+              promoConfig:       products.promoConfig,
+              stock:             products.stock,
+              lowStockThreshold: products.lowStockThreshold,
+              rating:            products.rating,
+              reviewCount:       products.reviewCount,
+              allowObservation:  products.allowObservation,
+              variationGroups:   products.variationGroups,
+              trackStock:        products.trackStock,
+            })
+            .from(products)
+            .where(and(eq(products.id, productId), eq(products.storeId, storeId), eq(products.active, true)))
+            .limit(1);
+          return { products: row ? [row] : [] };
+        },
+        { ttl: 3_600, storeId },
+      );
+
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+        },
+      });
+    } catch (error) {
+      console.error("Get single product (public) error:", error);
+      return new Response(JSON.stringify({ error: "Serviço temporariamente indisponível" }), { status: 503, headers: { "content-type": "application/json", "Retry-After": "3" } });
+    }
   }
 
   // ── Vitrine pública: projeção mínima + paginação ─────────────────
@@ -320,7 +373,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     promoConfig?: PromoConfig | null;
     productType?: string;
     isWeightScale?: boolean;
-    variationGroups?: Array<{ id: string; groupName: string; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }> }> }>;
+    variationGroups?: Array<{ id: string; groupName: string; priceType?: "adicional" | "opcional"; required?: boolean; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }>; promoConfig?: PromoConfig | null }> }>;
   };
 
   if (!body.productId) {
@@ -328,7 +381,7 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     // IDOR: verify product belongs to this tenant
@@ -425,7 +478,7 @@ export async function deleteProductHandler(request: Request, auth?: AuthContext)
   if (!body.productId) return new Response(JSON.stringify({ error: "productId required" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     // IDOR: verify product belongs to tenant before deleting
@@ -475,7 +528,7 @@ export async function createCategoryHandler(request: Request, auth?: AuthContext
   if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const autoSlug = (body.slug || body.name)
@@ -630,7 +683,7 @@ export async function updateCategoryHandler(request: Request, auth?: AuthContext
   if (!body.categoryId) return new Response(JSON.stringify({ error: "categoryId required" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const existing = await db.query.categories.findFirst({
@@ -687,7 +740,7 @@ export async function deleteCategoryHandler(request: Request, auth?: AuthContext
   if (!body.categoryId) return new Response(JSON.stringify({ error: "categoryId required" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     // IDOR Fix: Verify category belongs to tenant before deleting
@@ -1110,7 +1163,7 @@ export async function listOrdersHandler(request: Request, auth?: AuthContext): P
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const storeOrders = await db.query.orders.findMany({
@@ -1204,6 +1257,10 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
 
     // Transação atômica: status + timeline + lançamento financeiro (se delivered)
     await db.transaction(async (tx) => {
+      // Ativa a RLS real para esta transação (db vem de createTenantDbTransactional,
+      // role sem BYPASSRLS) — sem isso a conexão não tem contexto de loja nenhum.
+      await tx.execute(setTenantContext(storeId));
+
       await tx.update(orders)
         .set(statusPatch)
         .where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
@@ -1318,7 +1375,7 @@ export async function createCouponHandler(request: Request, auth?: AuthContext):
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     // Check if code already exists for this store
@@ -1361,7 +1418,7 @@ export async function listCustomersHandler(request: Request, auth?: AuthContext)
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     // Cache-Aside: query N+1 cara (orders por cliente) — vale cachear por 5 min.
@@ -1435,7 +1492,7 @@ export async function listSuppliersHandler(request: Request, auth?: AuthContext)
   const q = (url.searchParams.get("q") || "").toLowerCase();
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const rows = await db.select({ id: customers.id, name: customers.name, phone: customers.phone })
@@ -1468,7 +1525,7 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
   if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const [customer] = await db.insert(customers).values({
@@ -1524,7 +1581,7 @@ export async function updateCustomerHandler(request: Request, auth?: AuthContext
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     // IDOR: verify the customer belongs to this store before updating
@@ -1705,7 +1762,7 @@ export async function getNextPdvCodeHandler(request: Request, auth?: AuthContext
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const [row] = await db
@@ -1750,7 +1807,7 @@ export async function backfillPdvCodesHandler(request: Request, auth?: AuthConte
   const dbUrl = process.env.DATABASE_URL!;
   // HTTP driver (neon-http) — não suporta .transaction(), mas um CTE UPDATE
   // é atômico no próprio PostgreSQL e é um único round-trip HTTP para o Neon.
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     // Uma única query CTE faz tudo:

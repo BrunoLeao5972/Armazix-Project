@@ -1,9 +1,9 @@
 import { verifyJWT } from "@/lib/auth";
 import { createDb, schema } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
-import { logSecurityEvent, AuditActions } from "@/lib/audit";
+import { eq } from "drizzle-orm";
+import { requireJwtSecret } from "@/lib/env";
 
-const { storeUsers } = schema;
+const { users } = schema;
 
 export interface AuthContext {
   userId: string;
@@ -58,7 +58,20 @@ export async function requireAuth(request: Request): Promise<AuthContext | Respo
   }
 
   // ── Cache miss — full crypto verification ──────────────────────────────────
-  const payload = await verifyJWT(token, process.env.JWT_SECRET || "dev-secret-mock");
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    // Nunca aceitar um segredo default — erro de configuração deve ser visível,
+    // não um bypass silencioso de autenticação.
+    console.error("[requireAuth] JWT_SECRET ausente — recusando autenticar");
+    return new Response(
+      JSON.stringify({ error: "Erro de configuração do servidor" }),
+      { status: 500, headers: { "content-type": "application/json" } }
+    );
+  }
+
+  const payload = await verifyJWT(token, secret);
 
   if (!payload) {
     _sessionCache.delete(token); // evict stale/invalid entry if any
@@ -66,6 +79,34 @@ export async function requireAuth(request: Request): Promise<AuthContext | Respo
       JSON.stringify({ error: "Token inválido ou expirado" }),
       { status: 401, headers: { "content-type": "application/json" } }
     );
+  }
+
+  // Revogação de sessão: uma troca de senha incrementa users.session_version,
+  // derrubando instantaneamente qualquer JWT emitido antes da troca (o token
+  // em si continua criptograficamente válido até expirar, mas deixa de bater
+  // com a versão atual do usuário). Reaproveita a mesma query pra checar
+  // `active`: sem isso, desativar um usuário (toggle-status) não tinha efeito
+  // nenhum sobre um token já emitido — a conta ficava "desativada" só pra
+  // logins novos, mas continuava com acesso total via sessão existente por
+  // até 7 dias.
+  // Usuário mock (dev-only, id não é UUID real) fica fora dessa checagem.
+  const isMockUser = process.env.NODE_ENV === "development" && payload.userId === "mock-user-001";
+
+  if (!isMockUser) {
+    const dbUrl = process.env.DATABASE_URL!;
+    const db = createDb(dbUrl);
+    const [current] = await db
+      .select({ sessionVersion: users.sessionVersion, active: users.active })
+      .from(users)
+      .where(eq(users.id, payload.userId))
+      .limit(1);
+
+    if (!current || current.sessionVersion !== payload.sessionVersion || !current.active) {
+      return new Response(
+        JSON.stringify({ error: "Sessão expirada, faça login novamente" }),
+        { status: 401, headers: { "content-type": "application/json" } }
+      );
+    }
   }
 
   const auth: AuthContext = {
@@ -79,83 +120,15 @@ export async function requireAuth(request: Request): Promise<AuthContext | Respo
   return auth;
 }
 
-export async function requireStoreAccess(
-  request: Request,
-  auth: AuthContext,
-  requestedStoreId: string
-): Promise<AuthContext | Response> {
-  const jwtStoreId = auth.storeId;
-
-  if (!jwtStoreId) {
-    logSecurityEvent({
-      action: AuditActions.MISSING_TENANT_CONTEXT,
-      userId: auth.userId,
-      handler: "requireStoreAccess (middleware)",
-      request,
-    });
-    return new Response(
-      JSON.stringify({ error: "Sem loja vinculada ao token" }),
-      { status: 401, headers: { "content-type": "application/json" } }
-    );
-  }
-
-  if (requestedStoreId !== jwtStoreId) {
-    logSecurityEvent({
-      action: AuditActions.IDOR_ATTEMPT,
-      userId: auth.userId,
-      jwtStoreId,
-      requestedStoreId,
-      handler: "requireStoreAccess (middleware)",
-      request,
-    });
-    return new Response(
-      JSON.stringify({ error: "Sem acesso a esta loja" }),
-      { status: 403, headers: { "content-type": "application/json" } }
-    );
-  }
-
-  if (process.env.NODE_ENV === "development" && auth.userId === "mock-user-001" && jwtStoreId === "mock-store-001") {
-    return { ...auth, storeId: jwtStoreId, storeRole: "owner" };
-  }
-
-  const dbUrl = process.env.DATABASE_URL!;
-  const db = createDb(dbUrl);
-
-  try {
-    if (auth.role === "admin") {
-      return { ...auth, storeId: jwtStoreId, storeRole: "admin" };
-    }
-
-    const access = await db.query.storeUsers.findFirst({
-      where: and(
-        eq(storeUsers.userId, auth.userId),
-        eq(storeUsers.storeId, jwtStoreId)
-      ),
-    });
-
-    if (!access) {
-      logSecurityEvent({
-        action: AuditActions.CROSS_TENANT_BLOCKED,
-        userId: auth.userId,
-        jwtStoreId,
-        handler: "requireStoreAccess (DB check)",
-        request,
-      });
-      return new Response(
-        JSON.stringify({ error: "Sem acesso a esta loja" }),
-        { status: 403, headers: { "content-type": "application/json" } }
-      );
-    }
-
-    return { ...auth, storeId: jwtStoreId, storeRole: access.role };
-  } catch (error) {
-    console.error("Store access check error:", error);
-    return new Response(
-      JSON.stringify({ error: "Erro ao verificar acesso" }),
-      { status: 500, headers: { "content-type": "application/json" } }
-    );
-  }
-}
+// Havia uma segunda implementação de requireStoreAccess aqui (3 argumentos,
+// com bypass para auth.role === "admin" e para o usuário mock) que NENHUM
+// handler real chamava — só os próprios testes dela. A role global "admin"
+// em `users.role` nunca é atribuída em nenhum fluxo do produto (auditoria de
+// segurança, módulo Autorização); mantê-la viva era só risco de alguém
+// importar a implementação errada por engano (mesmo nome, comportamento
+// diferente). A única em uso de verdade é `requireStoreAccess` de
+// src/lib/auth/require-store-access.ts — sem bypass de role nenhum, sempre
+// verifica a tabela storeUsers.
 
 export function getStoreIdFromRequest(_request: Request): string | null {
   // SECURITY: storeId must come from the JWT — never from the request URL or body.

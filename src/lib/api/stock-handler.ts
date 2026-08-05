@@ -1,4 +1,4 @@
-import { createDb, createTenantDb } from "@/lib/db";
+import { createDb, createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, gte, ne, desc, sql } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
@@ -22,7 +22,7 @@ export async function getStockStatsHandler(request: Request, auth?: AuthContext)
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const oneWeekAgo = new Date();
@@ -93,7 +93,7 @@ export async function getReportsStatsHandler(request: Request, auth?: AuthContex
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const now = new Date();
@@ -206,7 +206,7 @@ export async function updateAddressHandler(request: Request, auth?: AuthContext)
   };
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     await db.update(schema.stores).set({ address: body.address }).where(eq(schema.stores.id, storeId));
@@ -236,7 +236,7 @@ export async function getBusinessHoursHandler(request: Request, auth?: AuthConte
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const [store] = await db
@@ -274,7 +274,7 @@ export async function updateBusinessHoursHandler(request: Request, auth?: AuthCo
   };
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     await db.update(schema.stores).set({ businessHours: body.businessHours }).where(eq(schema.stores.id, storeId));
@@ -428,7 +428,9 @@ export async function updateUserPasswordHandler(request: Request, auth?: { userI
 
     const newPasswordHash = await hashPassword(body.newPassword);
 
-    await db.update(users).set({ passwordHash: newPasswordHash }).where(eq(users.id, userId));
+    await db.update(users)
+      .set({ passwordHash: newPasswordHash, sessionVersion: sql`${users.sessionVersion} + 1` })
+      .where(eq(users.id, userId));
 
     return new Response(JSON.stringify({ success: true, message: "Senha alterada com sucesso" }), {
       status: 200, headers: { "content-type": "application/json" },
@@ -561,7 +563,7 @@ export async function updateStoreSlugHandler(request: Request, auth?: AuthContex
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const existing = await db.select({ id: schema.stores.id }).from(schema.stores).where(eq(schema.stores.slug, cleanSlug));
@@ -599,7 +601,7 @@ export async function getFinancialStatsHandler(request: Request, auth?: AuthCont
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const now = new Date();
@@ -695,7 +697,7 @@ export async function getDeliveryOrdersHandler(request: Request, auth?: AuthCont
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     // Explicit column selection — avoids pulling card_fee_amount (unmigrated column)
@@ -762,7 +764,7 @@ export async function getCouponsHandler(request: Request, auth?: AuthContext): P
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const storeCoupons = await db.select().from(schema.coupons).where(eq(schema.coupons.storeId, storeId));
@@ -813,7 +815,7 @@ export async function getDashboardChartDataHandler(request: Request, auth?: Auth
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const now = new Date();

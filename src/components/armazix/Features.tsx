@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { CheckCircle2 } from "lucide-react";
+import zixMascot from "@/assets/Zix.png";
 
 interface FeatureBlock {
   eyebrow: string;
@@ -45,7 +46,7 @@ const FEATURES: FeatureBlock[] = [
       "Histórico unificado de pedidos por canal",
     ],
     visual: <MultiCanalMockup />,
-    zix: "Dica do Zix: cole o link da sua loja no status do WhatsApp e receba pedidos sem fazer nada extra!",
+    zix: "cole o link da sua loja no status do WhatsApp e na bio do Instagram e receba pedidos sem fazer nada extra!",
   },
   {
     eyebrow: "Relatórios Diretos",
@@ -111,11 +112,16 @@ function FeatureRow({ eyebrow, heading, body, bullets, visual, reversed, zix }: 
 
 function ZixTip({ tip }: { tip: string }) {
   return (
-    <div className="mt-8 flex items-start gap-4 p-4 rounded-2xl bg-accent border border-primary/15">
-      <span className="text-3xl leading-none animate-bounce select-none">📦</span>
-      <div>
-        <div className="text-xs font-bold text-primary uppercase tracking-wider">Zix diz</div>
-        <p className="text-sm text-foreground/80 mt-0.5 leading-relaxed">{tip}</p>
+    <div className="relative mt-14 sm:mt-8 sm:pl-24">
+      <img
+        src={zixMascot}
+        alt="Zix"
+        className="absolute z-10 w-28 h-28 object-contain select-none animate-bounce pointer-events-none left-1/2 -translate-x-1/2 -top-14 sm:left-0 sm:-ml-2 sm:translate-x-0 sm:top-1/2 sm:-translate-y-1/2"
+      />
+      <div className="p-3 pt-10 sm:pt-3 rounded-2xl bg-accent border border-primary/15 text-center sm:text-left">
+        <p className="text-sm text-foreground/80 leading-relaxed">
+          <span className="font-bold text-primary">Dica do Zix:</span> {tip}
+        </p>
       </div>
     </div>
   );
@@ -203,7 +209,7 @@ function MultiCanalMockup() {
         <div>
           <div className="text-xs font-bold text-[#128C7E]">WhatsApp</div>
           <p className="text-sm mt-0.5 text-foreground/80 leading-snug">
-            "Oi, vi na sua loja o iPhone Pro, ainda tem?"
+            "Oi, vi na sua loja o iPhone 15 Pro, ainda está disponível?"
           </p>
         </div>
       </div>

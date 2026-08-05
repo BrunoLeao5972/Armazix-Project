@@ -40,8 +40,8 @@ vi.mock("@/lib/db", () => {
   });
   return {
     createDb: mockDb,
-    // createTenantDb mirrors createDb in tests — RLS context is not tested here
-    createTenantDb: (_url: string, _storeId: string) => Promise.resolve(mockDb()),
+    // createUnscopedDb mirrors createDb in tests — RLS context is not tested here
+    createUnscopedDb: (_url: string, _storeId: string) => Promise.resolve(mockDb()),
     schema: {
       storeUsers: { userId: "userId", storeId: "storeId" },
       stores: { id: "id" },
@@ -395,51 +395,13 @@ describe("updateStoreSlugHandler — body.storeId ignored", () => {
   });
 });
 
-// ─── middleware requireStoreAccess — requestedStoreId must match JWT ─
-
-describe("middleware/auth requireStoreAccess — JWT storeId enforcement", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    process.env.DATABASE_URL = "mock://db";
-  });
-
-  it("IDOR #16 — 403 when requestedStoreId != auth.storeId (from JWT)", async () => {
-    const { requireStoreAccess } = await import("@/lib/middleware/auth");
-    const auth = makeAuth(ATTACKER_USER_ID, ATTACKER_STORE_ID);
-    const result = await requireStoreAccess(
-      makeRequest("GET", "https://app.test/api/dashboard/stats"),
-      auth,
-      VICTIM_STORE_ID // Different from JWT storeId — must be blocked
-    );
-    expect(result instanceof Response).toBe(true);
-    expect((result as Response).status).toBe(403);
-  });
-
-  it("IDOR #17 — 401 when auth has no storeId in JWT", async () => {
-    const { requireStoreAccess } = await import("@/lib/middleware/auth");
-    const auth = { userId: ATTACKER_USER_ID, email: "a@a.com", role: "user" }; // no storeId
-    const result = await requireStoreAccess(
-      makeRequest("GET", "https://app.test/api/dashboard/stats"),
-      auth as any,
-      VICTIM_STORE_ID
-    );
-    expect(result instanceof Response).toBe(true);
-    expect((result as Response).status).toBe(401);
-  });
-
-  it("IDOR #18 — passes when requestedStoreId == JWT storeId and DB confirms", async () => {
-    grantDbAccess(LEGITIMATE_USER_ID, LEGITIMATE_STORE_ID);
-    const { requireStoreAccess } = await import("@/lib/middleware/auth");
-    const auth = makeAuth(LEGITIMATE_USER_ID, LEGITIMATE_STORE_ID);
-    const result = await requireStoreAccess(
-      makeRequest("GET", "https://app.test/api/dashboard/stats"),
-      auth,
-      LEGITIMATE_STORE_ID
-    );
-    expect(result instanceof Response).toBe(false);
-    expect((result as typeof auth).storeId).toBe(LEGITIMATE_STORE_ID);
-  });
-});
+// Havia aqui uma suíte (IDOR #16-18) para a requireStoreAccess de 3 argumentos
+// em middleware/auth.ts — removida junto com a função (auditoria de segurança,
+// módulo Autorização): nenhum handler real chamava aquela implementação, só
+// estes testes. A proteção real contra IDOR está em requireStoreAccess(auth)
+// de src/lib/auth/require-store-access.ts, que nunca aceita um storeId vindo
+// de fora do JWT — não há "requestedStoreId" pra comparar, então o desenho de
+// teste antigo (comparar dois storeIds) não se aplica à implementação em uso.
 
 // ─── tenant-guard detectIdorAttempt ─────────────────────────────
 

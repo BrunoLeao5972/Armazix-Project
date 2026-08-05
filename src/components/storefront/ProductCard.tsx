@@ -26,7 +26,13 @@ export function ProductCard({
   const hasPromo =
     !!product.compareAtPrice && parseFloat(product.compareAtPrice) > parseFloat(product.price);
 
+  // trackStock=false significa estoque infinito — nunca esgota. Mesma
+  // fórmula da tela de detalhe (store/product.$productId.tsx).
+  const isTracked  = product.trackStock === true;
+  const outOfStock = isTracked && product.stock !== null && product.stock !== undefined && product.stock <= 0;
+
   const lowStock =
+    !outOfStock &&
     highlightLowStock &&
     product.trackStock === true &&
     typeof product.stock === "number" &&
@@ -53,22 +59,29 @@ export function ProductCard({
             <img
               src={product.imageUrl}
               alt={product.name}
-              className="w-full h-full object-contain"
+              className={`w-full h-full object-contain ${outOfStock ? "grayscale opacity-60" : ""}`}
               onError={(e) => { (e.target as HTMLImageElement).src = ""; }}
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-4xl">
+            <div className={`w-full h-full flex items-center justify-center text-4xl ${outOfStock ? "grayscale opacity-60" : ""}`}>
               {product.emoji || "📦"}
             </div>
           )}
-          {lowStock && (
+          {outOfStock && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="px-2 py-0.5 rounded border-2 border-slate-600/80 text-slate-600/90 text-[9px] font-extrabold uppercase tracking-wide -rotate-12 bg-white/70">
+                Esgotado
+              </div>
+            </div>
+          )}
+          {!outOfStock && lowStock && (
             <div className="absolute top-1 left-1">
               <div className="px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[9px] font-semibold">
                 Últimas
               </div>
             </div>
           )}
-          {hasPromo && (
+          {!outOfStock && hasPromo && (
             <div className="absolute bottom-1 left-1">
               <div className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold">
                 -{discountPercent}%
@@ -106,9 +119,14 @@ export function ProductCard({
         {/* Add button */}
         <div className="flex flex-col items-center justify-end self-stretch pb-3 pr-3">
           <button
-            onClick={(e) => { e.stopPropagation(); onAdd(); }}
-            className="w-9 h-9 rounded-xl font-bold text-white flex items-center justify-center transition-all hover:opacity-90 active:scale-95 text-lg"
-            style={{ backgroundColor: primaryColor }}
+            onClick={(e) => { e.stopPropagation(); if (!outOfStock) onAdd(); }}
+            disabled={outOfStock}
+            className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center transition-all text-lg ${
+              outOfStock
+                ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                : "text-white hover:opacity-90 active:scale-95"
+            }`}
+            style={outOfStock ? undefined : { backgroundColor: primaryColor }}
           >
             +
           </button>
@@ -128,17 +146,28 @@ export function ProductCard({
           <img
             src={product.imageUrl}
             alt={product.name}
-            className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+            className={`w-full h-full object-contain transition-transform duration-300 ${
+              outOfStock ? "grayscale opacity-60" : "group-hover:scale-105"
+            }`}
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-5xl">
+          <div className={`w-full h-full flex items-center justify-center text-5xl ${outOfStock ? "grayscale opacity-60" : ""}`}>
             {product.emoji || "📦"}
           </div>
         )}
 
+        {/* Carimbo de esgotado — centralizado, estilo carimbo de borracha */}
+        {outOfStock && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="px-4 py-1.5 rounded-md border-[3px] border-slate-700/80 text-slate-700/90 text-sm font-extrabold uppercase tracking-wider -rotate-12 bg-white/70 backdrop-blur-[1px] shadow-sm">
+              Esgotado
+            </div>
+          </div>
+        )}
+
         {/* Low Stock Badge - Top Left */}
-        {lowStock && (
+        {!outOfStock && lowStock && (
           <div className="absolute top-3 left-3">
             <div className="px-2.5 py-1 rounded-full bg-red-500 text-white text-[11px] font-semibold">
               Últimas unidades
@@ -147,7 +176,7 @@ export function ProductCard({
         )}
 
         {/* Discount Badge - Bottom Left */}
-        {hasPromo && (
+        {!outOfStock && hasPromo && (
           <div className="absolute bottom-3 left-3">
             <div className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
               -{discountPercent}%
@@ -215,12 +244,21 @@ export function ProductCard({
 
         {/* Add to Cart Button */}
         <button
-          onClick={(e) => { e.stopPropagation(); onAdd(); }}
-          className="w-full h-11 rounded-lg font-semibold text-white flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98] mt-3"
-          style={{ backgroundColor: primaryColor }}
+          onClick={(e) => { e.stopPropagation(); if (!outOfStock) onAdd(); }}
+          disabled={outOfStock}
+          className={`w-full h-11 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all mt-3 ${
+            outOfStock
+              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+              : "text-white hover:opacity-90 active:scale-[0.98]"
+          }`}
+          style={outOfStock ? undefined : { backgroundColor: primaryColor }}
         >
-          <span className="text-lg">+</span>
-          Adicionar
+          {outOfStock ? "Esgotado" : (
+            <>
+              <span className="text-lg">+</span>
+              Adicionar
+            </>
+          )}
         </button>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
-import { createTenantDb } from "@/lib/db";
+import { createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import {
@@ -24,7 +24,7 @@ function typeToLayout(type: string): PrintLayout {
 const { printers, orders, orderItems, customers } = schema;
 
 // ─── Resolve printer by ID, scoped to store ───────────────────────
-async function getPrinter(db: Awaited<ReturnType<typeof createTenantDb>>, printerId: string, storeId: string) {
+async function getPrinter(db: Awaited<ReturnType<typeof createUnscopedDb>>, printerId: string, storeId: string) {
   return db.query.printers.findFirst({
     where: and(eq(printers.id, printerId), eq(printers.storeId, storeId)),
   });
@@ -146,7 +146,7 @@ export async function printTestHandler(request: Request, auth?: AuthContext): Pr
     });
   }
 
-  const db   = await createTenantDb(process.env.DATABASE_URL!, storeId);
+  const db   = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
   const printer = await getPrinter(db, body.printerId, storeId);
 
   if (!printer) {
@@ -220,7 +220,7 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
     });
   }
 
-  const db = await createTenantDb(process.env.DATABASE_URL!, storeId);
+  const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
 
   const [printer, order] = await Promise.all([
     getPrinter(db, body.printerId, storeId),

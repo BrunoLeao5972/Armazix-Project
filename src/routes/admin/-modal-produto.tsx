@@ -5,17 +5,20 @@ import {
   Box, Barcode, Hash, ImagePlus, Check,
   TrendingUp, AlertTriangle, CheckCircle2, XCircle,
   Layers, Percent, Star, Clock, Calendar,
-  Building2, Package, Loader2,
+  Building2, Package, Loader2, MoreVertical,
 } from "lucide-react";
 import { type PromoConfig, DEFAULT_PROMO_CONFIG, isPromoActive } from "@/lib/promo-engine";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { fmt } from "./produtos";
 import type {
   Product, Category, ProductImage, ProductForm, ProductStatus, ProductType,
-  VariationGroup, VariationOption,
+  VariationGroup, VariationOption, VariationPriceType,
 } from "./produtos";
 
 interface Sector {
@@ -39,7 +42,7 @@ const uid = () => Math.random().toString(36).slice(2);
 
 const newOption = (): VariationOption => ({ id: uid(), name: "", price: "", images: [] });
 
-const newGroup = (): VariationGroup => ({ id: uid(), groupName: "", options: [newOption()] });
+const newGroup = (): VariationGroup => ({ id: uid(), groupName: "", priceType: "adicional", required: true, options: [newOption()] });
 
 const UNITS = ["un", "kg", "g", "l", "ml", "cx", "pç", "par"];
 
@@ -211,6 +214,207 @@ function MiniImageGallery({ images, onChange }: { images: ProductImage[]; onChan
   );
 }
 
+// ─── Configuração de promoção (produto ou opção de variação) ───────
+// Mesmos campos nos dois contextos: preço promocional, dias/horário/período
+// de vigência e canais. `comparePrice` é o preço "cheio" contra o qual o
+// desconto é calculado — preço do produto, ou adicional da variação.
+function PromoConfigFields({
+  config,
+  onChange,
+  comparePrice,
+  priceLabel = "Preço promocional",
+  toggleLabel = "Ativar promoção por recorrência",
+  toggleHint = "Define um preço promocional com dias, horários e período específicos",
+}: {
+  config: PromoConfig;
+  onChange: (updates: Partial<PromoConfig>) => void;
+  comparePrice: number;
+  priceLabel?: string;
+  toggleLabel?: string;
+  toggleHint?: string;
+}) {
+  const toggleDay = (day: number) => {
+    const days = config.daysOfWeek ?? [];
+    onChange({ daysOfWeek: days.includes(day) ? days.filter(d => d !== day) : [...days, day] });
+  };
+
+  return (
+    <>
+      {/* Toggle ativar */}
+      <div className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20">
+        <div>
+          <p className="text-sm font-medium flex items-center gap-1.5">
+            <Percent className="w-3.5 h-3.5 text-violet-500" />
+            {toggleLabel}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">{toggleHint}</p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!!config.enabled}
+          onClick={() => onChange({ enabled: !config.enabled })}
+          className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+            config.enabled ? "bg-violet-600" : "bg-muted-foreground/30"
+          }`}
+        >
+          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+            config.enabled ? "translate-x-5" : "translate-x-0"
+          }`} />
+        </button>
+      </div>
+
+      {config.enabled && (
+        <>
+          {/* Preço promocional */}
+          <Field label={priceLabel}>
+            <div className="relative">
+              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                placeholder="0,00"
+                value={config.promoPrice}
+                onChange={e => onChange({ promoPrice: e.target.value })}
+                className="h-10 rounded-xl pl-8 font-semibold"
+              />
+            </div>
+            {(() => {
+              const promo = parseFloat(parseCurrency(config.promoPrice ?? "")) || 0;
+              const base  = comparePrice;
+              if (promo > 0 && base > 0 && promo < base) {
+                const disc = Math.round(((base - promo) / base) * 100);
+                const save = (base - promo).toFixed(2).replace(".", ",");
+                return (
+                  <p className="text-xs text-violet-700 mt-1 font-medium">
+                    {disc}% de desconto — economia de R$ {save} por unidade
+                  </p>
+                );
+              }
+              if (promo >= base && promo > 0 && base > 0) {
+                return <p className="text-xs text-destructive mt-1">O preço promocional deve ser menor que o preço cheio.</p>;
+              }
+            })()}
+          </Field>
+
+          {/* Dias da semana */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Dias da semana</Label>
+            <p className="text-xs text-muted-foreground -mt-1">Sem seleção = válido todos os dias</p>
+            <div className="flex gap-1.5">
+              {[
+                { v: 0, l: "Dom" }, { v: 1, l: "Seg" }, { v: 2, l: "Ter" },
+                { v: 3, l: "Qua" }, { v: 4, l: "Qui" }, { v: 5, l: "Sex" }, { v: 6, l: "Sáb" },
+              ].map(({ v, l }) => {
+                const on = (config.daysOfWeek ?? []).includes(v);
+                return (
+                  <button key={v} type="button" onClick={() => toggleDay(v)}
+                    className={`flex-1 h-10 rounded-xl text-xs font-semibold transition-all ${
+                      on ? "bg-violet-600 text-white shadow-sm" : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
+                    }`}>
+                    {l}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Horário */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-muted-foreground" /> Horário (Happy Hour)
+            </Label>
+            <p className="text-xs text-muted-foreground -mt-1">Sem preenchimento = válido o dia todo</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Início">
+                <Input type="time" value={config.timeStart ?? ""}
+                  onChange={e => onChange({ timeStart: e.target.value || null })}
+                  className="h-10 rounded-xl" />
+              </Field>
+              <Field label="Término">
+                <Input type="time" value={config.timeEnd ?? ""}
+                  onChange={e => onChange({ timeEnd: e.target.value || null })}
+                  className="h-10 rounded-xl" />
+              </Field>
+            </div>
+          </div>
+
+          {/* Período de vigência */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-muted-foreground" /> Período de vigência
+            </Label>
+            <p className="text-xs text-muted-foreground -mt-1">Sem preenchimento = sem data de expiração</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Data de início">
+                <Input type="date" value={config.dateStart ?? ""}
+                  onChange={e => onChange({ dateStart: e.target.value || null })}
+                  className="h-10 rounded-xl" />
+              </Field>
+              <Field label="Data de término">
+                <Input type="date" value={config.dateEnd ?? ""}
+                  onChange={e => onChange({ dateEnd: e.target.value || null })}
+                  className="h-10 rounded-xl" />
+              </Field>
+            </div>
+          </div>
+
+          {/* Canais */}
+          <div className="p-3.5 rounded-xl border border-border bg-secondary/20 space-y-3">
+            <p className="text-sm font-medium">Canais de aplicação</p>
+            {([
+              { key: "applyToStore" as const, label: "Loja Pública (Vitrine Online)", desc: "Aplica desconto no catálogo online" },
+              { key: "applyToPdv"   as const, label: "PDV (Frente de Caixa)",        desc: "Aplica desconto nas vendas presenciais" },
+            ]).map(ch => (
+              <div key={ch.key} className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">{ch.label}</p>
+                  <p className="text-xs text-muted-foreground">{ch.desc}</p>
+                </div>
+                <button type="button" role="switch"
+                  aria-checked={!!config[ch.key]}
+                  onClick={() => onChange({ [ch.key]: !config[ch.key] })}
+                  className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                    config[ch.key] ? "bg-violet-600" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                    config[ch.key] ? "translate-x-5" : "translate-x-0"
+                  }`} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Preview de status ao vivo */}
+          {config.promoPrice && (() => {
+            const storeActive = isPromoActive(config, "store");
+            const pdvActive   = isPromoActive(config, "pdv");
+            const anyActive   = storeActive || pdvActive;
+            return (
+              <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm font-medium ${
+                anyActive
+                  ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+                  : "bg-secondary/50 text-muted-foreground border-border"
+              }`}>
+                {anyActive
+                  ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
+                <div>
+                  <p className="font-semibold">
+                    {anyActive ? "Promoção ativa agora" : "Fora do período de promoção"}
+                  </p>
+                  <p className="text-xs mt-0.5 font-normal opacity-80">
+                    Simulação com base na data/hora atual e configurações acima
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+        </>
+      )}
+    </>
+  );
+}
+
 // ─── Form Field ───────────────────────────────────────────────────
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -323,6 +527,7 @@ export default function ProductFormModal({
   const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<"basic" | "price" | "stock" | "variations" | "promocoes">("basic");
+  const [promoEditorFor, setPromoEditorFor] = useState<{ gid: string; oid: string } | null>(null);
   const [errors, setErrors] = useState<{ categoryId?: string; price?: string; pdvCode?: string }>({});
   const [pdvCodeLoading, setPdvCodeLoading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -410,6 +615,12 @@ export default function ProductFormModal({
   const setGroupName = (gid: string, name: string) =>
     setForm(f => ({ ...f, variationGroups: f.variationGroups.map(g => g.id === gid ? { ...g, groupName: name } : g) }));
 
+  const setGroupPriceType = (gid: string, priceType: VariationPriceType) =>
+    setForm(f => ({ ...f, variationGroups: f.variationGroups.map(g => g.id === gid ? { ...g, priceType } : g) }));
+
+  const setGroupRequired = (gid: string, required: boolean) =>
+    setForm(f => ({ ...f, variationGroups: f.variationGroups.map(g => g.id === gid ? { ...g, required } : g) }));
+
   const addOption = (gid: string) =>
     setForm(f => ({ ...f, variationGroups: f.variationGroups.map(g => g.id === gid ? { ...g, options: [...g.options, newOption()] } : g) }));
 
@@ -422,13 +633,29 @@ export default function ProductFormModal({
   const setOptionImages = (gid: string, oid: string, imgs: ProductImage[]) =>
     setForm(f => ({ ...f, variationGroups: f.variationGroups.map(g => g.id === gid ? { ...g, options: g.options.map(o => o.id === oid ? { ...o, images: imgs } : o) } : g) }));
 
+  const setOptionPromo = (gid: string, oid: string, updates: Partial<PromoConfig>) =>
+    setForm(f => ({
+      ...f,
+      variationGroups: f.variationGroups.map(g => g.id !== gid ? g : {
+        ...g,
+        options: g.options.map(o => o.id !== oid ? o : {
+          ...o,
+          promoConfig: { ...(o.promoConfig ?? DEFAULT_PROMO_CONFIG), ...updates },
+        }),
+      }),
+    }));
+
+  const removeOptionPromo = (gid: string, oid: string) =>
+    setForm(f => ({
+      ...f,
+      variationGroups: f.variationGroups.map(g => g.id !== gid ? g : {
+        ...g,
+        options: g.options.map(o => o.id !== oid ? o : { ...o, promoConfig: null }),
+      }),
+    }));
+
   const setPromo = (updates: Partial<PromoConfig>) =>
     setForm(f => ({ ...f, promoConfig: { ...(f.promoConfig ?? DEFAULT_PROMO_CONFIG), ...updates } }));
-
-  const toggleDay = (day: number) => {
-    const days = form.promoConfig?.daysOfWeek ?? [];
-    setPromo({ daysOfWeek: days.includes(day) ? days.filter(d => d !== day) : [...days, day] });
-  };
 
   const margin = calcMargin(form.price, form.costPrice);
 
@@ -979,181 +1206,11 @@ export default function ProductFormModal({
 
           {/* ── Tab: Promoções ── */}
           {tab === "promocoes" && (
-            <>
-              {/* Toggle ativar */}
-              <div className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20">
-                <div>
-                  <p className="text-sm font-medium flex items-center gap-1.5">
-                    <Percent className="w-3.5 h-3.5 text-violet-500" />
-                    Ativar promoção por recorrência
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Define um preço promocional com dias, horários e período específicos
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={!!form.promoConfig?.enabled}
-                  onClick={() => setPromo({ enabled: !form.promoConfig?.enabled })}
-                  className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
-                    form.promoConfig?.enabled ? "bg-violet-600" : "bg-muted-foreground/30"
-                  }`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
-                    form.promoConfig?.enabled ? "translate-x-5" : "translate-x-0"
-                  }`} />
-                </button>
-              </div>
-
-              {form.promoConfig?.enabled && (
-                <>
-                  {/* Preço promocional */}
-                  <Field label="Preço promocional">
-                    <div className="relative">
-                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                      <Input
-                        placeholder="0,00"
-                        value={form.promoConfig.promoPrice}
-                        onChange={e => setPromo({ promoPrice: e.target.value })}
-                        className="h-10 rounded-xl pl-8 font-semibold"
-                      />
-                    </div>
-                    {(() => {
-                      const promo = parseFloat(parseCurrency(form.promoConfig?.promoPrice ?? "")) || 0;
-                      const base  = parseFloat(parseCurrency(form.price)) || 0;
-                      if (promo > 0 && base > 0 && promo < base) {
-                        const disc = Math.round(((base - promo) / base) * 100);
-                        const save = (base - promo).toFixed(2).replace(".", ",");
-                        return (
-                          <p className="text-xs text-violet-700 mt-1 font-medium">
-                            {disc}% de desconto — economia de R$ {save} por unidade
-                          </p>
-                        );
-                      }
-                      if (promo >= base && promo > 0 && base > 0) {
-                        return <p className="text-xs text-destructive mt-1">O preço promocional deve ser menor que o preço de venda.</p>;
-                      }
-                    })()}
-                  </Field>
-
-                  {/* Dias da semana */}
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Dias da semana</Label>
-                    <p className="text-xs text-muted-foreground -mt-1">Sem seleção = válido todos os dias</p>
-                    <div className="flex gap-1.5">
-                      {[
-                        { v: 0, l: "Dom" }, { v: 1, l: "Seg" }, { v: 2, l: "Ter" },
-                        { v: 3, l: "Qua" }, { v: 4, l: "Qui" }, { v: 5, l: "Sex" }, { v: 6, l: "Sáb" },
-                      ].map(({ v, l }) => {
-                        const on = (form.promoConfig?.daysOfWeek ?? []).includes(v);
-                        return (
-                          <button key={v} type="button" onClick={() => toggleDay(v)}
-                            className={`flex-1 h-10 rounded-xl text-xs font-semibold transition-all ${
-                              on ? "bg-violet-600 text-white shadow-sm" : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
-                            }`}>
-                            {l}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Horário */}
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-muted-foreground" /> Horário (Happy Hour)
-                    </Label>
-                    <p className="text-xs text-muted-foreground -mt-1">Sem preenchimento = válido o dia todo</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Início">
-                        <Input type="time" value={form.promoConfig.timeStart ?? ""}
-                          onChange={e => setPromo({ timeStart: e.target.value || null })}
-                          className="h-10 rounded-xl" />
-                      </Field>
-                      <Field label="Término">
-                        <Input type="time" value={form.promoConfig.timeEnd ?? ""}
-                          onChange={e => setPromo({ timeEnd: e.target.value || null })}
-                          className="h-10 rounded-xl" />
-                      </Field>
-                    </div>
-                  </div>
-
-                  {/* Período de vigência */}
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-muted-foreground" /> Período de vigência
-                    </Label>
-                    <p className="text-xs text-muted-foreground -mt-1">Sem preenchimento = sem data de expiração</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="Data de início">
-                        <Input type="date" value={form.promoConfig.dateStart ?? ""}
-                          onChange={e => setPromo({ dateStart: e.target.value || null })}
-                          className="h-10 rounded-xl" />
-                      </Field>
-                      <Field label="Data de término">
-                        <Input type="date" value={form.promoConfig.dateEnd ?? ""}
-                          onChange={e => setPromo({ dateEnd: e.target.value || null })}
-                          className="h-10 rounded-xl" />
-                      </Field>
-                    </div>
-                  </div>
-
-                  {/* Canais */}
-                  <div className="p-3.5 rounded-xl border border-border bg-secondary/20 space-y-3">
-                    <p className="text-sm font-medium">Canais de aplicação</p>
-                    {([
-                      { key: "applyToStore" as const, label: "Loja Pública (Vitrine Online)", desc: "Aplica desconto no catálogo online" },
-                      { key: "applyToPdv"   as const, label: "PDV (Frente de Caixa)",        desc: "Aplica desconto nas vendas presenciais" },
-                    ]).map(ch => (
-                      <div key={ch.key} className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{ch.label}</p>
-                          <p className="text-xs text-muted-foreground">{ch.desc}</p>
-                        </div>
-                        <button type="button" role="switch"
-                          aria-checked={!!form.promoConfig?.[ch.key]}
-                          onClick={() => setPromo({ [ch.key]: !form.promoConfig?.[ch.key] })}
-                          className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
-                            form.promoConfig?.[ch.key] ? "bg-violet-600" : "bg-muted-foreground/30"
-                          }`}
-                        >
-                          <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
-                            form.promoConfig?.[ch.key] ? "translate-x-5" : "translate-x-0"
-                          }`} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Preview de status ao vivo */}
-                  {form.promoConfig.promoPrice && (() => {
-                    const storeActive = isPromoActive(form.promoConfig, "store");
-                    const pdvActive   = isPromoActive(form.promoConfig, "pdv");
-                    const anyActive   = storeActive || pdvActive;
-                    return (
-                      <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-sm font-medium ${
-                        anyActive
-                          ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
-                          : "bg-secondary/50 text-muted-foreground border-border"
-                      }`}>
-                        {anyActive
-                          ? <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                          : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
-                        <div>
-                          <p className="font-semibold">
-                            {anyActive ? "Promoção ativa agora" : "Fora do período de promoção"}
-                          </p>
-                          <p className="text-xs mt-0.5 font-normal opacity-80">
-                            Simulação com base na data/hora atual e configurações acima
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </>
-              )}
-            </>
+            <PromoConfigFields
+              config={form.promoConfig ?? DEFAULT_PROMO_CONFIG}
+              onChange={setPromo}
+              comparePrice={parseFloat(parseCurrency(form.price)) || 0}
+            />
           )}
 
           {/* ── Tab: Variações ── */}
@@ -1186,34 +1243,114 @@ export default function ProductFormModal({
                     <div key={group.id} className="rounded-2xl border border-border/60 bg-secondary/10 overflow-hidden">
 
                       {/* Cabeçalho do grupo */}
-                      <div className="flex items-center gap-3 px-4 py-3 bg-secondary/30 border-b border-border/40">
-                        <Layers className="w-3.5 h-3.5 text-primary shrink-0" />
-                        <Input
-                          placeholder="Nome do grupo (ex: Cor, Tamanho, Sabor)"
-                          value={group.groupName}
-                          onChange={e => setGroupName(group.id, e.target.value)}
-                          className="h-8 rounded-lg text-sm font-medium border-0 bg-transparent focus-visible:ring-1 px-2 flex-1"
-                        />
-                        <button type="button" onClick={() => removeGroup(group.id)}
-                          className="w-6 h-6 rounded-lg hover:bg-destructive/15 hover:text-destructive text-muted-foreground flex items-center justify-center transition-colors shrink-0">
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                      <div className="px-4 py-3 bg-secondary/30 border-b border-border/40 space-y-2.5">
+                        <div className="flex items-center gap-3">
+                          <Layers className="w-3.5 h-3.5 text-primary shrink-0" />
+                          <Input
+                            placeholder="Nome do grupo (ex: Cor, Tamanho, Sabor)"
+                            value={group.groupName}
+                            onChange={e => setGroupName(group.id, e.target.value)}
+                            className="h-8 rounded-lg text-sm font-medium border-0 bg-transparent focus-visible:ring-1 px-2 flex-1"
+                          />
+                          <button type="button" onClick={() => removeGroup(group.id)}
+                            className="w-6 h-6 rounded-lg hover:bg-destructive/15 hover:text-destructive text-muted-foreground flex items-center justify-center transition-colors shrink-0">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 pl-6">
+                          <span className="text-[11px] text-muted-foreground shrink-0">Tipo de preço:</span>
+                          <div className="flex rounded-lg border border-border/60 overflow-hidden">
+                            {([
+                              { v: "adicional" as const, l: "Adicional", hint: "Soma o valor da opção ao preço do produto" },
+                              { v: "opcional"  as const, l: "Opcional",  hint: "Substitui o preço do produto pelo valor da opção" },
+                            ]).map(({ v, l, hint }) => {
+                              const active = (group.priceType ?? "adicional") === v;
+                              return (
+                                <button key={v} type="button" title={hint}
+                                  onClick={() => setGroupPriceType(group.id, v)}
+                                  className={`px-2.5 h-6 text-[11px] font-semibold transition-colors ${
+                                    active ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:bg-secondary"
+                                  }`}>
+                                  {l}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <span className="text-[10px] text-muted-foreground/80">
+                            {(group.priceType ?? "adicional") === "opcional"
+                              ? "substitui o preço do produto"
+                              : "soma ao preço do produto"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 pl-6">
+                          <button type="button" role="switch"
+                            aria-checked={group.required ?? true}
+                            onClick={() => setGroupRequired(group.id, !(group.required ?? true))}
+                            className={`w-9 h-5 rounded-full transition-colors duration-200 relative shrink-0 ${
+                              (group.required ?? true) ? "bg-primary" : "bg-muted-foreground/30"
+                            }`}
+                          >
+                            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${
+                              (group.required ?? true) ? "translate-x-4" : "translate-x-0"
+                            }`} />
+                          </button>
+                          <span className="text-[11px] text-muted-foreground">
+                            {(group.required ?? true)
+                              ? "Obrigatório — cliente precisa escolher uma opção"
+                              : "Não obrigatório — cliente pode comprar sem escolher"}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Opções do grupo */}
                       <div className="p-4 space-y-3">
                         {group.options.map((opt, oidx) => (
                           <div key={opt.id} className="rounded-xl border border-border/50 bg-background p-3 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                                {opt.name.trim() || `Opção ${oidx + 1}`}
-                              </span>
-                              {group.options.length > 1 && (
-                                <button type="button" onClick={() => removeOption(group.id, opt.id)}
-                                  className="w-5 h-5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground flex items-center justify-center transition-colors">
-                                  <X className="w-3 h-3" />
-                                </button>
-                              )}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate">
+                                  {opt.name.trim() || `Opção ${oidx + 1}`}
+                                </span>
+                                {opt.promoConfig?.enabled && (
+                                  <span className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-600 text-[9px] font-bold uppercase">
+                                    <Percent className="w-2.5 h-2.5" /> Promoção
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button type="button"
+                                      className="w-5 h-5 rounded hover:bg-secondary text-muted-foreground flex items-center justify-center transition-colors">
+                                      <MoreVertical className="w-3.5 h-3.5" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-44">
+                                    <DropdownMenuItem onClick={() => {
+                                      if (!opt.promoConfig) setOptionPromo(group.id, opt.id, { enabled: true });
+                                      setPromoEditorFor({ gid: group.id, oid: opt.id });
+                                    }}>
+                                      <Percent className="w-3.5 h-3.5 mr-1.5" />
+                                      {opt.promoConfig ? "Editar promoção" : "Criar promoção"}
+                                    </DropdownMenuItem>
+                                    {opt.promoConfig && (
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        onClick={() => removeOptionPromo(group.id, opt.id)}
+                                      >
+                                        <X className="w-3.5 h-3.5 mr-1.5" />
+                                        Remover promoção
+                                      </DropdownMenuItem>
+                                    )}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                                {group.options.length > 1 && (
+                                  <button type="button" onClick={() => removeOption(group.id, opt.id)}
+                                    className="w-5 h-5 rounded hover:bg-destructive/10 hover:text-destructive text-muted-foreground flex items-center justify-center transition-colors">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <div className="grid grid-cols-3 gap-2">
                               <div className="space-y-1">
@@ -1278,6 +1415,42 @@ export default function ProductFormModal({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Promoção de uma opção de variação específica */}
+    {(() => {
+      if (!promoEditorFor) return null;
+      const group  = form.variationGroups.find(g => g.id === promoEditorFor.gid);
+      const option = group?.options.find(o => o.id === promoEditorFor.oid);
+      if (!group || !option) return null;
+      return (
+        <Dialog open onOpenChange={v => !v && setPromoEditorFor(null)}>
+          <DialogContent className="rounded-2xl max-w-md p-0 overflow-hidden max-h-[85vh] flex flex-col">
+            <DialogHeader className="px-6 pt-5 pb-0">
+              <DialogTitle className="text-lg font-bold flex items-center gap-2">
+                <Percent className="w-4 h-4 text-violet-500" />
+                Promoção — {group.groupName || "Variação"}: {option.name || "Opção"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+              <PromoConfigFields
+                config={option.promoConfig ?? DEFAULT_PROMO_CONFIG}
+                onChange={updates => setOptionPromo(group.id, option.id, updates)}
+                comparePrice={parseFloat(parseCurrency(option.price || "0")) || 0}
+                priceLabel="Preço promocional do adicional"
+                toggleLabel="Ativar promoção nesta variação"
+                toggleHint="Desconta o adicional desta opção — o preço-base do produto não é afetado"
+              />
+            </div>
+            <div className="px-6 py-4 border-t border-border/50 bg-surface flex justify-end">
+              <Button onClick={() => setPromoEditorFor(null)}
+                className="h-9 px-5 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2">
+                <Check className="w-3.5 h-3.5" /> Concluído
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      );
+    })()}
     </>
   );
 }

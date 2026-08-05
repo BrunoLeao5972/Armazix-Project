@@ -1,5 +1,6 @@
 import { signJWT } from "@/lib/auth";
 import { generateCsrfToken, createCsrfCookie } from "@/lib/middleware/csrf";
+import { requireJwtSecret } from "@/lib/env";
 
 const MOCK_USER = {
   id: "mock-user-001",
@@ -27,16 +28,27 @@ export async function mockLoginHandler(request: Request): Promise<Response> {
     });
   }
 
-  const secret = process.env.JWT_SECRET || "dev-secret-mock";
+  let secret: string;
+  try {
+    secret = requireJwtSecret();
+  } catch {
+    return new Response(JSON.stringify({ error: "JWT_SECRET não configurado no .env local" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+  }
   const token = await signJWT(
-    { userId: MOCK_USER.id, email: MOCK_USER.email, role: MOCK_USER.role, storeId: MOCK_USER.storeId },
+    { userId: MOCK_USER.id, email: MOCK_USER.email, role: MOCK_USER.role, storeId: MOCK_USER.storeId, sessionVersion: 0 },
     secret,
   );
 
   const csrfToken = generateCsrfToken();
 
+  // Secure só quando a própria requisição chegou por https — dev local roda
+  // sobre http (localhost) e o cookie precisa continuar sendo aceito ali.
+  const isHttps = new URL(request.url).protocol === "https:";
   const headers = new Headers({ "content-type": "application/json" });
-  headers.append("set-cookie", `armazix_token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 60 * 60}`);
+  headers.append("set-cookie", `armazix_token=${token}; Path=/; HttpOnly; ${isHttps ? "Secure; " : ""}SameSite=Strict; Max-Age=${7 * 24 * 60 * 60}`);
   headers.append("set-cookie", createCsrfCookie(csrfToken));
 
   return new Response(JSON.stringify({

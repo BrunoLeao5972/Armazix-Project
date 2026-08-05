@@ -1,4 +1,4 @@
-import { createDb, createTenantDb } from "@/lib/db";
+import { createDb, createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, sql } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
@@ -56,7 +56,7 @@ export async function createPaymentPlanHandler(request: Request, auth?: AuthCont
   if (!TIPOS_PLANO.includes(body.tipo)) return json({ error: "tipo inválido" }, 400);
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const [{ nextCodigo }] = await db

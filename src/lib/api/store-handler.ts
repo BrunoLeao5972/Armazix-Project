@@ -1,4 +1,4 @@
-import { createDb, createTenantDb } from "@/lib/db";
+import { createDb, createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, desc, gte, sql, ne } from "drizzle-orm";
 import { requireStoreAccess, requireStoreOwner, AuthContext } from "@/lib/auth/require-store-access";
@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/middleware/auth";
 import { generateCleanSlug } from "@/lib/slug";
 import { getCached, deleteKey, storeCacheKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
+import { geocodeAddress } from "@/lib/geocoding";
 
 const { stores, storeUsers, orders, orderItems, products, customers } = schema;
 
@@ -64,6 +65,8 @@ function toPublicStoreFields(store: typeof stores.$inferSelect & { banners?: unk
     freeShippingAbove:      store.freeShippingAbove,
     paymentConfig:          store.paymentConfig,
     deliveryConfig:         store.deliveryConfig,
+    latitude:               store.latitude,
+    longitude:              store.longitude,
     rating:                 store.rating,
     active:                 store.active,
   };
@@ -150,6 +153,55 @@ export async function getStoreHandler(request: Request): Promise<Response> {
 }
 
 // ─── Update Store ───────────────────────────────────────────────
+// ─── Sincroniza deliveryConfig (tela rica com 6 modelos) com os campos que
+// o motor de checkout (priceOrder → calcDeliveryFee) realmente lê: deliveryFee
+// (taxa plana) e deliveryRules (lista bairro→taxa). Sem isso, o que o lojista
+// configura na aba Entrega nunca chegava a afetar o preço cobrado do cliente
+// — a tela salvava, mas o checkout continuava usando os campos antigos,
+// intocados, o que na prática significava sempre "frete grátis".
+//
+// Cobre só os modelos "fixa" e "bairroFixo", que mapeiam 1:1 pros campos
+// legados (deliveryFee/deliveryRules). Os modelos geo-baseados (dinâmica,
+// raio, bairro desenhado no mapa, matriz) não passam por aqui — o motor de
+// checkout (calcDeliveryFee) lê deliveryConfig.modelConfig diretamente pra
+// esses, com geocodificação e cálculo de distância reais. Por isso,
+// propositalmente, não mexemos nos campos legados pra esses modelos:
+// preferimos deixar a configuração anterior intacta a sobrescrevê-la com um
+// valor que o motor nem usaria.
+function deriveLegacyDelivery(
+  deliveryConfig: Record<string, unknown>,
+): { deliveryFee: string; deliveryRules: Array<{ bairro: string; taxa: number }> } | null {
+  const modeloCobranca = deliveryConfig.modeloCobranca as string | undefined;
+  const entregaUber     = deliveryConfig.entregaUber === true;
+  const modelConfig     = deliveryConfig.modelConfig as {
+    fixa?: { taxaCliente?: string };
+    bairroFixo?: { bairros?: Array<{ nome?: string; valor?: string; ativo?: boolean }> };
+  } | undefined;
+
+  // "Entrega pelo Uber" zera a taxa do cliente — cobrança acontece fora da
+  // plataforma (mesmo comportamento já documentado no checkbox do admin).
+  if (entregaUber) {
+    return { deliveryFee: "0.00", deliveryRules: [] };
+  }
+
+  if (modeloCobranca === "fixa") {
+    const taxa = modelConfig?.fixa?.taxaCliente;
+    const valido = taxa !== undefined && !Number.isNaN(parseFloat(taxa));
+    return { deliveryFee: valido ? taxa! : "0.00", deliveryRules: [] };
+  }
+
+  if (modeloCobranca === "bairroFixo") {
+    const bairros = modelConfig?.bairroFixo?.bairros ?? [];
+    const regras = bairros
+      .filter((b): b is { nome: string; valor: string; ativo: boolean } => !!b.ativo && !!b.nome?.trim())
+      .map(b => ({ bairro: b.nome.trim(), taxa: parseFloat(b.valor) || 0 }));
+    return { deliveryFee: "0.00", deliveryRules: regras };
+  }
+
+  // Modelo geo-based ainda sem suporte no checkout — não toca nos campos legados.
+  return null;
+}
+
 export async function updateStoreHandler(request: Request, auth?: AuthContext): Promise<Response> {
   // IDOR Fix: Use storeId exclusively from auth (JWT) — ignore any storeId in body
   let storeId: string;
@@ -193,10 +245,13 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
     };
     deliveryConfig?: Record<string, unknown>;
     freeShippingAbove?: string | null;
+    /** Localização física da loja — referência única pros modelos de frete por distância. */
+    latitude?: number | null;
+    longitude?: number | null;
   };
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   const nextSlug = body.name ? generateCleanSlug(body.name) : null;
   if (body.name && (!nextSlug || nextSlug.length < 3)) {
@@ -220,6 +275,8 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
       const [cur] = await db.select({ slug: stores.slug }).from(stores).where(eq(stores.id, storeId)).limit(1);
       prevSlug = cur?.slug ?? null;
     }
+
+    const legacyDelivery = body.deliveryConfig !== undefined ? deriveLegacyDelivery(body.deliveryConfig) : null;
 
     const [updated] = await db
       .update(stores)
@@ -246,6 +303,12 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
         address: body.address,
         ...(body.deliveryConfig !== undefined ? { deliveryConfig: body.deliveryConfig } : {}),
         ...(body.freeShippingAbove !== undefined ? { freeShippingAbove: body.freeShippingAbove } : {}),
+        ...(body.latitude !== undefined ? { latitude: body.latitude !== null ? body.latitude.toFixed(7) : null } : {}),
+        ...(body.longitude !== undefined ? { longitude: body.longitude !== null ? body.longitude.toFixed(7) : null } : {}),
+        // Mantém deliveryFee/deliveryRules (o que o checkout de fato usa) em
+        // sincronia com o que foi configurado na aba Entrega — ver
+        // deriveLegacyDelivery() acima.
+        ...(legacyDelivery ? { deliveryFee: legacyDelivery.deliveryFee, deliveryRules: legacyDelivery.deliveryRules } : {}),
         updatedAt: new Date(),
       })
       .where(eq(stores.id, storeId))
@@ -273,6 +336,57 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "content-type": "application/json" },
+    });
+  }
+}
+
+// ─── Geocodificar endereço cadastrado ────────────────────────────
+// Atalho "Localizar pelo endereço cadastrado" no pino de localização da
+// loja (aba Entrega) — evita o lojista ter que caçar o próprio endereço no
+// mapa manualmente. Usa o mesmo geocodificador (Nominatim, cacheado) que o
+// checkout usa para o endereço do cliente.
+export async function geocodeStoreAddressHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = createDb(dbUrl);
+  const [loja] = await db.select({ address: stores.address }).from(stores).where(eq(stores.id, storeId)).limit(1);
+  const addr = loja?.address as {
+    street?: string; number?: string; neighborhood?: string; city?: string; state?: string; zip?: string;
+  } | null;
+
+  if (!addr?.street || !addr?.city || !addr?.state) {
+    return new Response(JSON.stringify({ error: "Cadastre o endereço da loja na aba Geral antes de localizar automaticamente." }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  }
+
+  try {
+    const point = await geocodeAddress({
+      street: addr.street, number: addr.number ?? "", neighborhood: addr.neighborhood ?? "",
+      city: addr.city, state: addr.state, zip: addr.zip ?? "",
+    });
+    if (!point) {
+      return new Response(JSON.stringify({ error: "Não foi possível localizar o endereço cadastrado. Ajuste manualmente no mapa." }), {
+        status: 404, headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ lat: point.lat, lng: point.lng }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  } catch (error) {
+    console.error("Error geocoding store address:", error);
+    return new Response(JSON.stringify({ error: "Serviço de geolocalização indisponível no momento. Tente novamente em instantes." }), {
+      status: 503, headers: { "content-type": "application/json" },
     });
   }
 }
@@ -310,7 +424,7 @@ export async function getDashboardStatsHandler(
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  const db = await createTenantDb(dbUrl, storeId);
+  const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
     const [orderStats, productStats, customersCount, recentOrders, topProducts] = await Promise.all([
