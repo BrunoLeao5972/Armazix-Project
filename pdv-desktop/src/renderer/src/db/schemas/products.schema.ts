@@ -1,0 +1,45 @@
+import type { RxJsonSchema } from "rxdb";
+import type { ProductDoc } from "../types";
+
+export const productSchema: RxJsonSchema<ProductDoc> = {
+  version: 0,
+  primaryKey: "id",
+  type: "object",
+  properties: {
+    id:                 { type: "string", maxLength: 36 },
+    storeId:            { type: "string", maxLength: 36 },
+    categoryId:         { type: ["string", "null"], maxLength: 36 },
+    name:               { type: "string" },
+    description:        { type: ["string", "null"] },
+    imageUrl:           { type: ["string", "null"] },
+    images: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { url: { type: "string" }, isPrimary: { type: "boolean" } },
+      },
+    },
+    emoji:              { type: ["string", "null"] },
+    price:              { type: "string" },
+    compareAtPrice:     { type: ["string", "null"] },
+    costPrice:          { type: ["string", "null"] },
+    sku:                { type: ["string", "null"] },
+    barcode:            { type: ["string", "null"], maxLength: 64 },
+    pdvCode:            { type: ["string", "null"], maxLength: 32 },
+    stock:              { type: "number", minimum: 0, maximum: 1_000_000, multipleOf: 1 },
+    lowStockThreshold:  { type: ["number", "null"] },
+    unit:               { type: ["string", "null"] },
+    badge:              { type: ["string", "null"] },
+    productType:        { type: "string" },
+    isWeightScale:      { type: "boolean" },
+    trackStock:         { type: "boolean" },
+    featured:           { type: "boolean" },
+    active:             { type: "boolean" },
+    allowObservation:   { type: "boolean" },
+    promoConfig:        { type: ["object", "null"] },
+    variationGroups:    { type: "array", items: { type: "object" } },
+    updatedAt:          { type: "string" },
+  },
+  required: ["id", "storeId", "name", "price", "active"],
+  indexes: ["storeId", "categoryId", "barcode", "pdvCode"],
+};

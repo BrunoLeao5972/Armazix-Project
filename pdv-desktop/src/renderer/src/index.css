@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-surface text-ink antialiased select-none;
+  }
+
+  /* Frente de caixa: seleção de texto acidental atrapalha o toque/clique
+     rápido do operador. Campos de busca/input reabilitam explicitamente. */
+  input,
+  textarea {
+    @apply select-text;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-black/10 rounded-full;
+  }
+}

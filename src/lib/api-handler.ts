@@ -3,7 +3,7 @@ import { registerHandler } from "./api/auth/register-handler";
 import { checkEmailHandler } from "./api/auth/check-email-handler";
 import { refreshCsrfHandler } from "./api/auth/refresh-csrf-handler";
 import { verifyEmailHandler } from "./api/auth/verify-email-handler";
-import { loginHandler } from "./api/auth/login-handler";
+import { loginHandler, loginDesktopHandler } from "./api/auth/login-handler";
 import { mockLoginHandler } from "./api/auth/mock-login-handler";
 import { logoutHandler } from "./api/auth/logout-handler";
 import { forgotPasswordHandler } from "./api/auth/forgot-password-handler";
@@ -160,11 +160,22 @@ import { validateCsrfToken, createCsrfErrorResponse } from "./middleware/csrf";
 
 type ApiHandler = (request: Request, auth?: AuthContext) => Promise<Response>;
 
+// Heartbeat sem estado — usado pelo app desktop (PDV) pra decidir se está
+// online antes de tentar sincronizar. Não toca banco nem cache de propósito:
+// só precisa provar que o Worker está respondendo.
+async function healthHandler(): Promise<Response> {
+  return new Response(JSON.stringify({ ok: true, time: new Date().toISOString() }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 // Rotas públicas (não requerem autenticação)
 const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/auth/register": registerHandler,
   "/api/auth/verify-email": verifyEmailHandler,
   "/api/auth/login": loginHandler,
+  "/api/auth/login-desktop": loginDesktopHandler, // App PDV Electron — devolve token no corpo, sem cookie
   "/api/auth/forgot-password": forgotPasswordHandler,
   "/api/auth/reset-password": resetPasswordHandler,
   "/api/auth/resend-verification": resendVerificationHandler,
@@ -200,6 +211,7 @@ const publicGetRoutes: Record<string, ApiHandler> = {
   "/api/store/check-slug": checkStoreSlugHandler,
   "/api/validate-cep": validateCepHandler,
   "/api/delivery/estimate": estimateDeliveryHandler, // Público — preview de frete no checkout
+  "/api/health": healthHandler, // Heartbeat pro app desktop (PDV) checar conectividade
   "/api/products/list": listProductsHandler, // Público para vitrine
   "/api/categories/list": listCategoriesHandler, // Público para vitrine
   "/api/coupons/validate": validatePublicCouponHandler, // Público para vitrine
@@ -330,6 +342,7 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
 // Mapeamento de rotas para configurações de rate limit
 const rateLimitConfigs: Record<string, string> = {
   "/api/auth/login": "auth",
+  "/api/auth/login-desktop": "auth",
   "/api/auth/register": "auth",
   "/api/auth/verify-email": "verify-email",
   "/api/auth/forgot-password": "forgot-password",
@@ -414,8 +427,13 @@ export async function handleApiRequest(request: Request): Promise<Response> {
     let response: Response;
 
     if (isProtected) {
-      // Verificar CSRF token (exceto para webhooks e checkout público)
-      if (!validateCsrfToken(request)) {
+      // CSRF só faz sentido pra sessão via cookie (é o que o navegador anexa
+      // sozinho). Cliente Bearer-only (app desktop, sem cookie armazix_token)
+      // não passa pelo double-submit — precisa montar o header à mão, o que já
+      // o torna imune ao ataque que o CSRF previne. requireAuth() logo abaixo
+      // ainda exige o Bearer válido normalmente.
+      const hasCookieSession = /armazix_token=/.test(request.headers.get("cookie") ?? "");
+      if (hasCookieSession && !validateCsrfToken(request)) {
         return withSecurityHeaders(createCsrfErrorResponse());
       }
 

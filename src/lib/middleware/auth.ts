@@ -41,7 +41,20 @@ function pruneIfStale(): void {
 
 export async function requireAuth(request: Request): Promise<AuthContext | Response> {
   const cookieHeader = request.headers.get("cookie");
-  const token = cookieHeader?.match(/armazix_token=([^;]+)/)?.[1];
+  let token = cookieHeader?.match(/armazix_token=([^;]+)/)?.[1];
+
+  // Clientes sem cookie (app desktop Electron, autenticado via
+  // /api/auth/login-desktop) mandam o mesmo JWT como Bearer. CSRF não se
+  // aplica aqui — o ataque que o double-submit cookie previne depende do
+  // navegador anexar a credencial sozinho; um header Authorization só vai
+  // se o próprio app o montar, então essa origem é imune por construção
+  // (ver o bypass equivalente em handleApiRequest, em api-handler.ts).
+  if (!token) {
+    const authHeader = request.headers.get("Authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      token = authHeader.slice(7);
+    }
+  }
 
   if (!token) {
     return new Response(
