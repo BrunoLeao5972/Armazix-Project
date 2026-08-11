@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api-client";
 import {
   AlertCircle, ArrowDownCircle, ArrowUpCircle, Filter, Loader2,
-  LockKeyhole, ReceiptText, Unlock, X,
+  LockKeyhole, Monitor, ReceiptText, Unlock, X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { fmtBRL, fmtDate } from "./pdv";
@@ -18,7 +18,7 @@ export function ModalAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => vo
   const handleAbrir = async () => {
     setErro(""); setLoading(true);
     try {
-      const res  = await api.post("/api/pdv/caixa/abrir", { saldoInicial: saldo || "0", abertoPor: resp || undefined });
+      const res  = await api.post("/api/pdv/caixa/abrir", { saldoInicial: saldo || "0", abertoPor: resp || undefined, origem: "web" });
       const data = await res.json() as { success?: boolean; sessao?: CaixaSessao; error?: string };
       if (!res.ok || !data.success) { setErro(data.error || "Erro ao abrir caixa"); return; }
       onAberto(data.sessao!);
@@ -342,6 +342,11 @@ export function ModalSessoes({ storeId, onClose }: { storeId: string; onClose: (
                       }`}>
                         {isAberta ? "ABERTA" : "ENCERRADA"}
                       </span>
+                      {s.origem === "desktop" && (
+                        <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-blue-50 text-blue-700 border-blue-200">
+                          <Monitor className="w-2.5 h-2.5" /> APP DESKTOP
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-muted-foreground mt-1 ml-4">
                       {s.abertoPor && <>Operador: {s.abertoPor} · </>}

@@ -177,7 +177,46 @@ export interface StorePublicData {
   // config rica de frete (6 modelos) — usada pelo checkout só pra saber se o
   // modelo ativo é geo-based (nesse caso o frete vem de /api/delivery/estimate,
   // não do cálculo local por bairro).
-  deliveryConfig?: { modeloCobranca?: string } | null;
+  deliveryConfig?: {
+    modeloCobranca?: string;
+    /** undefined = true (compat) — simulador de frete na página do produto. */
+    simuladorFreteHabilitado?: boolean;
+    modelConfig?: {
+      dinamica?: { taxaBasica?: string };
+      raio?: { raios?: Array<{ valorFixo?: string }> };
+      bairroDesenho?: { valorFixo?: string };
+      matriz?: Array<{ valor?: string }>;
+    };
+  } | null;
+}
+
+/**
+ * Taxa "a partir de" pra mostrar antes do cliente informar o endereço (header,
+ * mini-carrinho, rodapé) — nos modelos por distância não existe um valor
+ * único de verdade, então usamos o ponto de partida de cada um (a mesma
+ * lógica do texto "Taxa base" na página do produto). Pra fixa/bairroFixo o
+ * campo legado já vem sincronizado, então só ele já resolve.
+ */
+export function getBaseDeliveryFee(store: StorePublicData): number {
+  const dc = store.deliveryConfig;
+  const modelo = dc?.modeloCobranca;
+  const cfg = dc?.modelConfig;
+
+  if (modelo === "dinamica" && cfg?.dinamica?.taxaBasica) {
+    return parseFloat(cfg.dinamica.taxaBasica) || 0;
+  }
+  if (modelo === "raio" && cfg?.raio?.raios?.length) {
+    const valores = cfg.raio.raios.map(r => parseFloat(r.valorFixo ?? "0") || 0);
+    return Math.min(...valores);
+  }
+  if (modelo === "bairro" && cfg?.bairroDesenho?.valorFixo) {
+    return parseFloat(cfg.bairroDesenho.valorFixo) || 0;
+  }
+  if (modelo === "matriz" && cfg?.matriz?.length) {
+    const valores = cfg.matriz.map(f => parseFloat(f.valor ?? "0") || 0);
+    return Math.min(...valores);
+  }
+  return store.deliveryFee ? parseFloat(store.deliveryFee) : 0;
 }
 
 export interface ConfiguracaoVitrine {

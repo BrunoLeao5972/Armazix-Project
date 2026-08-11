@@ -138,9 +138,16 @@ export async function getStoreHandler(request: Request): Promise<Response> {
       status: 200,
       headers: {
         "content-type": "application/json",
-        "Cache-Control": isOwnerView
-          ? "private, no-store"
-          : "public, s-maxage=300, stale-while-revalidate=600",
+        // SEM cache de borda (CDN) aqui de propósito, nem pra visitante
+        // anônimo: o Cache API da Cloudflare (caches.default) é por data
+        // center — uma atualização de loja só purgaria o colo que atendeu
+        // aquele request, não os +300 do mundo todo. Um cliente testando o
+        // checkout de outro colo continuava vendo config de frete antiga
+        // por até 5-10min mesmo tentando purgar. O cache que já é
+        // confiável (invalida em qualquer lugar ao salvar) é o Redis logo
+        // acima — deixa ele fazer esse trabalho sozinho, sem uma segunda
+        // camada por cima brigando com ele.
+        "Cache-Control": isOwnerView ? "private, no-store" : "no-store",
       },
     });
   } catch (error) {

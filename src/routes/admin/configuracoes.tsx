@@ -111,6 +111,7 @@ function SettingsPage() {
   const [deliveryModelConfig, setDeliveryModelConfig] = useState<DeliveryModelConfig>(DEFAULT_DELIVERY_MODEL_CONFIG);
   const [storeLat, setStoreLat] = useState<number | null>(null);
   const [storeLng, setStoreLng] = useState<number | null>(null);
+  const [simuladorFreteHabilitado, setSimuladorFreteHabilitado] = useState(true);
 
   useEffect(() => {
     // Nunca confia no storeId que possa estar em cache no localStorage (pode
@@ -183,6 +184,7 @@ function SettingsPage() {
           if (dc.modalidade) setModalidadeEntrega(dc.modalidade);
           setConsumirNoLocal(dc.consumirNoLocal === true);
           setEntregaUber(dc.entregaUber === true);
+          setSimuladorFreteHabilitado(dc.simuladorFreteHabilitado !== false);
           if (dc.modeloCobranca) setModeloCobranca(dc.modeloCobranca);
           if (dc.modelConfig) {
             setDeliveryModelConfig({
@@ -354,6 +356,7 @@ function SettingsPage() {
                   deliveryModelConfig={deliveryModelConfig} setDeliveryModelConfig={setDeliveryModelConfig}
                   storeLat={storeLat} setStoreLat={setStoreLat}
                   storeLng={storeLng} setStoreLng={setStoreLng}
+                  simuladorFreteHabilitado={simuladorFreteHabilitado} setSimuladorFreteHabilitado={setSimuladorFreteHabilitado}
                 />
               </Suspense>
             </TabsContent>

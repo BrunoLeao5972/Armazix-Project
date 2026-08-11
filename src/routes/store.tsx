@@ -24,10 +24,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { type CartItem, type ConfiguracaoVitrine, type StorePublicData, resolveStoreSlug, formatPrice } from "@/lib/store-context";
+import { type CartItem, type ConfiguracaoVitrine, type StorePublicData, resolveStoreSlug, formatPrice, getBaseDeliveryFee } from "@/lib/store-context";
 import { fetchRetry } from "@/lib/fetch-retry";
 import { PortalContainerContext } from "@/lib/portal-container";
 import { ProfileDrawer } from "@/components/storefront/ProfileDrawer";
+
+// Modelos cobrados por distância — não têm um valor único "a taxa de
+// entrega é X", então onde mostramos o preço sem saber ainda o endereço do
+// cliente (header, mini-carrinho, rodapé), o número é sempre "a partir de".
+const GEO_DELIVERY_MODELS = ["dinamica", "raio", "bairro", "matriz"];
 
 export interface ActiveCustomer {
   id?: string;   // undefined = novo cliente ainda não persistido no CRM
@@ -190,7 +195,7 @@ function StoreFooter({ store, isOpen }: { store: StorePublicData; isOpen: boolea
     ? `https://maps.google.com/?q=${encodeURIComponent(`${addr.street}, ${addr.number}, ${addr.city}, ${addr.state}`)}`
     : null;
   const freeAbove = store.freeShippingAbove ? parseFloat(store.freeShippingAbove) : null;
-  const baseFee   = store.deliveryFee ? parseFloat(store.deliveryFee) : 0;
+  const baseFee   = getBaseDeliveryFee(store);
 
   return (
     <footer style={{ backgroundColor: footerBg, color: C.body, borderTop: `3px solid ${withAlpha(accent, 0.55)}` }}>
@@ -304,6 +309,8 @@ function StoreFooter({ store, isOpen }: { store: StorePublicData; isOpen: boolea
                       ? `Frete grátis acima de R$ ${formatPrice(freeAbove)}`
                       : baseFee === 0
                       ? "Frete grátis"
+                      : GEO_DELIVERY_MODELS.includes(store.deliveryConfig?.modeloCobranca ?? "")
+                      ? `A partir de R$ ${formatPrice(baseFee)}`
                       : `Taxa de entrega: R$ ${formatPrice(baseFee)}`}
                   </span>
                 </div>
@@ -585,9 +592,7 @@ function StoreLayout() {
     } catch {}
   };
 
-  const deliveryFee = store?.deliveryEnabled
-    ? parseFloat(store.deliveryFee || "0")
-    : 0;
+  const deliveryFee = store && store.deliveryEnabled ? getBaseDeliveryFee(store) : 0;
   const cartTotalWithFee = cartTotal + deliveryFee;
 
   const configuracaoVitrine = useMemo<ConfiguracaoVitrine>(() => {
@@ -717,7 +722,11 @@ function StoreLayout() {
                   )}
                 </div>
                 {store?.deliveryEstimate && (
-                  <p className="text-[10px] text-muted-foreground leading-tight">{store.deliveryEstimate} · {deliveryFee === 0 ? "Frete grátis" : `R$ ${formatPrice(deliveryFee)}`}</p>
+                  <p className="text-[10px] text-muted-foreground leading-tight">
+                    {store.deliveryEstimate} · {deliveryFee === 0
+                      ? "Frete grátis"
+                      : `${GEO_DELIVERY_MODELS.includes(store?.deliveryConfig?.modeloCobranca ?? "") ? "≈ " : ""}R$ ${formatPrice(deliveryFee)}`}
+                  </p>
                 )}
               </div>
             </div>
@@ -874,7 +883,10 @@ function StoreLayout() {
                               <span className="text-muted-foreground">Entrega</span>
                               {deliveryFee === 0
                                 ? <span className="font-medium" style={{ color: "var(--cor-primaria)" }}>Grátis</span>
-                                : <span className="font-medium">R$ {formatPrice(deliveryFee)}</span>
+                                : <span className="font-medium">
+                                    {GEO_DELIVERY_MODELS.includes(store?.deliveryConfig?.modeloCobranca ?? "") ? "≈ " : ""}
+                                    R$ {formatPrice(deliveryFee)}
+                                  </span>
                               }
                             </div>
                             <div className="flex justify-between text-base font-bold pt-2 border-t border-border/50">

@@ -305,6 +305,8 @@ const migrations = [
   { name: "0030zm_rls_audit_logs", query: `CREATE POLICY tenant_audit_logs ON audit_logs FOR SELECT USING (store_id = app_current_store_id() OR app_current_store_id() IS NULL)` },
   // Localização física da loja — referência pros modelos de frete por distância
   { name: "0031_store_location", query: `ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "latitude" numeric(10, 7), ADD COLUMN IF NOT EXISTS "longitude" numeric(10, 7)` },
+  // Canal que abriu o turno de caixa (web/desktop) — diferencia a mensagem de "já tem caixa aberto"
+  { name: "0032_caixa_sessoes_origem", query: `ALTER TABLE "caixa_sessoes" ADD COLUMN IF NOT EXISTS "origem" varchar(20) NOT NULL DEFAULT 'web'` },
 ];
 
 for (const m of migrations) {

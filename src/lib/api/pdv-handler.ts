@@ -2,6 +2,7 @@ import { createDb, createDbTransactional, createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
+import { getPlan } from "@/lib/plans";
 
 const {
   caixaSessoes, caixaMovimentos, financeiroLancamentos,
@@ -18,16 +19,24 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Garante que a loja contratou e está com o pagamento em dia do add-on PDV. */
+/**
+ * Garante que a loja tem PDV liberado: ou comprou o add-on separado
+ * (pdvEnabled, planos Free/Start), ou está num plano que já inclui PDV sem
+ * custo adicional (Pro/Full — ver PLANS[...].pdvIncluded em lib/plans.ts e
+ * o texto "PDV incluso nos planos Pro e Full" em PlansSection.tsx). Checar
+ * só pdvEnabled aqui deixava todo assinante Pro/Full barrado no PDV que
+ * a própria tela de planos promete de graça.
+ */
 async function requirePdvAccess(storeId: string): Promise<Response | null> {
   const db = createDb(process.env.DATABASE_URL!);
   const [store] = await db
-    .select({ pdvEnabled: stores.pdvEnabled, planStatus: stores.planStatus })
+    .select({ pdvEnabled: stores.pdvEnabled, planStatus: stores.planStatus, plan: stores.plan })
     .from(stores)
     .where(eq(stores.id, storeId))
     .limit(1);
 
-  if (!store?.pdvEnabled || store.planStatus !== "active") {
+  const hasPdvAccess = !!store?.pdvEnabled || getPlan(store?.plan).pdvIncluded;
+  if (!hasPdvAccess || store?.planStatus !== "active") {
     return err("PDV não contratado para esta loja. Ative o add-on em Configurações → Planos.", 402);
   }
   return null;
@@ -75,23 +84,37 @@ export async function abrirCaixaHandler(
   const body = await request.json() as {
     saldoInicial: string;
     abertoPor?: string;
+    /** De onde a abertura está sendo pedida — cada cliente manda o seu. */
+    origem?: "web" | "desktop";
   };
+  const origem = body.origem === "desktop" ? "desktop" : "web";
 
   const db = createDb(process.env.DATABASE_URL!);
 
-  // Verifica se já existe caixa aberto
+  // Verifica se já existe caixa aberto — em QUALQUER canal, o turno é único
+  // por loja. Se foi aberto por outro canal, a mensagem diz isso
+  // explicitamente pra não parecer um bug quando o operador só esqueceu que
+  // já tinha aberto o caixa pelo painel web (ou vice-versa).
   const [jaAberto] = await db
-    .select({ id: caixaSessoes.id })
+    .select({ origem: caixaSessoes.origem, abertoPor: caixaSessoes.abertoPor })
     .from(caixaSessoes)
     .where(and(eq(caixaSessoes.storeId, storeId), eq(caixaSessoes.status, "aberta")))
     .limit(1);
-  if (jaAberto) return err("Já existe um caixa aberto.", 409);
+  if (jaAberto) {
+    const label = (o: string) => (o === "desktop" ? "App Desktop" : "Painel Web");
+    const quem = jaAberto.abertoPor ? ` por ${jaAberto.abertoPor}` : "";
+    const mensagem = jaAberto.origem === origem
+      ? "Já existe um caixa aberto."
+      : `Já existe um caixa aberto${quem} via ${label(jaAberto.origem)}. Feche-o por lá ou continue vendendo através do ${label(jaAberto.origem)}.`;
+    return err(mensagem, 409);
+  }
 
   const [sessao] = await db.insert(caixaSessoes).values({
     storeId,
     saldoInicial: body.saldoInicial || "0",
     abertoPor:    body.abertoPor   || null,
     status:       "aberta",
+    origem,
   }).returning();
 
   return json({ success: true, sessao }, 201);

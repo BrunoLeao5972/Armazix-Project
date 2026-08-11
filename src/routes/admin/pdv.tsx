@@ -52,6 +52,8 @@ export interface CaixaSessao {
   totalDinheiro: string; totalPix: string; totalCartao: string;
   totalDebito: string; totalOutros: string; totalVendas: number;
   status: string; abertoPor: string | null; openedAt: string; closedAt: string | null;
+  /** "web" (painel admin) ou "desktop" (app PDV Electron/Flutter). */
+  origem?: "web" | "desktop";
 }
 export interface CaixaMovimento {
   id: string; tipo: string; valor: string; motivo: string | null;

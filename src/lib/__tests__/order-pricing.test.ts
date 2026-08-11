@@ -732,7 +732,7 @@ describe("priceOrder — frete geo-based (dinâmica, raio, bairro no mapa, matri
     expect(isPricingFailure(r)).toBe(true);
   });
 
-  it("endereço não encontrado na geocodificação recusa o pedido", async () => {
+  it("endereço não encontrado na geocodificação NÃO bloqueia o pedido — frete fica a combinar", async () => {
     geocodeResult = null; // Nominatim não achou nada
     storeRows = [{
       deliveryFee: "0", deliveryRules: null, freeShippingAbove: null,
@@ -745,7 +745,12 @@ describe("priceOrder — frete geo-based (dinâmica, raio, bairro no mapa, matri
       items: [{ productId: "prod-1", quantity: 1 }],
     });
 
-    expect(isPricingFailure(r)).toBe(true);
+    // O cliente não tem como "corrigir" um endereço que o geocodificador
+    // gratuito não reconhece — o pedido segue, com frete 0 e um aviso pro
+    // lojista combinar o valor manualmente (ver deliveryFeeNotice).
+    if (isPricingFailure(r)) throw new Error(`não deveria falhar: ${r.error}`);
+    expect(r.deliveryFee).toBe("0.00");
+    expect(r.deliveryFeeNotice).toMatch(/vendedor/);
   });
 
   it("falha na consulta de geocodificação vira erro 503, não uma cobrança silenciosa", async () => {

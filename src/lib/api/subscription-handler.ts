@@ -2,7 +2,7 @@ import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { and, eq, isNull, ne, or } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
-import { PLANS as PLAN_DEFS } from "@/lib/plans";
+import { PLANS as PLAN_DEFS, getPlan } from "@/lib/plans";
 import { validateMercadoPagoSignature } from "@/lib/webhook-validator";
 
 const { stores } = schema;
@@ -152,13 +152,16 @@ export async function getSubscriptionStatusHandler(request: Request, auth?: Auth
     paymentMethod: store.paymentMethod,
   });
 
+  const effectivePlan = didExpire ? "free" : (store.plan ?? "free");
   return json({
-    plan: didExpire ? "free" : (store.plan ?? "free"),
+    plan: effectivePlan,
     planStatus: didExpire ? "expired" : (store.planStatus ?? "active"),
     planExpiresAt: store.planExpiresAt,
     mpSubscriptionId: store.mpSubscriptionId,
     paymentMethod: store.paymentMethod ?? "card_recurring",
-    pdvEnabled: store.pdvEnabled ?? false,
+    // Pro/Full incluem PDV de graça — não depende só da flag persistida
+    // (ver requirePdvAccess em pdv-handler.ts, mesma regra).
+    pdvEnabled: (store.pdvEnabled ?? false) || getPlan(effectivePlan).pdvIncluded,
     mpPaymentId: store.mpPaymentId,
     amountPaid: store.amountPaid,
     paymentStatus: store.paymentStatus,
@@ -353,7 +356,9 @@ export async function pixWebhookHandler(request: Request): Promise<Response> {
         planStatus: "active",
         planExpiresAt,
         paymentMethod: "pix_manual",
-        pdvEnabled: withPdv,
+        // Pro/Full incluem PDV sem custo adicional — não depende de ter
+        // comprado o add-on (withPdv) separadamente.
+        pdvEnabled: withPdv || getPlan(planId).pdvIncluded,
         mpPaymentId: String(payment.id),
         amountPaid: payment.transaction_amount ? String(payment.transaction_amount) : null,
         paymentStatus: "approved",
@@ -477,7 +482,9 @@ export async function subscriptionWebhookHandler(request: Request): Promise<Resp
     case "authorized":
       planStatus = "active";
       newPlan = planId;
-      pdvEnabled = withPdv;
+      // Pro/Full incluem PDV sem custo adicional — não depende de ter
+      // comprado o add-on (withPdv) separadamente.
+      pdvEnabled = withPdv || getPlan(planId).pdvIncluded;
       // Set expiry to next payment date + 1 day buffer, or +31 days
       planExpiresAt = preapproval.next_payment_date
         ? new Date(new Date(preapproval.next_payment_date).getTime() + 86400000)

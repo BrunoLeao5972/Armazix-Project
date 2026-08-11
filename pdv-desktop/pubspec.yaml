@@ -1,0 +1,43 @@
+name: pdv_desktop
+description: "Armazix PDV Desktop — frente de caixa offline-first para Windows."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.6.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Estado — Cubit (família Bloc)
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+
+  # Banco local — Isar (NoSQL embutido, sem servidor externo)
+  isar: ^3.1.0+1
+  isar_flutter_libs: ^3.1.0+1
+
+  # Rede
+  dio: ^5.7.0
+  connectivity_plus: ^6.1.0
+
+  # Infra
+  get_it: ^8.0.2
+  path_provider: ^2.1.5
+  intl: ^0.19.0
+  uuid: ^4.5.1
+  cryptography: ^2.7.0
+  package_info_plus: ^8.1.2
+  dartz: ^0.10.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  build_runner: ^2.4.13
+  isar_generator: ^3.1.0+1
+
+flutter:
+  uses-material-design: true

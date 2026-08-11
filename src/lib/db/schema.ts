@@ -759,6 +759,10 @@ export const caixaSessoes = pgTable("caixa_sessoes", {
   totalOutros:   numeric("total_outros",   { precision: 10, scale: 2 }).notNull().default("0"),
   totalVendas:   integer("total_vendas").notNull().default(0),
   status:        varchar("status", { length: 20 }).notNull().default("aberta"), // aberta | encerrada
+  /** De onde o turno foi aberto — "web" (painel admin) ou "desktop" (app PDV
+   *  Electron/Flutter). Só serve pra diferenciar a mensagem de "já tem caixa
+   *  aberto" quando o operador tenta abrir de outro canal por engano. */
+  origem:        varchar("origem", { length: 20 }).notNull().default("web"),
   abertoPor:     varchar("aberto_por",    { length: 120 }),
   encerradoPor:  varchar("encerrado_por", { length: 120 }),
   observations:  text("observations"),

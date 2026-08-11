@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/api-client";
 import { DeliveryPricingConfig, StoreLocationPicker } from "@/components/admin/DeliveryPricingConfig";
@@ -33,6 +34,7 @@ interface EntregaTabProps {
   deliveryModelConfig: DeliveryModelConfig; setDeliveryModelConfig: (v: DeliveryModelConfig) => void;
   storeLat: number | null; setStoreLat: (v: number | null) => void;
   storeLng: number | null; setStoreLng: (v: number | null) => void;
+  simuladorFreteHabilitado: boolean; setSimuladorFreteHabilitado: (v: boolean) => void;
 }
 
 export function EntregaTab({
@@ -40,6 +42,7 @@ export function EntregaTab({
   entregaUber, setEntregaUber, freeShippingEnabled, setFreeShippingEnabled,
   freeShippingAbove, setFreeShippingAbove, modeloCobranca, setModeloCobranca,
   deliveryModelConfig, setDeliveryModelConfig, storeLat, setStoreLat, storeLng, setStoreLng,
+  simuladorFreteHabilitado, setSimuladorFreteHabilitado,
 }: EntregaTabProps) {
   const [deliverySaving, setDeliverySaving] = useState(false);
   const [deliverySuccess, setDeliverySuccess] = useState(false);
@@ -60,6 +63,7 @@ export function EntregaTab({
           modeloCobranca,
           taxaEntregaCliente: deliveryModelConfig.fixa.taxaCliente,
           modelConfig: deliveryModelConfig,
+          simuladorFreteHabilitado,
         },
         freeShippingAbove: freeShippingEnabled ? freeShippingAbove : null,
         latitude: storeLat,
@@ -178,6 +182,21 @@ export function EntregaTab({
               </div>
             )}
           </div>
+
+          {/* Simulador de frete na página do produto */}
+          <label className="flex items-start gap-4 p-4 rounded-xl border border-border/50 cursor-pointer hover:border-primary/30 hover:bg-secondary/20 transition-colors select-none">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium">Simulador de frete na página do produto</div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                Mostra um campo de CEP na página de cada produto para o cliente ver uma estimativa de frete antes de fechar o pedido.
+              </div>
+            </div>
+            <Switch
+              checked={simuladorFreteHabilitado}
+              onCheckedChange={setSimuladorFreteHabilitado}
+              className="mt-0.5 shrink-0"
+            />
+          </label>
         </CardContent>
       </Card>
 

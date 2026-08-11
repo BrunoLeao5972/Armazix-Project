@@ -55,6 +55,9 @@ export interface PricedOrder {
   discount: string;
   total: string;
   couponId: string | null;
+  /** Setado quando o frete não pôde ser calculado (endereço não localizado)
+   *  e precisa ser combinado manualmente com o cliente depois. */
+  deliveryFeeNotice?: string | null;
 }
 
 export interface PricingFailure {
@@ -300,6 +303,7 @@ export async function priceOrder(
     discount:    money(discount),
     total:       money(total),
     couponId,
+    deliveryFeeNotice: estimativa.feePending ? (estimativa.notice ?? null) : null,
   };
 }
 
@@ -320,6 +324,10 @@ export interface DeliveryEstimateInput {
 export interface DeliveryEstimate {
   fee: string;
   distanceKm?: number;
+  /** true quando o endereço não foi localizado — fee vem 0, valor real fica pendente. */
+  feePending?: boolean;
+  /** Aviso pro cliente ver mesmo com a resposta sendo "sucesso" (fee calculado, ainda que 0). */
+  notice?: string;
 }
 
 /**
@@ -377,7 +385,11 @@ export async function estimateDelivery(
     };
   }
 
-  return { fee: money(result.fee), distanceKm: result.distanceKm };
+  return {
+    fee: money(result.fee),
+    distanceKm: result.distanceKm,
+    ...(result.feePending ? { feePending: true, notice: result.notice } : {}),
+  };
 }
 
 interface DeliveryModelConfigShape {
@@ -402,6 +414,12 @@ interface DeliveryCalcResult {
   distanceKm?: number;
   error?: string;
   status?: number;
+  /** true quando o endereço não foi localizado — libera o pedido com frete
+   *  0 em vez de bloquear, mas o valor de verdade precisa ser combinado
+   *  manualmente com o cliente (ver `notice`). */
+  feePending?: boolean;
+  /** Mensagem pra mostrar ao cliente mesmo com available=true (aviso, não erro). */
+  notice?: string;
 }
 
 async function calcDeliveryFee(opts: {
@@ -449,7 +467,17 @@ async function calcDeliveryFee(opts: {
       return { fee: 0, available: false, status: 503, error: "Não foi possível calcular o frete agora. Tente novamente em instantes." };
     }
     if (!customerPoint) {
-      return { fee: 0, available: false, status: 400, error: "Não foi possível localizar este endereço. Confira e tente novamente." };
+      // Endereço não encontrado pelo geocodificador — não é motivo pra
+      // travar a compra: o cliente não tem como "corrigir" um endereço que
+      // ele já digitou certo mas o serviço gratuito não conhece. Libera o
+      // pedido com frete 0 e avisa o cliente que o vendedor vai calcular e
+      // combinar o valor manualmente.
+      return {
+        fee: 0,
+        available: true,
+        feePending: true,
+        notice: "Não foi possível localizar este endereço. O valor do frete vai ser calculado por conta do vendedor.",
+      };
     }
 
     const storePoint = { lat: opts.storeLat, lng: opts.storeLng };

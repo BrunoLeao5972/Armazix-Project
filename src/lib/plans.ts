@@ -21,13 +21,16 @@ export interface PlanDef {
   trialDays?: number;
   /** Descrição enviada pro Mercado Pago na cobrança (reason/description). */
   mpReason: string;
+  /** Pro e Full incluem o PDV sem custo adicional (ver PlansSection.tsx) —
+   *  free/start só têm PDV se comprarem o add-on pago (PDV_PRICE), à parte. */
+  pdvIncluded: boolean;
 }
 
 export const PLANS: Record<PlanId, PlanDef> = {
-  free:  { id: "free",  name: "Experimente", price: 0,      pixPrice: 0,      maxProducts: 15, trialDays: 10, mpReason: "Plano Experimente — Armazix" },
-  start: { id: "start", name: "Start",       price: 79.90,  pixPrice: 84.90,  maxProducts: 25,                mpReason: "Plano Start — Armazix" },
-  pro:   { id: "pro",   name: "Pro",         price: 149.90, pixPrice: 154.90, maxProducts: 70,                mpReason: "Plano Pro — Armazix" },
-  full:  { id: "full",  name: "Full",        price: 249.90, pixPrice: 254.90, maxProducts: null,               mpReason: "Plano Full — Armazix" },
+  free:  { id: "free",  name: "Experimente", price: 0,      pixPrice: 0,      maxProducts: 15, trialDays: 10, mpReason: "Plano Experimente — Armazix", pdvIncluded: false },
+  start: { id: "start", name: "Start",       price: 79.90,  pixPrice: 84.90,  maxProducts: 25,                mpReason: "Plano Start — Armazix",       pdvIncluded: false },
+  pro:   { id: "pro",   name: "Pro",         price: 149.90, pixPrice: 154.90, maxProducts: 70,                mpReason: "Plano Pro — Armazix",         pdvIncluded: true  },
+  full:  { id: "full",  name: "Full",        price: 249.90, pixPrice: 254.90, maxProducts: null,               mpReason: "Plano Full — Armazix",        pdvIncluded: true  },
 };
 
 /** Duração do teste grátis, em dias — hoje 10. */

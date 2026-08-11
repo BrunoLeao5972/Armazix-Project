@@ -6,7 +6,7 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../store";
-import { type StoreProduct, formatPrice } from "@/lib/store-context";
+import { type StoreProduct, formatPrice, getBaseDeliveryFee } from "@/lib/store-context";
 import { getEffectivePrice, type PromoConfig } from "@/lib/promo-engine";
 
 export const Route = createFileRoute("/store/product/$productId")({
@@ -21,6 +21,13 @@ type VarImage  = { url: string; isPrimary: boolean };
 type VarOption = { id: string; name: string; price: string; images?: VarImage[]; promoConfig?: PromoConfig | null };
 /** "adicional" (padrão) soma ao preço do produto; "opcional" substitui o preço do produto pelo da opção escolhida. */
 type VGroup    = { id: string; groupName: string; priceType?: "adicional" | "opcional"; required?: boolean; options: VarOption[] };
+
+// Modelos que dependem de distância real (geocodificação) — a simulação aqui
+// reaproveita o mesmo /api/delivery/estimate que o checkout usa de verdade,
+// só que rotulada como aproximada: sem número da casa (só CEP) e sem levar
+// em conta o subtotal do carrinho todo, a distância pode variar um pouco até
+// o cliente confirmar o pedido.
+const GEO_MODELS = ["dinamica", "raio", "bairro", "matriz"];
 
 /** Preço efetivo do adicional da variação — mesma promoção do produto, aplicada ao valor do adicional. */
 const variationOptionPrice = (opt: VarOption): number =>
@@ -43,7 +50,7 @@ function ProductPage() {
 
   const [cep,        setCep]        = useState("");
   const [cepLoading, setCepLoading] = useState(false);
-  const [cepResult,  setCepResult]  = useState<{ fee: number | null; bairro: string; free: boolean } | null>(null);
+  const [cepResult,  setCepResult]  = useState<{ fee: number | null; bairro: string; free: boolean; approx: boolean } | null>(null);
   const [cepError,   setCepError]   = useState("");
   const cepInputRef = useRef<HTMLInputElement>(null);
 
@@ -93,20 +100,42 @@ function ProductPage() {
     if (digits.length !== 8) { setCepError("CEP inválido. Digite 8 dígitos."); return; }
     setCepLoading(true); setCepError(""); setCepResult(null);
     try {
-      const res  = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-      const data = await res.json();
-      if (data.erro) { setCepError("CEP não encontrado. Verifique e tente novamente."); return; }
+      const cepRes  = await fetch(`/api/validate-cep?cep=${digits}`);
+      const cepData = await cepRes.json() as { street?: string; neighborhood?: string; city?: string; state?: string; error?: string };
+      if (!cepRes.ok || !cepData.street) { setCepError("CEP não encontrado. Verifique e tente novamente."); return; }
 
-      const bairroViaCep = (data.bairro || "").toLowerCase().trim();
-      const baseFee      = parseFloat(store?.deliveryFee || "0");
-      const freeAbove    = store?.freeShippingAbove ? parseFloat(store.freeShippingAbove) : null;
-      const rules        = store?.deliveryRules ?? [];
+      const modeloCobranca = store?.deliveryConfig?.modeloCobranca;
+      const isGeoModel = !!modeloCobranca && GEO_MODELS.includes(modeloCobranca);
+      const bairro = cepData.neighborhood || cepData.city || "";
 
-      const matched = rules.find(r => r.bairro.toLowerCase().trim() === bairroViaCep);
-      const fee     = matched ? matched.taxa : baseFee;
-      const free    = freeAbove !== null ? false : fee === 0;
+      if (isGeoModel && store?.id) {
+        // Modelo por distância — mesmo cálculo do checkout, mas sem número
+        // da casa (só temos o CEP aqui) e sem subtotal real do carrinho, por
+        // isso "aproximado": o valor final é confirmado no checkout.
+        const params = new URLSearchParams({
+          storeId: store.id, subtotal: "0",
+          street: cepData.street, neighborhood: cepData.neighborhood ?? "",
+          city: cepData.city ?? "", state: cepData.state ?? "", zip: cep,
+        });
+        const res  = await fetch(`/api/delivery/estimate?${params.toString()}`);
+        const data = await res.json() as { fee?: string; error?: string };
+        if (!res.ok) { setCepError(data.error || "Não foi possível calcular o frete para este endereço."); return; }
+        const fee = parseFloat(data.fee ?? "0");
+        setCepResult({ fee, bairro, free: fee === 0, approx: true });
+        return;
+      }
 
-      setCepResult({ fee, bairro: data.bairro || data.localidade, free });
+      // Modelos simples (Taxa Fixa / Bairro Fixo) — cálculo local já é exato,
+      // não precisa geocodificar nada.
+      const bairroKey  = bairro.toLowerCase().trim();
+      const baseFee    = parseFloat(store?.deliveryFee || "0");
+      const freeAbove  = store?.freeShippingAbove ? parseFloat(store.freeShippingAbove) : null;
+      const rules      = store?.deliveryRules ?? [];
+      const matched    = rules.find(r => r.bairro.toLowerCase().trim() === bairroKey);
+      const fee        = matched ? matched.taxa : baseFee;
+      const free       = freeAbove !== null ? false : fee === 0;
+
+      setCepResult({ fee, bairro, free, approx: false });
     } catch {
       setCepError("Erro ao consultar o CEP. Tente novamente.");
     } finally {
@@ -443,16 +472,18 @@ function ProductPage() {
           </div>
 
           {/* Calculadora de frete */}
-          {store?.deliveryEnabled && (
+          {store?.deliveryEnabled && store?.deliveryConfig?.simuladorFreteHabilitado !== false && (
             <div className="rounded-2xl border border-border/60 bg-secondary/30 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Truck className="w-4 h-4 text-emerald-600 shrink-0" />
                 <div>
                   <p className="text-sm font-semibold">Calcular frete</p>
                   <p className="text-xs text-muted-foreground">
-                    Taxa base: {parseFloat(store.deliveryFee || "0") === 0
+                    {getBaseDeliveryFee(store) === 0
                       ? "Frete grátis"
-                      : `R$ ${formatPrice(store.deliveryFee || "0")}`}
+                      : store.deliveryConfig?.modeloCobranca && GEO_MODELS.includes(store.deliveryConfig.modeloCobranca)
+                      ? `A partir de R$ ${formatPrice(getBaseDeliveryFee(store))}`
+                      : `Taxa base: R$ ${formatPrice(getBaseDeliveryFee(store))}`}
                     {store.freeShippingAbove && ` · Grátis acima de R$ ${formatPrice(store.freeShippingAbove)}`}
                   </p>
                 </div>
@@ -503,9 +534,14 @@ function ProductPage() {
                   <span className="font-bold tabular-nums">
                     {cepResult.fee === 0
                       ? "Frete grátis"
-                      : `R$ ${formatPrice(cepResult.fee ?? 0)}`}
+                      : `${cepResult.approx ? "≈ " : ""}R$ ${formatPrice(cepResult.fee ?? 0)}`}
                   </span>
                 </div>
+              )}
+              {cepResult && cepResult.approx && cepResult.fee !== 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Valor aproximado — o frete exato é confirmado no checkout.
+                </p>
               )}
             </div>
           )}

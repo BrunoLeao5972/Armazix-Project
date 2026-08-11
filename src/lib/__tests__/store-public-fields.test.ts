@@ -174,16 +174,16 @@ describe("getStoreHandler — visitante anônimo (busca por slug)", () => {
     expect(body.store.businessHours).toBeDefined();
   });
 
-  it("A-1 #6 — resposta anônima é cacheável publicamente", async () => {
+  it("A-1 #6 — resposta anônima não fica em cache de borda (CDN é por data center, não invalida em todo lugar ao salvar)", async () => {
     const res = await getStoreHandler(reqSlug());
-    expect(res.headers.get("Cache-Control")).toMatch(/^public,/);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("A-1 #7 — busca por id sem cookie de sessão não libera ownerName", async () => {
     const res = await getStoreHandler(reqId());
     const body = await res.json() as { store: Record<string, unknown> };
     expect(body.store).not.toHaveProperty("ownerName");
-    expect(res.headers.get("Cache-Control")).toMatch(/^public,/);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 });
 

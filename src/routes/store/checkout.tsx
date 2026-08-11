@@ -40,7 +40,13 @@ const maskCep = (v: string) => {
 // síncrono local de sempre, sem depender de rede.
 const GEO_MODELS = ["dinamica", "raio", "bairro", "matriz"];
 
-interface FeeResult { taxa: number; isGratis: boolean; label: string }
+interface FeeResult {
+  taxa: number;
+  isGratis: boolean;
+  label: string;
+  /** true quando `label` precisa aparecer no lugar do valor formatado (ex.: "A combinar", "—") mesmo com taxa=0 e isGratis=false. */
+  showLabel?: boolean;
+}
 function calcDeliveryFee(bairro: string, subtotal: number, taxaGlobal: number, freeAbove: number | null, regras: DeliveryRule[]): FeeResult {
   const key = bairro.trim().toLowerCase();
   const regra = key ? regras.find(r => r.bairro.trim().toLowerCase() === key) : undefined;
@@ -51,9 +57,11 @@ function calcDeliveryFee(bairro: string, subtotal: number, taxaGlobal: number, f
 }
 
 interface GeoEstimateState {
-  status: "idle" | "loading" | "ok" | "error";
+  status: "idle" | "loading" | "ok" | "pending" | "error";
   fee: number;
   error?: string;
+  /** Aviso pro cliente quando status === "pending" (endereço não localizado, mas o pedido segue). */
+  notice?: string;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -246,10 +254,16 @@ function CheckoutPage() {
           city: address.city, state: address.state, zip: address.zip,
         });
         const res = await fetch(`/api/delivery/estimate?${params.toString()}`);
-        const data = await res.json() as { fee?: string; error?: string };
+        const data = await res.json() as { fee?: string; error?: string; feePending?: boolean; notice?: string };
         if (cancelled) return;
         if (!res.ok) {
           setGeoEstimate({ status: "error", fee: 0, error: data.error || "Não foi possível calcular o frete para este endereço" });
+          return;
+        }
+        if (data.feePending) {
+          // Endereço não localizado — não trava o pedido, só avisa que o
+          // frete será combinado com o vendedor depois.
+          setGeoEstimate({ status: "pending", fee: 0, notice: data.notice });
           return;
         }
         setGeoEstimate({ status: "ok", fee: parseFloat(data.fee ?? "0") });
@@ -269,7 +283,12 @@ function CheckoutPage() {
           ? { taxa: 0, isGratis: true, label: "Grátis" }
           : { taxa: geoEstimate.fee, isGratis: false, label: `R$ ${formatPrice(geoEstimate.fee)}` };
       }
-      return { taxa: 0, isGratis: false, label: "—" };
+      if (geoEstimate.status === "pending") {
+        // Endereço não localizado — o pedido segue, frete cobrado à parte
+        // depois de combinado com o vendedor (nunca 0 disfarçado de grátis).
+        return { taxa: 0, isGratis: false, label: "A combinar", showLabel: true };
+      }
+      return { taxa: 0, isGratis: false, label: "—", showLabel: true };
     }
     const taxaGlobal = parseFloat(store?.deliveryFee || "0");
     const freeAbove = store?.freeShippingAbove ? parseFloat(store.freeShippingAbove) : null;
@@ -284,7 +303,9 @@ function CheckoutPage() {
     if (nome.trim().length < 2) return false;
     if (deliveryType === "delivery") {
       if (!(address.street && address.number && address.neighborhood && address.city)) return false;
-      if (isGeoModel && geoEstimate.status !== "ok") return false;
+      // "pending" (endereço não localizado) não bloqueia — o pedido segue
+      // com frete a combinar depois. Só "loading"/"error" seguram o avanço.
+      if (isGeoModel && geoEstimate.status !== "ok" && geoEstimate.status !== "pending") return false;
     }
     return true;
   }, [nome, deliveryType, address, isGeoModel, geoEstimate.status]);
@@ -400,7 +421,7 @@ function CheckoutPage() {
       try {
         const res = await fetch(`/api/validate-cep?cep=${digits}`);
         const data = await res.json() as Record<string, string>;
-        if (data.logradouro) setAddress(a => ({ ...a, street: data.logradouro, neighborhood: data.bairro || a.neighborhood, city: data.localidade || a.city, state: data.uf || a.state }));
+        if (data.street) setAddress(a => ({ ...a, street: data.street, neighborhood: data.neighborhood || a.neighborhood, city: data.city || a.city, state: data.state || a.state }));
       } catch { /* ignore */ } finally { setCepLoading(false); }
     }
   };
@@ -545,7 +566,7 @@ function CheckoutPage() {
       const parcelasText = paymentMethod === "delivery_credit" && installments > 1 ? ` (${installments}×)` : "";
       const trocoText = paymentMethod === "delivery_cash" && needsChange ? `\n💵 Troco para: R$ ${formatPrice(parseFloat(changeAmount) || 0)}` : "";
       const financeiro = showPrice
-        ? [``, `*Resumo:*`, `Subtotal: R$ ${formatPrice(cartTotal)}`, couponDiscount > 0 ? `Cupom (${couponApplied}): −R$ ${formatPrice(couponDiscount)}` : "", `Entrega: ${feeResult.isGratis ? feeResult.label : `R$ ${formatPrice(feeResult.taxa)}`}`, `*Total: R$ ${formatPrice(orderTotal)}*`].filter(Boolean).join("\n")
+        ? [``, `*Resumo:*`, `Subtotal: R$ ${formatPrice(cartTotal)}`, couponDiscount > 0 ? `Cupom (${couponApplied}): −R$ ${formatPrice(couponDiscount)}` : "", `Entrega: ${feeResult.isGratis || feeResult.showLabel ? feeResult.label : `R$ ${formatPrice(feeResult.taxa)}`}`, `*Total: R$ ${formatPrice(orderTotal)}*`].filter(Boolean).join("\n")
         : "";
       const orderTag = num ? ` #${num}` : "";
       const msg = [`🛍️ *Pedido${orderTag} — ${store?.name || "Loja"}*`, ``, `👤 *${nome.trim()}*  📱 ${telefone}`, ``, `*Itens:*`, itens, ``, entregaSection, ``, `💳 *Pagamento:* ${pagamento}${parcelasText}${trocoText}`, financeiro].join("\n");
@@ -734,7 +755,11 @@ function CheckoutPage() {
       )}
       <div className="flex justify-between text-xs text-muted-foreground">
         <span>Entrega</span>
-        {feeResult.isGratis ? <span className="text-emerald-600 font-medium">{feeResult.label}</span> : <span>R$ {formatPrice(feeResult.taxa)}</span>}
+        {feeResult.isGratis
+                  ? <span className="text-emerald-600 font-medium">{feeResult.label}</span>
+                  : feeResult.showLabel
+                    ? <span>{feeResult.label}</span>
+                    : <span>R$ {formatPrice(feeResult.taxa)}</span>}
       </div>
       <div className="flex justify-between text-sm font-bold border-t border-border/40 pt-1.5">
         <span>Total</span><span className="text-primary">R$ {formatPrice(orderTotal)}</span>
@@ -933,9 +958,11 @@ function CheckoutPage() {
                     <div className={`flex items-center gap-2 p-3 rounded-xl text-sm transition-colors ${
                       geoEstimate.status === "error"
                         ? "bg-destructive/10 border border-destructive/30 text-destructive"
-                        : feeResult.isGratis
-                          ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                          : "bg-surface border border-border/40 text-muted-foreground"
+                        : geoEstimate.status === "pending"
+                          ? "bg-amber-50 border border-amber-200 text-amber-700"
+                          : feeResult.isGratis
+                            ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                            : "bg-surface border border-border/40 text-muted-foreground"
                     }`}>
                       <Truck className="w-4 h-4 shrink-0" />
                       {geoEstimate.status === "loading" && (
@@ -943,6 +970,9 @@ function CheckoutPage() {
                       )}
                       {geoEstimate.status === "error" && (
                         <span className="flex-1">{geoEstimate.error}</span>
+                      )}
+                      {geoEstimate.status === "pending" && (
+                        <span className="flex-1">{geoEstimate.notice ?? "O valor do frete vai ser calculado por conta do vendedor."}</span>
                       )}
                       {geoEstimate.status === "ok" && (
                         <>
@@ -1180,7 +1210,11 @@ function CheckoutPage() {
             )}
             <div className="flex justify-between text-sm text-muted-foreground">
               <span>Entrega ({deliveryType === "delivery" ? "Delivery" : "Retirada"})</span>
-              {feeResult.isGratis ? <span className="text-emerald-600 font-medium">{feeResult.label}</span> : <span>R$ {formatPrice(feeResult.taxa)}</span>}
+              {feeResult.isGratis
+                  ? <span className="text-emerald-600 font-medium">{feeResult.label}</span>
+                  : feeResult.showLabel
+                    ? <span>{feeResult.label}</span>
+                    : <span>R$ {formatPrice(feeResult.taxa)}</span>}
             </div>
             <div className="flex justify-between font-bold text-base pt-2 border-t border-border/40">
               <span>Total</span><span className="text-primary">R$ {formatPrice(orderTotal)}</span>

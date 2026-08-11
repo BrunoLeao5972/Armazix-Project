@@ -911,7 +911,9 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       discount:          priced.discount,
       total:             priced.total,
       couponId:          priced.couponId,
-      notes:             body.notes || null,
+      notes:             priced.deliveryFeeNotice
+        ? `⚠️ Frete a combinar — endereço não localizado automaticamente.${body.notes ? ` ${body.notes}` : ""}`
+        : (body.notes || null),
       addressSnapshot:   body.addressSnapshot || null,
       estimatedDelivery: body.estimatedDelivery ? new Date(body.estimatedDelivery) : null,
     }).returning();
@@ -938,6 +940,13 @@ export async function createOrderHandler(request: Request): Promise<Response> {
         status:  "received",
         note:    "Pedido recebido e confirmado",
       }),
+      ...(priced.deliveryFeeNotice
+        ? [db.insert(schema.orderTimeline).values({
+            orderId: order.id,
+            status:  "received",
+            note:    "⚠️ Frete não calculado automaticamente (endereço não localizado) — combine o valor com o cliente.",
+          })]
+        : []),
     ]);
 
     // ══════════════════════════════════════════════════════════════════════════
