@@ -12,7 +12,7 @@ import { TRIAL_DAYS } from "@/lib/plans";
 import { CURRENT_TERMS_VERSION } from "@/lib/legal";
 import { requireJwtSecret } from "@/lib/env";
 
-const { users, stores, storeUsers } = schema;
+const { users, stores, storeUsers, customers } = schema;
 
 // Mensagem única e genérica pros três casos de duplicidade — não revela qual
 // campo específico colidiu (evita enumeração de contas cadastradas).
@@ -196,6 +196,18 @@ export async function registerHandler(request: Request): Promise<Response> {
     userId: user.id,
     role: "owner",
   });
+
+  // "Cliente Padrão"/"Fornecedor Padrão" — todo lojista já nasce com esse par,
+  // usado como fallback em pontos de atendimento (mesa/comanda) sem cliente
+  // específico. Não bloqueia o cadastro se falhar — não é crítico pro login.
+  try {
+    await db.insert(customers).values([
+      { storeId: store.id, name: "Cliente Padrão", isSupplier: false, isDefault: true },
+      { storeId: store.id, name: "Fornecedor Padrão", isSupplier: true, isDefault: true },
+    ]);
+  } catch (seedError) {
+    console.error("Failed to seed default customer/supplier:", seedError);
+  }
 
   // Generate verification code
   const code = await createVerificationCode(db, user.id, "email_verification");

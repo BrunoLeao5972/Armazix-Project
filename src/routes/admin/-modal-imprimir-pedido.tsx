@@ -3,8 +3,8 @@ import { api } from "@/lib/api-client";
 import { Check, Eye, Loader2, Printer, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { isNetworkPath, sendViaAgent } from "./pedidos";
-import type { PrinterRecord } from "./pedidos";
+import { isNetworkPath, sendViaAgent } from "@/lib/print/print-order";
+import type { PrinterRecord } from "@/lib/print/print-order";
 
 type PrintLayout = "production" | "caixa" | "delivery" | "ficha";
 

@@ -5,11 +5,13 @@ import {
   Search, Plus, Minus, Trash2, CreditCard,
   X, ShoppingCart, Percent, Loader2, ArrowDownCircle, ArrowUpCircle,
   Tag, CheckCircle2, Package, LayoutGrid, Clock, ReceiptText,
-  ChefHat, LayoutDashboard, Users, Wallet, ChevronRight,
-  AlertCircle, LockKeyhole, Unlock,
+  ClipboardCheck, LayoutDashboard, Users, Wallet, ChevronRight,
+  AlertCircle, LockKeyhole, Unlock, Settings,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { type PromoConfig, getEffectivePrice } from "@/lib/promo-engine";
+import { MesaTableIcon } from "./-icon-mesa";
+import type { ServicePoint } from "./-modal-pontos-atendimento";
 
 const ModalPagamento = lazy(() => import("./-modal-pagamento-pdv"));
 const ModalAbrirCaixa = lazy(() =>
@@ -24,6 +26,22 @@ const ModalMovimentar = lazy(() =>
 const ModalSessoes = lazy(() =>
   import("./-modais-caixa-pdv").then(m => ({ default: m.ModalSessoes }))
 );
+const MenuFuncoesPDV = lazy(() =>
+  import("./-menu-funcoes-pdv").then(m => ({ default: m.MenuFuncoesPDV }))
+);
+const ModalCaixaInfo = lazy(() =>
+  import("./-menu-funcoes-pdv").then(m => ({ default: m.ModalCaixaInfo }))
+);
+const ModalPosicaoCaixa = lazy(() =>
+  import("./-menu-funcoes-pdv").then(m => ({ default: m.ModalPosicaoCaixa }))
+);
+const ModalApontamento = lazy(() =>
+  import("./-menu-funcoes-pdv").then(m => ({ default: m.ModalApontamento }))
+);
+const ModalEncerrarEncomenda = lazy(() => import("./-modal-encerrar-encomenda-pdv"));
+const ModalPontosAtendimento = lazy(() =>
+  import("./-modal-pontos-atendimento").then(m => ({ default: m.ModalPontosAtendimento }))
+);
 
 export const Route = createFileRoute("/admin/pdv")({
   component: PDVPage,
@@ -35,7 +53,7 @@ interface Product {
   id: string; name: string; price: string; categoryId: string | null;
   stock: number | null; emoji: string | null; imageUrl: string | null;
   barcode: string | null; sku: string | null; active: boolean | null;
-  promoConfig: PromoConfig | null;
+  promoConfig: PromoConfig | null; isMadeToOrder: boolean | null;
 }
 interface Category {
   id: string; name: string; parentId: string | null;
@@ -45,8 +63,15 @@ interface CartItem {
   productId: string; name: string; price: number; qty: number;
   emoji: string; imageUrl: string | null;
 }
-type MesaStatus = "livre" | "atendimento" | "aguardando";
-interface Mesa { id: string; numero: number; label: string; capacidade?: number; }
+// Ponto de atendimento (mesa/comanda) enriquecido com a sessão aberta (se
+// houver) — vem de GET /api/service-points/list. null nos dois campos =
+// livre; preenchido = ocupado.
+type Ponto = ServicePoint & { openSessionId: string | null; openedAt: string | null };
+interface SessaoEncerrada {
+  id: string; nameOrNumber: string; type: "MESA" | "CARTAO";
+  openedAt: string; closedAt: string;
+  orderId: string | null; orderNumber: number | null; orderTotal: string | null; paymentMethod: string | null;
+}
 export interface CaixaSessao {
   id: string; saldoInicial: string; saldoFinal: string | null;
   totalDinheiro: string; totalPix: string; totalCartao: string;
@@ -59,8 +84,29 @@ export interface CaixaMovimento {
   id: string; tipo: string; valor: string; motivo: string | null;
   criadoPor: string | null; createdAt: string;
 }
-type ModalType = "payment" | "abrir-caixa" | "fechar-caixa" | "movimentar" | "sessoes" | null;
-type PdvMode  = "catalog" | "map";
+type ModalType =
+  | "payment" | "abrir-caixa" | "fechar-caixa" | "movimentar" | "sessoes"
+  | "funcoes" | "caixa-info" | "posicao" | "apontamento" | "encerrar-encomenda"
+  | "pontos-atendimento" | null;
+type PdvMode  = "catalog" | "map" | "delivery";
+
+// ─── Encomendas pendentes (pedidos de delivery/retirada do site ainda não
+// concretizados — reserva de estoque, sem forma de pagamento real
+// confirmada) ────────────────────────────────────────────────────────────
+export interface EncomendaItem {
+  id: string; productId: string | null; productName: string;
+  quantity: number; unitPrice: string; total: string;
+}
+export interface Encomenda {
+  id: string; number: number; type: string; status: string;
+  total: string; paymentMethod: string | null; paymentStatus: string | null;
+  concretizedAt: string | null; createdAt: string;
+  customer: { id: string; name: string | null; phone?: string | null } | null;
+  items: EncomendaItem[];
+  addressSnapshot: {
+    street?: string; number?: string; neighborhood?: string; city?: string; state?: string;
+  } | null;
+}
 
 // ─── Formas de pagamento + planos (vínculo N:N) ───────────────────
 interface PdvPaymentPlan {
@@ -87,11 +133,21 @@ export const fmtBRL = (v: number | string) => {
 export const fmtDate = (iso: string) =>
   new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
-const MESA_STATUSES: Record<MesaStatus, { dot: string; label: string; ring: string }> = {
-  livre:       { dot: "bg-emerald-500", label: "Livre",          ring: "ring-emerald-200 bg-emerald-50  border-emerald-200" },
-  atendimento: { dot: "bg-blue-500",    label: "Em Atendimento", ring: "ring-blue-200    bg-blue-50     border-blue-200"    },
-  aguardando:  { dot: "bg-violet-500",  label: "Aguard. Pgto",   ring: "ring-violet-200  bg-violet-50   border-violet-200"  },
-};
+// Só 2 estados de verdade hoje (ocupado = tem sessão aberta) — o antigo
+// terceiro estado "aguardando pagamento" não tinha nenhuma fonte de dado
+// real (getStatus era hardcoded "livre" antes dessa mudança).
+const STATUS_STYLE = {
+  livre:   { dot: "bg-emerald-500", label: "Livre",   badge: "bg-emerald-100 text-emerald-700", ring: "ring-emerald-200 bg-emerald-50 border-emerald-200" },
+  ocupada: { dot: "bg-blue-500",    label: "Ocupada", badge: "bg-blue-100 text-blue-700",       ring: "ring-blue-200 bg-blue-50 border-blue-200" },
+} as const;
+
+const fmtHora = (iso: string) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+// "Mesa 2" antes de "Mesa 10" — mesmo comparador natural já usado no modal
+// de cadastro (-modal-pontos-atendimento.tsx), pra manter 1,2,3,4... em vez
+// de ordem alfabética pura (que colocaria "Mesa 10" antes de "Mesa 2").
+const naturalSort = (a: Ponto, b: Ponto) =>
+  a.nameOrNumber.localeCompare(b.nameOrNumber, "pt-BR", { numeric: true });
 
 // ─── Painel de Abertura de Caixa (coluna direita, sem modal) ────────
 function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) {
@@ -188,22 +244,210 @@ function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) 
   );
 }
 
-// ─── Mapa de Mesas ────────────────────────────────────────────────
+// ─── Mapa de Atendimentos (Mesas/Comandas) ────────────────────────
 function MesaMap({
-  mesas: mesasList, activeMesa, onSelect,
-}: { mesas: Mesa[]; activeMesa: Mesa | null; onSelect: (m: Mesa) => void }) {
-  // Status das mesas vem do back-end futuramente; por ora assume "livre"
-  const getStatus = (_m: Mesa): MesaStatus => "livre";
+  points, activePonto, sessaoId, onSelect, onPontosChanged,
+}: {
+  points: Ponto[]; activePonto: Ponto | null; sessaoId: string | null;
+  onSelect: (p: Ponto) => void; onPontosChanged: () => void;
+}) {
+  const [tab, setTab] = useState<"all" | "ocupados" | "livres" | "encerrados">("all");
+  const [closedSessions, setClosedSessions] = useState<SessaoEncerrada[]>([]);
+  const [loadingClosed, setLoadingClosed] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  if (mesasList.length === 0) {
+  useEffect(() => {
+    if (tab !== "encerrados" || !sessaoId) return;
+    setLoadingClosed(true);
+    fetch(`/api/service-points/sessions/closed?sessaoId=${sessaoId}`)
+      .then(r => r.json())
+      .then((d: { sessions?: SessaoEncerrada[] }) => setClosedSessions(d.sessions || []))
+      .catch(() => {})
+      .finally(() => setLoadingClosed(false));
+  }, [tab, sessaoId]);
+
+  const ocupados = points.filter(p => p.openSessionId !== null);
+  const livres   = points.filter(p => p.openSessionId === null);
+  const filtered = tab === "ocupados" ? ocupados : tab === "livres" ? livres : points;
+  const mesas    = filtered.filter(p => p.type === "MESA").sort(naturalSort);
+  const comandas = filtered.filter(p => p.type === "CARTAO").sort(naturalSort);
+
+  const TABS: { id: "all" | "ocupados" | "livres" | "encerrados"; label: string; count: number | null }[] = [
+    { id: "all",        label: "Todos",      count: points.length },
+    { id: "ocupados",   label: "Ocupados",   count: ocupados.length },
+    { id: "livres",     label: "Livres",     count: livres.length },
+    { id: "encerrados", label: "Encerrados", count: null },
+  ];
+
+  // Livre → abre a sessão e já entra na mesa. Ocupada → só retoma (nunca
+  // abre uma segunda sessão pro mesmo ponto).
+  const handleCardClick = async (p: Ponto) => {
+    if (busyId) return;
+    if (p.openSessionId) { onSelect(p); return; }
+    setBusyId(p.id);
+    try {
+      const res  = await api.post("/api/service-points/sessions/open", { servicePointId: p.id });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (res.ok && data.success) { onPontosChanged(); onSelect(p); }
+      else alert(data.error || "Erro ao abrir atendimento");
+    } catch { alert("Erro de conexão"); }
+    finally { setBusyId(null); }
+  };
+
+  // "Liberar mesa" — cliente foi embora sem pedir, sem passar pelo pagamento.
+  const handleLiberar = async (p: Ponto, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (busyId) return;
+    setBusyId(p.id);
+    try {
+      const res  = await api.post("/api/service-points/sessions/close", { servicePointId: p.id });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (res.ok && data.success) onPontosChanged();
+      else alert(data.error || "Erro ao liberar");
+    } catch { alert("Erro de conexão"); }
+    finally { setBusyId(null); }
+  };
+
+  if (points.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
         <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center">
           <Users className="w-8 h-8 text-muted-foreground" />
         </div>
         <div>
-          <p className="font-semibold text-muted-foreground">Nenhuma mesa configurada</p>
-          <p className="text-sm text-muted-foreground mt-1">Configure as mesas em Configurações → PDV</p>
+          <p className="font-semibold text-muted-foreground">Nenhum ponto de atendimento cadastrado</p>
+          <p className="text-sm text-muted-foreground mt-1">Cadastre mesas ou comandas no Menu de Funções → Configurações</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto flex flex-col">
+      <div className="flex items-center gap-1.5 px-4 py-3 border-b border-border shrink-0 overflow-x-auto">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all shrink-0 ${
+              tab === t.id ? "bg-emerald-500 text-white shadow-sm" : "bg-secondary text-muted-foreground hover:text-foreground"
+            }`}>
+            {t.label}
+            {t.count !== null && (
+              <span className={`text-[10px] font-bold rounded-full px-1.5 ${tab === t.id ? "bg-white/25" : "bg-card"}`}>{t.count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {tab === "encerrados" ? (
+        !sessaoId ? (
+          <div className="flex-1 flex items-center justify-center p-8 text-center">
+            <p className="text-sm text-muted-foreground">Abra o caixa pra ver o histórico de atendimentos encerrados.</p>
+          </div>
+        ) : loadingClosed ? (
+          <div className="flex-1 flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : closedSessions.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center p-8 text-center">
+            <p className="text-sm text-muted-foreground">Nenhum atendimento encerrado nessa sessão de caixa ainda.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {closedSessions.map(s => {
+              const Icon = s.type === "MESA" ? MesaTableIcon : CreditCard;
+              return (
+                <div key={s.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                    <Icon className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-foreground truncate">{s.nameOrNumber}</p>
+                    <p className="text-[11px] text-muted-foreground">{fmtHora(s.openedAt)} — {fmtHora(s.closedAt)}</p>
+                  </div>
+                  <span className="text-xs font-bold text-foreground tabular-nums shrink-0">
+                    {s.orderTotal ? fmtBRL(s.orderTotal) : "Sem venda"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : filtered.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center p-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            {tab === "ocupados" ? "Nenhum ponto ocupado agora." : "Nenhum ponto livre agora."}
+          </p>
+        </div>
+      ) : (
+        <div className="p-4 space-y-6">
+          {/* Mesas e Comandas/Cartões ficam em seções separadas, cada uma
+              ordenada 1,2,3,4... (ordem natural, não alfabética pura) —
+              são fluxos de atendimento distintos mesmo dentro da mesma aba. */}
+          {(
+            [
+              { label: "Mesas",             items: mesas    },
+              { label: "Comandas/Cartões",  items: comandas },
+            ] as const
+          ).map(group => group.items.length === 0 ? null : (
+            <div key={group.label}>
+              <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2.5 px-0.5">
+                {group.label}
+              </h3>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3">
+                {group.items.map(p => {
+                  const occupied    = p.openSessionId !== null;
+                  const cfg         = occupied ? STATUS_STYLE.ocupada : STATUS_STYLE.livre;
+                  const Icon        = p.type === "MESA" ? MesaTableIcon : CreditCard;
+                  const isSelected  = activePonto?.id === p.id;
+                  return (
+                    <button key={p.id} onClick={() => handleCardClick(p)} disabled={busyId === p.id}
+                      className={`relative flex flex-col items-center gap-1.5 p-4 rounded-2xl border-2 text-center transition-all duration-150 active:scale-[0.97] cursor-pointer disabled:opacity-60 ${
+                        isSelected
+                          ? "border-emerald-500 bg-emerald-50 ring-4 ring-emerald-100 shadow-md"
+                          : `${cfg.ring} hover:shadow-md`
+                      }`}>
+                      <span className={`absolute top-2.5 right-2.5 w-2 h-2 rounded-full ${cfg.dot}`} />
+                      {occupied && (
+                        <span onClick={e => handleLiberar(p, e)} title="Liberar mesa"
+                          className="absolute top-1.5 left-1.5 w-5 h-5 rounded-md flex items-center justify-center text-muted-foreground hover:bg-white hover:text-red-500 transition-colors">
+                          <X className="w-3 h-3" />
+                        </span>
+                      )}
+                      <Icon className="w-6 h-6 text-foreground mt-1" />
+                      <span className="text-xs font-bold text-foreground leading-tight">{p.nameOrNumber}</span>
+                      {p.customerName && (
+                        <span className="text-[10px] text-muted-foreground truncate max-w-full">{p.customerName}</span>
+                      )}
+                      <span className={`text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const ENCOMENDA_PAY_LABEL: Record<string, string> = {
+  pix: "PIX", cash: "Dinheiro", card: "Crédito", debit: "Débito", mercadopago: "Mercado Pago",
+};
+
+// ─── Encomendas pendentes (delivery/retirada do site) ─────────────
+function EncomendasList({
+  encomendas, onSelect,
+}: { encomendas: Encomenda[]; onSelect: (e: Encomenda) => void }) {
+  if (encomendas.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center">
+          <Package className="w-8 h-8 text-muted-foreground" />
+        </div>
+        <div>
+          <p className="font-semibold text-muted-foreground">Nenhuma encomenda pendente</p>
+          <p className="text-sm text-muted-foreground mt-1">Pedidos de delivery/retirada do site aparecem aqui até serem encerrados</p>
         </div>
       </div>
     );
@@ -211,28 +455,38 @@ function MesaMap({
 
   return (
     <div className="flex-1 overflow-y-auto p-4">
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-3">
-        {mesasList.map(mesa => {
-          const st      = getStatus(mesa);
-          const cfg     = MESA_STATUSES[st];
-          const isActive = activeMesa?.id === mesa.id;
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
+        {encomendas.map(enc => {
+          const itemsSummary = enc.items.map(i => `${i.quantity}× ${i.productName}`).join(", ");
+          const knownPayment = enc.paymentStatus === "paid" && enc.paymentMethod;
           return (
-            <button key={mesa.id} onClick={() => onSelect(mesa)}
-              className={`relative flex flex-col items-center gap-2 p-4 rounded-2xl border-2 text-center transition-all duration-150 active:scale-[0.97] cursor-pointer ${
-                isActive
-                  ? "border-emerald-500 bg-emerald-50 ring-4 ring-emerald-100 shadow-md"
-                  : `${cfg.ring} hover:shadow-md`
-              }`}>
-              <span className={`absolute top-2.5 right-2.5 w-2 h-2 rounded-full ${cfg.dot}`} />
-              <span className="text-3xl font-black text-foreground tabular-nums leading-none">
-                {String(mesa.numero).padStart(2, "0")}
-              </span>
-              <span className="text-[11px] font-medium text-muted-foreground leading-tight">{mesa.label}</span>
-              <span className={`text-[9px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
-                st === "livre" ? "bg-emerald-100 text-emerald-700"
-                : st === "atendimento" ? "bg-blue-100 text-blue-700"
-                : "bg-violet-100 text-violet-700"
-              }`}>{cfg.label}</span>
+            <button key={enc.id} onClick={() => onSelect(enc)}
+              className="group relative flex flex-col gap-2 p-4 rounded-2xl border-2 border-border text-left transition-all duration-150 active:scale-[0.97] cursor-pointer hover:border-emerald-400 hover:shadow-md bg-card">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                  <Package className="w-3 h-3" />Pendente
+                </span>
+                <span className="text-xs font-black text-foreground tabular-nums">#{enc.number}</span>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-foreground truncate">{enc.customer?.name || "Cliente"}</p>
+                <p className="text-[11px] text-muted-foreground line-clamp-2 leading-tight mt-0.5">{itemsSummary}</p>
+              </div>
+              <div className="flex items-center justify-between mt-auto pt-1">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                  enc.type === "pickup"
+                    ? "border-emerald-500/30 text-emerald-600 bg-emerald-500/8"
+                    : "border-blue-500/30 text-blue-600 bg-blue-500/8"
+                }`}>
+                  {enc.type === "pickup" ? "Retirada" : "Entrega"}
+                </span>
+                <span className="text-sm font-black text-emerald-600 tabular-nums">{fmtBRL(enc.total)}</span>
+              </div>
+              {knownPayment && (
+                <span className="text-[10px] text-muted-foreground">
+                  Pago via {ENCOMENDA_PAY_LABEL[enc.paymentMethod!] ?? enc.paymentMethod}
+                </span>
+              )}
             </button>
           );
         })}
@@ -243,12 +497,12 @@ function MesaMap({
 
 // ─── Carrinho (drawer mobile / coluna desktop) ────────────────────
 function CartPanel({
-  cart, activeMesa, discount, discountType, total, subtotal, discountValue, totalQty,
+  cart, activePonto, discount, discountType, total, subtotal, discountValue, totalQty,
   sessao, lancandoPedido, lancadoOk,
   onUpdateQty, onRemove, onClear, onSetDiscount, onSetDiscountType,
   onOpenPayment, onLancarPedido, onOpenMovimentar, onFecharCaixa, onClose,
 }: {
-  cart: CartItem[]; activeMesa: Mesa | null; discount: number; discountType: "pct" | "brl";
+  cart: CartItem[]; activePonto: Ponto | null; discount: number; discountType: "pct" | "brl";
   total: number; subtotal: number; discountValue: number; totalQty: number;
   sessao: CaixaSessao | null; lancandoPedido: boolean; lancadoOk: boolean;
   onUpdateQty: (id: string, d: number) => void; onRemove: (id: string) => void; onClear: () => void;
@@ -264,9 +518,9 @@ function CartPanel({
           <ShoppingCart className="w-4 h-4 text-emerald-500" />
           <div>
             <h2 className="text-xs font-bold text-foreground leading-none">
-              {activeMesa ? activeMesa.label : "Carrinho"}
+              {activePonto ? activePonto.nameOrNumber : "Carrinho"}
             </h2>
-            {activeMesa && (
+            {activePonto && (
               <p className="text-[10px] text-muted-foreground mt-0.5">Atendimento aberto</p>
             )}
           </div>
@@ -385,23 +639,33 @@ function CartPanel({
           </div>
         </div>
 
-        {/* Ações */}
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={onLancarPedido} disabled={cart.length === 0 || lancandoPedido}
-            className={`h-12 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-              lancadoOk
-                ? "bg-sky-50 text-sky-600 border-sky-300"
-                : "bg-card border-border text-muted-foreground hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700"
-            }`}>
-            {lancandoPedido ? <Loader2 className="w-4 h-4 animate-spin" />
-              : lancadoOk ? <><CheckCircle2 className="w-4 h-4 text-sky-500" />Enviado!</>
-              : <><ChefHat className="w-4 h-4" />Cozinha [F3]</>}
-          </button>
+        {/* Ações — "Lançar Item" só existe com um atendimento aberto (mesa/
+            comanda): é a confirmação de que os itens do carrinho foram
+            registrados naquele atendimento, antes do pagamento. Genérico
+            pra qualquer tipo de negócio, não só cozinha/restaurante. */}
+        {activePonto ? (
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={onLancarPedido} disabled={cart.length === 0 || lancandoPedido}
+              className={`h-12 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                lancadoOk
+                  ? "bg-sky-50 text-sky-600 border-sky-300"
+                  : "bg-card border-border text-muted-foreground hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700"
+              }`}>
+              {lancandoPedido ? <Loader2 className="w-4 h-4 animate-spin" />
+                : lancadoOk ? <><CheckCircle2 className="w-4 h-4 text-sky-500" />Lançado!</>
+                : <><ClipboardCheck className="w-4 h-4" />Lançar Item [F3]</>}
+            </button>
+            <button onClick={onOpenPayment} disabled={cart.length === 0 || !sessao}
+              className="h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
+              <CreditCard className="w-4 h-4" />Pagamento [F2]
+            </button>
+          </div>
+        ) : (
           <button onClick={onOpenPayment} disabled={cart.length === 0 || !sessao}
-            className="h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
+            className="w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
             <CreditCard className="w-4 h-4" />Pagamento [F2]
           </button>
-        </div>
+        )}
 
         {/* Caixa actions */}
         <div className="flex items-center gap-2">
@@ -438,7 +702,7 @@ function CartPanel({
 function PDVPage() {
   const [products, setProducts]           = useState<Product[]>([]);
   const [categories, setCategories]       = useState<Category[]>([]);
-  const [mesasList, setMesasList]         = useState<Mesa[]>([]);
+  const [points, setPoints]               = useState<Ponto[]>([]);
   const [sessao, setSessao]               = useState<CaixaSessao | null>(null);
   const [movimentos, setMovimentos]       = useState<CaixaMovimento[]>([]);
   const [activeCategoryId, setActiveCategoryId]       = useState<string | null>(null);
@@ -449,7 +713,7 @@ function PDVPage() {
   const [discountType, setDiscountType]   = useState<"pct" | "brl">("pct");
   const [modal, setModal]                 = useState<ModalType>(null);
   const [pdvMode, setPdvMode]             = useState<PdvMode>("catalog");
-  const [activeMesa, setActiveMesa]       = useState<Mesa | null>(null);
+  const [activePonto, setActivePonto]     = useState<Ponto | null>(null);
   const [movTipo, setMovTipo]             = useState<"sangria" | "suprimento">("sangria");
   const [showCart, setShowCart]           = useState(false); // mobile cart drawer
   const [submitting, setSubmitting]       = useState(false);
@@ -458,7 +722,30 @@ function PDVPage() {
   const [lancadoOk, setLancadoOk]        = useState(false);
   const [paymentConfig, setPaymentConfig] = useState<PdvPaymentMethod[]>(DEFAULT_PDV_METHODS);
   const [storeId, setStoreId]             = useState("");
+  const [encomendas, setEncomendas]       = useState<Encomenda[]>([]);
+  const [selectedEncomenda, setSelectedEncomenda] = useState<Encomenda | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // ── Encomendas pendentes (delivery/retirada do site ainda não
+  // concretizadas) — buscadas junto com o resto e recarregadas a cada 30s
+  // pra novos pedidos aparecerem sem precisar recarregar a página. ──
+  const fetchEncomendas = useCallback((sid: string) => {
+    fetch(`/api/orders/list?storeId=${sid}`)
+      .then(r => r.json())
+      .then((d: { orders?: Encomenda[] }) => {
+        setEncomendas((d.orders || []).filter(o => o.concretizedAt === null && o.status !== "cancelled"));
+      })
+      .catch(() => {});
+  }, []);
+
+  // ── Pontos de atendimento (mesas/comandas) — usada tanto no fetch
+  // inicial quanto pra atualizar o mapa depois de abrir/liberar/vender. ──
+  const fetchPoints = useCallback(() => {
+    fetch(`/api/service-points/list`)
+      .then(r => r.json())
+      .then((d: { servicePoints?: Ponto[] }) => setPoints(d.servicePoints || []))
+      .catch(() => {});
+  }, []);
 
   // ── Fetch inicial ──
   useEffect(() => {
@@ -469,16 +756,25 @@ function PDVPage() {
       fetch(`/api/products/list-admin?storeId=${sid}&scope=pdv`).then(r => r.json()),
       fetch(`/api/categories/list-admin?storeId=${sid}`).then(r => r.json()),
       fetch(`/api/payment-methods/for-pdv`).then(r => r.json()).catch(() => ({})),
-      fetch(`/api/pdv/mesas?storeId=${sid}`).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/service-points/list`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/pdv/caixa`).then(r => r.json()).catch(() => ({})),
-    ]).then(([pd, cd, pmd, md, cx]) => {
+    ]).then(([pd, cd, pmd, spd, cx]) => {
       if (pd.products)  setProducts(pd.products);
       if (cd.categories) setCategories(cd.categories);
       if (pmd.methods?.length) setPaymentConfig(pmd.methods);
-      if (md.mesas)     setMesasList(md.mesas);
+      if (spd.servicePoints) setPoints(spd.servicePoints);
       if (cx.sessao)    { setSessao(cx.sessao); setMovimentos(cx.movimentos || []); }
+      if (sid) fetchEncomendas(sid);
     }).catch(() => {});
-  }, []);
+  }, [fetchEncomendas]);
+
+  // ── Encomendas pendentes — recarrega a cada 30s pra novos pedidos do
+  // site aparecerem sem precisar sair e voltar na aba. ──
+  useEffect(() => {
+    if (!storeId) return;
+    const interval = setInterval(() => fetchEncomendas(storeId), 30_000);
+    return () => clearInterval(interval);
+  }, [storeId, fetchEncomendas]);
 
   // ── Categorias ──
   const rootCats = categories
@@ -531,12 +827,12 @@ function PDVPage() {
   const total         = subtotal - discountValue;
   const totalQty      = cart.reduce((s, i) => s + i.qty, 0);
 
-  // ── Lançar para cozinha ──
+  // ── Confirma o lançamento dos itens no atendimento aberto (mesa/comanda) ──
   const handleLancarPedido = useCallback(() => {
-    if (!cart.length || lancando) return;
+    if (!cart.length || lancando || !activePonto) return;
     setLancando(true);
     setTimeout(() => { setLancando(false); setLancadoOk(true); setTimeout(() => setLancadoOk(false), 2200); }, 700);
-  }, [cart, lancando]);
+  }, [cart, lancando, activePonto]);
 
   // ── Finalizar venda ──
   const handleFinalize = async (method: string, installments: number) => {
@@ -544,8 +840,9 @@ function PDVPage() {
     setSubmitting(true);
     try {
       const res  = await api.post("/api/pdv/finalizar-venda", {
-        sessaoId:      sessao.id,
-        mesaLabel:     activeMesa?.label,
+        sessaoId:       sessao.id,
+        mesaLabel:      activePonto?.nameOrNumber,
+        servicePointId: activePonto?.id,
         paymentMethod: method,
         installments:  installments > 1 ? installments : undefined,
         items:         cart.map(item => ({
@@ -565,13 +862,16 @@ function PDVPage() {
         setOrderNumber(data.order.number);
         // Atualiza sessão local
         setSessao(prev => prev ? { ...prev, totalVendas: prev.totalVendas + 1 } : prev);
+        // Libera o ponto de atendimento no mapa (a sessão dele já foi
+        // fechada no servidor, dentro da mesma transação do pedido).
+        if (activePonto) fetchPoints();
       }
     } catch {} finally { setSubmitting(false); }
   };
 
   const handleNovaNota = () => {
     setModal(null); setCart([]); setDiscount(0); setDiscountType("pct");
-    setOrderNumber(null); setActiveMesa(null); setShowCart(false);
+    setOrderNumber(null); setActivePonto(null); setShowCart(false);
     setTimeout(() => searchRef.current?.focus(), 100);
   };
 
@@ -581,11 +881,18 @@ function PDVPage() {
   // ── Fechamento de caixa ──
   const handleCaixaFechado = () => {
     setSessao(null); setMovimentos([]); setCart([]); setDiscount(0);
-    setActiveMesa(null); setModal(null);
+    setActivePonto(null); setModal(null);
   };
 
   // ── Movimentação ──
   const handleMovimento = (m: CaixaMovimento) => { setMovimentos(prev => [m, ...prev]); setModal(null); };
+
+  // ── Encerramento de encomenda (aba Delivery) ──
+  const handleEncomendaEncerrada = (orderId: string) => {
+    setEncomendas(prev => prev.filter(e => e.id !== orderId));
+    setSelectedEncomenda(null);
+    setModal(null);
+  };
 
   // ── Atalhos de teclado ──
   useEffect(() => {
@@ -596,13 +903,21 @@ function PDVPage() {
       if (e.key === "F4")     { e.preventDefault(); if (sessao) { setMovTipo("sangria"); setModal("movimentar"); } }
       if (e.key === "F5")     { e.preventDefault(); setPdvMode(m => m === "map" ? "catalog" : "map"); }
       if (e.key === "Escape") { e.preventDefault(); setModal(null); setShowCart(false); }
+      // Menu de Funções (Caixa) — atalhos Alt+ do menu de referência
+      if (e.altKey && e.key.toLowerCase() === "a") { e.preventDefault(); setModal(sessao ? "caixa-info" : "abrir-caixa"); }
+      if (e.altKey && e.key.toLowerCase() === "p") { e.preventDefault(); if (sessao) setModal("posicao"); }
+      if (e.altKey && e.key.toLowerCase() === "o") { e.preventDefault(); if (sessao) setModal("apontamento"); }
+      if (e.altKey && e.key.toLowerCase() === "s") { e.preventDefault(); if (sessao) { setMovTipo("suprimento"); setModal("movimentar"); } }
+      if (e.altKey && e.key.toLowerCase() === "r") { e.preventDefault(); if (sessao) { setMovTipo("sangria"); setModal("movimentar"); } }
+      if (e.altKey && e.key.toLowerCase() === "l") { e.preventDefault(); if (sessao) setModal("sessoes"); }
+      if (e.altKey && e.key.toLowerCase() === "f") { e.preventDefault(); if (sessao) setModal("fechar-caixa"); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [cart, sessao, handleLancarPedido]);
 
   const cartProps = {
-    cart, activeMesa, discount, discountType, total, subtotal, discountValue, totalQty,
+    cart, activePonto, discount, discountType, total, subtotal, discountValue, totalQty,
     sessao, lancandoPedido: lancando, lancadoOk,
     onUpdateQty: updateQty, onRemove: removeFromCart, onClear: () => setCart([]),
     onSetDiscount: setDiscount, onSetDiscountType: setDiscountType,
@@ -614,7 +929,7 @@ function PDVPage() {
 
   // ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden bg-secondary">
+    <div className="flex flex-col h-[calc(100%+2rem)] sm:h-[calc(100%+3rem)] lg:h-[calc(100%+4rem)] overflow-hidden bg-secondary -m-4 sm:-m-6 lg:-m-8">
       <div className="flex flex-1 min-h-0">
 
         {/* ═══════════════════════════════════════════
@@ -631,27 +946,31 @@ function PDVPage() {
               </button>
               <button onClick={() => setPdvMode("map")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${pdvMode === "map" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-                <LayoutDashboard className="w-3.5 h-3.5" />Mesas
+                <LayoutDashboard className="w-3.5 h-3.5" />Atendimentos
                 <kbd className="text-[9px] font-mono bg-secondary px-1 rounded">F5</kbd>
+              </button>
+              <button onClick={() => setPdvMode("delivery")}
+                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${pdvMode === "delivery" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                <Package className="w-3.5 h-3.5" />Delivery
+                {encomendas.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                    {encomendas.length > 9 ? "9+" : encomendas.length}
+                  </span>
+                )}
               </button>
             </div>
 
-            {activeMesa ? (
+            {activePonto && (
               <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-700">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                {activeMesa.label}
-                <button onClick={() => setActiveMesa(null)} className="ml-0.5 opacity-50 hover:opacity-100">
+                {activePonto.nameOrNumber}
+                <button onClick={() => setActivePonto(null)} className="ml-0.5 opacity-50 hover:opacity-100">
                   <X className="w-3 h-3" />
                 </button>
               </div>
-            ) : (
-              <button onClick={() => setPdvMode("map")}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs text-muted-foreground border border-border hover:border-border hover:text-foreground transition-all">
-                <Users className="w-3.5 h-3.5" />Mesa
-              </button>
             )}
 
-            {/* Sessão info + Sessões button */}
+            {/* Sessão info + Sessões + Menu de Funções */}
             <div className="ml-auto flex items-center gap-2">
               {sessao && (
                 <button onClick={() => setModal("sessoes")}
@@ -660,7 +979,12 @@ function PDVPage() {
                   <span>Sessões</span>
                 </button>
               )}
-              {/* Mobile cart toggle */}
+              <button onClick={() => setModal("funcoes")} title="Menu de Funções"
+                className="flex items-center justify-center w-8 h-8 rounded-xl text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+                <Settings className="w-4 h-4" />
+              </button>
+              {/* Mobile cart toggle — só no Catálogo, mesma regra do carrinho */}
+              {(!sessao || pdvMode === "catalog") && (
               <button onClick={() => setShowCart(true)}
                 className="relative lg:hidden flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-500 text-white shadow-md shadow-emerald-100">
                 <ShoppingCart className="w-4 h-4" />
@@ -670,48 +994,58 @@ function PDVPage() {
                   </span>
                 )}
               </button>
+              )}
             </div>
           </div>
 
-          {/* ── Conteúdo: Catálogo ou Mapa ── */}
+          {/* ── Conteúdo: Catálogo, Mapa ou Delivery ── */}
           {pdvMode === "map" ? (
-            <MesaMap mesas={mesasList} activeMesa={activeMesa} onSelect={m => { setActiveMesa(m); setPdvMode("catalog"); }} />
+            <MesaMap
+              points={points}
+              activePonto={activePonto}
+              sessaoId={sessao?.id ?? null}
+              onSelect={p => { setActivePonto(p); setPdvMode("catalog"); }}
+              onPontosChanged={fetchPoints}
+            />
+          ) : pdvMode === "delivery" ? (
+            <EncomendasList encomendas={encomendas} onSelect={e => {
+              if (!sessao) { setModal("abrir-caixa"); return; }
+              setSelectedEncomenda(e); setModal("encerrar-encomenda");
+            }} />
           ) : (
             <>
               {/* Categorias */}
               {rootCats.length > 0 && (
                 <div className="shrink-0 bg-card border-b border-border">
-                  <div className="overflow-x-auto no-scrollbar">
-                    <div className="flex items-center gap-1.5 px-3 py-2">
-                      <button onClick={() => { setActiveCategoryId(null); setActiveSubCategoryId(null); }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border shrink-0 transition-all ${
-                          !activeCategoryId
-                            ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
-                            : "bg-card text-muted-foreground border-border hover:border-border"
-                        }`}>
-                        <LayoutGrid className={`w-3 h-3 ${!activeCategoryId ? "text-white" : "text-muted-foreground"}`} />
-                        Todos
-                      </button>
-                      {rootCats.map(cat => {
-                        const isActive = activeCategoryId === cat.id;
-                        return (
-                          <button key={cat.id}
-                            onClick={() => { setActiveCategoryId(isActive ? null : cat.id); setActiveSubCategoryId(null); }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border shrink-0 transition-all ${
-                              isActive
-                                ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
-                                : "bg-card text-muted-foreground border-border hover:border-border"
-                            }`}>
-                            <Tag className={`w-3 h-3 ${isActive ? "text-white" : "text-muted-foreground"}`} />
-                            {cat.name}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
+                    <button onClick={() => { setActiveCategoryId(null); setActiveSubCategoryId(null); }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border shrink-0 transition-all ${
+                        !activeCategoryId
+                          ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
+                          : "bg-card text-muted-foreground border-border hover:border-border"
+                      }`}>
+                      <LayoutGrid className={`w-3 h-3 ${!activeCategoryId ? "text-white" : "text-muted-foreground"}`} />
+                      Todos
+                    </button>
+                    {rootCats.map(cat => {
+                      const isActive = activeCategoryId === cat.id;
+                      return (
+                        <button key={cat.id}
+                          onClick={() => { setActiveCategoryId(isActive ? null : cat.id); setActiveSubCategoryId(null); }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border shrink-0 transition-all ${
+                            isActive
+                              ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
+                              : "bg-card text-muted-foreground border-border hover:border-border"
+                          }`}>
+                          <Tag className={`w-3 h-3 ${isActive ? "text-white" : "text-muted-foreground"}`} />
+                          {cat.name}
+                        </button>
+                      );
+                    })}
                   </div>
                   {subCats.length > 0 && (
-                    <div className="overflow-x-auto no-scrollbar border-t border-border">
-                      <div className="flex items-center gap-1.5 px-3 py-1.5">
+                    <div className="border-t border-border">
+                      <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5">
                         {subCats.map(sub => {
                           const isActive = activeSubCategoryId === sub.id;
                           return (
@@ -786,6 +1120,11 @@ function PDVPage() {
                                 PROMO
                               </span>
                             )}
+                            {product.isMadeToOrder && (
+                              <span className="absolute bottom-1.5 left-1.5 text-[9px] font-bold bg-amber-500 text-white rounded-full px-1.5 py-0.5 leading-none">
+                                ENCOMENDA
+                              </span>
+                            )}
                           </div>
 
                           {/* Info */}
@@ -832,9 +1171,9 @@ function PDVPage() {
             {[
               { key: "F1", label: "Buscar" },
               { key: "F2", label: "Pagamento" },
-              { key: "F3", label: "Cozinha" },
+              { key: "F3", label: "Lançar Item" },
               { key: "F4", label: "Sangria" },
-              { key: "F5", label: "Mesas" },
+              { key: "F5", label: "Atendimentos" },
               { key: "ESC", label: "Fechar" },
             ].map(s => (
               <span key={s.key} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -847,16 +1186,20 @@ function PDVPage() {
 
         {/* ═══════════════════════════════════════════
             COLUNA DIREITA — Abertura de Caixa ou Carrinho
-        ════════════════════════════════════════════ */}
-        <div className="hidden lg:flex w-[360px] shrink-0 border-l border-border flex-col h-full">
-          {sessao
-            ? <CartPanel {...cartProps} />
-            : <PainelAbrirCaixa onAberto={handleCaixaAberto} />}
-        </div>
+            (o carrinho só faz sentido no Catálogo — some no Mapa de
+            Atendimentos e no Delivery pra não confundir o operador e dar
+            mais espaço pro conteúdo; abrir caixa continua sempre visível) ══ */}
+        {(!sessao || pdvMode === "catalog") && (
+          <div className="hidden lg:flex w-[360px] shrink-0 border-l border-border flex-col h-full">
+            {sessao
+              ? <CartPanel {...cartProps} />
+              : <PainelAbrirCaixa onAberto={handleCaixaAberto} />}
+          </div>
+        )}
       </div>
 
-      {/* ── Mobile cart drawer ── */}
-      {showCart && (
+      {/* ── Mobile cart drawer (mesma regra da coluna desktop) ── */}
+      {showCart && (!sessao || pdvMode === "catalog") && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setShowCart(false)} />
           <div className="relative ml-auto w-full max-w-sm h-full bg-card shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
@@ -882,11 +1225,46 @@ function PDVPage() {
         {modal === "sessoes" && storeId && (
           <ModalSessoes storeId={storeId} onClose={() => setModal(null)} />
         )}
+        {modal === "funcoes" && (
+          <MenuFuncoesPDV
+            caixaAberto={!!sessao}
+            onClose={() => setModal(null)}
+            onCaixaAberto={() => setModal(sessao ? "caixa-info" : "abrir-caixa")}
+            onPosicao={() => sessao && setModal("posicao")}
+            onApontamento={() => sessao && setModal("apontamento")}
+            onSuprimento={() => { if (sessao) { setMovTipo("suprimento"); setModal("movimentar"); } }}
+            onSangria={() => { if (sessao) { setMovTipo("sangria"); setModal("movimentar"); } }}
+            onAnalise={() => setModal("sessoes")}
+            onFechamento={() => sessao && setModal("fechar-caixa")}
+            onPontosAtendimento={() => setModal("pontos-atendimento")}
+          />
+        )}
+        {modal === "caixa-info" && sessao && (
+          <ModalCaixaInfo sessao={sessao} onClose={() => setModal(null)} />
+        )}
+        {modal === "posicao" && sessao && (
+          <ModalPosicaoCaixa sessao={sessao} movimentos={movimentos} onClose={() => setModal(null)} />
+        )}
+        {modal === "apontamento" && (
+          <ModalApontamento movimentos={movimentos} onClose={() => setModal(null)} />
+        )}
+        {modal === "encerrar-encomenda" && sessao && selectedEncomenda && (
+          <ModalEncerrarEncomenda
+            encomenda={selectedEncomenda} sessaoId={sessao.id} paymentConfig={paymentConfig}
+            onClose={() => { setModal(null); setSelectedEncomenda(null); }}
+            onEncerrado={handleEncomendaEncerrada}
+          />
+        )}
+        {modal === "pontos-atendimento" && (
+          // Fecha e já recarrega o mapa — pontos criados/editados na hora
+          // (ex: uma "Mesa 12" nova) aparecem sem precisar sair do PDV.
+          <ModalPontosAtendimento onClose={() => { setModal(null); fetchPoints(); }} />
+        )}
         {modal === "payment" && (
           <ModalPagamento
             total={total} subtotal={subtotal} discountValue={discountValue} discount={discount}
             submitting={submitting} orderNumber={orderNumber} paymentConfig={paymentConfig}
-            mesaLabel={activeMesa?.label ?? null}
+            mesaLabel={activePonto?.nameOrNumber ?? null}
             onClose={() => { setModal(null); if (orderNumber !== null) handleNovaNota(); }}
             onFinalize={handleFinalize} onNovaNota={handleNovaNota}
           />

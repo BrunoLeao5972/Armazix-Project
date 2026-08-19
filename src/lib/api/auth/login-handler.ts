@@ -76,6 +76,18 @@ export async function loginHandler(request: Request): Promise<Response> {
   });
   const storeId = storeUserRecord?.storeId;
 
+  // Best-effort — CRM do Gerenciador Armazix usa isso pra saber se a loja
+  // está de fato em uso, não deve derrubar o login se falhar. Aguardado (não
+  // fire-and-forget) porque em Cloudflare Workers uma promise solta pode ser
+  // encerrada junto com o isolate assim que a resposta é devolvida.
+  if (storeId) {
+    try {
+      await db.update(stores).set({ lastLoginAt: new Date() }).where(eq(stores.id, storeId));
+    } catch (err) {
+      console.error("[login] falha ao atualizar lastLoginAt:", err);
+    }
+  }
+
   // Sign JWT with storeId embedded — NEVER read storeId from request
   let secret: string;
   try {
@@ -207,6 +219,13 @@ export async function loginDesktopHandler(request: Request): Promise<Response> {
       status: 403,
       headers: { "content-type": "application/json" },
     });
+  }
+
+  // Best-effort — mesmo rastreamento do login web, ver comentário lá.
+  try {
+    await db.update(stores).set({ lastLoginAt: new Date() }).where(eq(stores.id, storeId));
+  } catch (err) {
+    console.error("[login-desktop] falha ao atualizar lastLoginAt:", err);
   }
 
   const [store] = await db

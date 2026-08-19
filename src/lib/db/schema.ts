@@ -30,6 +30,10 @@ export const stores = pgTable("stores", {
   accentColor: varchar("accent_color", { length: 7 }),
   font: varchar("font", { length: 50 }).default("Inter"),
   cnpj: varchar("cnpj", { length: 18 }),
+  /** Alternativa ao CNPJ pra MEI/pessoa física sem CNPJ — nunca os dois
+   *  preenchidos ao mesmo tempo, mas nenhuma constraint força isso (decisão
+   *  de cadastro, não de schema). */
+  cpf: varchar("cpf", { length: 14 }),
   ownerName: varchar("owner_name", { length: 120 }),
   phone: varchar("phone", { length: 20 }),
   email: varchar("email", { length: 120 }),
@@ -84,6 +88,10 @@ export const stores = pgTable("stores", {
   paymentStatus: varchar("payment_status", { length: 20 }),
   rating: numeric("rating", { precision: 2, scale: 1 }).default("4.8"),
   active: boolean("active").default(true),
+  /** Login mais recente de QUALQUER usuário desta loja (owner ou staff) —
+   *  atualizado em login-handler.ts. Não conta impersonation do superadmin
+   *  (senão o CRM do Gerenciador Armazix leria "uso" onde não houve). */
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -104,6 +112,31 @@ export const storesRelations = relations(stores, ({ many }) => ({
   roleProfiles: many(roleProfiles),
   paymentMethods: many(paymentMethods),
   paymentPlans: many(paymentPlans),
+  subscriptionPayments: many(subscriptionPayments),
+}));
+
+// ─── SUBSCRIPTION PAYMENTS (histórico de cobranças do plano Armazix) ────────
+// Ledger próprio — stores.mpPaymentId/amountPaid/paymentStatus só guardam o
+// pagamento MAIS RECENTE (cada webhook sobrescreve). Esta tabela registra
+// cada cobrança confirmada (recorrente ou PIX) como uma linha nova, pra dar
+// histórico de verdade — consumido pelo CRM do Gerenciador Armazix. Só
+// começa a existir a partir de quando essa tabela foi criada: pagamentos
+// anteriores não têm registro aqui, só o snapshot mais recente em `stores`.
+export const subscriptionPayments = pgTable("subscription_payments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  plan: varchar("plan", { length: 20 }).notNull(),
+  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  paymentMethod: varchar("payment_method", { length: 20 }).notNull(), // card_recurring | pix_manual
+  status: varchar("status", { length: 20 }).notNull(), // processed | approved
+  mpReference: varchar("mp_reference", { length: 100 }), // authorized_payment id ou payment id
+  occurredAt: timestamp("occurred_at").defaultNow().notNull(),
+}, (t) => [
+  index("subscription_payments_store_idx").on(t.storeId),
+]);
+
+export const subscriptionPaymentsRelations = relations(subscriptionPayments, ({ one }) => ({
+  store: one(stores, { fields: [subscriptionPayments.storeId], references: [stores.id] }),
 }));
 
 // ─── BANNERS ────────────────────────────────────────────────────
@@ -177,6 +210,10 @@ export const products = pgTable("products", {
   barcode: varchar("barcode", { length: 30 }),
   pdvCode: varchar("pdv_code", { length: 20 }),
   stock: integer("stock").default(0),
+  /** Quantidade reservada por pedidos de delivery/retirada ainda não
+   *  concretizados — nunca deduzida de `stock` até a venda ser fechada.
+   *  Disponível pra vender = stock - reserved. */
+  reserved: integer("reserved").default(0).notNull(),
   lowStockThreshold: integer("low_stock_threshold").default(5),
   unit: varchar("unit", { length: 20 }).default("un"),
   badge: varchar("badge", { length: 30 }),
@@ -188,6 +225,17 @@ export const products = pgTable("products", {
   rating: numeric("rating", { precision: 2, scale: 1 }).default("0"),
   reviewCount: integer("review_count").default(0),
   allowObservation: boolean("allow_observation").default(false),
+  /** Produto vendido sob encomenda — mostra um destaque avisando o cliente
+   *  que a produção/entrega leva um tempo, em vez de pronta-entrega. */
+  isMadeToOrder: boolean("is_made_to_order").default(false),
+  /** Prazo de produção sob encomenda — número + unidade. Ambos nulos = sem
+   *  prazo informado, mostra a mensagem padrão genérica. */
+  madeToOrderLeadTime:     integer("made_to_order_lead_time"),
+  madeToOrderLeadTimeUnit: varchar("made_to_order_lead_time_unit", { length: 10 }), // "days" | "hours"
+  /** Override por produto do "Exibir preço" da loja (stores.showPrice) —
+   *  false transforma só ESTE item em modo catálogo (botão vira WhatsApp),
+   *  mesmo com o resto da loja exibindo preço normalmente. */
+  showPrice: boolean("show_price").default(true),
   /** priceType do grupo: "adicional" (padrão, soma ao preço do produto) ou "opcional" (substitui o preço do produto). required: undefined = true (compatibilidade — grupos antigos sempre foram obrigatórios). */
   variationGroups: jsonb("variation_groups").$type<Array<{ id: string; groupName: string; priceType?: "adicional" | "opcional"; required?: boolean; options: Array<{ id: string; name: string; price: string; images: Array<{ url: string; isPrimary: boolean }>; promoConfig?: import("@/lib/promo-engine").PromoConfig | null }> }>>().default([]).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -236,6 +284,9 @@ export const coupons = pgTable("coupons", {
   minOrderValue: numeric("min_order_value", { precision: 10, scale: 2 }).default("0"),
   maxUses: integer("max_uses"),
   usedCount: integer("used_count").default(0),
+  /** Início da validade — cupom fica "agendado" (não utilizável) até essa
+   *  data/hora chegar. Null = já vale desde a criação. */
+  validFrom: timestamp("valid_from"),
   expiresAt: timestamp("expires_at"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -261,6 +312,12 @@ export const customers = pgTable("customers", {
   isSupplier: boolean("is_supplier").default(false),
   isDeliverer: boolean("is_deliverer").default(false),
   status: varchar("status", { length: 20 }).default("ativo"),
+  /** Marca o "Cliente Padrão"/"Fornecedor Padrão" — o registro coringa que
+   *  toda loja tem desde a criação (ver seed em register-handler.ts), usado
+   *  como fallback em pontos de atendimento sem cliente específico. No
+   *  máximo um por loja para cada combinação com isSupplier (índice parcial
+   *  na migração). */
+  isDefault: boolean("is_default").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
@@ -335,6 +392,13 @@ export const orders = pgTable("orders", {
   deliveredAt: timestamp("delivered_at"),
   cancelledAt: timestamp("cancelled_at"),
   cancelReason: text("cancel_reason"),
+  /**
+   * Quando a venda foi de fato concretizada — baixa real de estoque +
+   * lançamento financeiro feitos. Separado de `paymentStatus` porque um
+   * pedido pago via Mercado Pago já chega com paymentStatus="paid" sem
+   * nunca ter sido concretizado (ver src/lib/inventory/stock-reservation.ts).
+   */
+  concretizedAt: timestamp("concretized_at"),
   installments:   integer("installments").default(1),
   cardFeeAmount:  numeric("card_fee_amount", { precision: 10, scale: 2 }),  // taxa da maquineta calculada
   /**
@@ -744,6 +808,65 @@ export const mesas = pgTable("mesas", {
 
 export const mesasRelations = relations(mesas, ({ one }) => ({
   store: one(stores, { fields: [mesas.storeId], references: [stores.id] }),
+}));
+
+// ─── SERVICE POINTS (Pontos de Atendimento — Mesas e Comandas/Cartões) ───
+// Generaliza o conceito de "mesas" acima pra cobrir também comandas/cartões
+// de consumo, com CRUD individual (em vez do "substitui a lista inteira" do
+// endpoint de mesas) e status ativo/inativo por item. Unicidade de nome
+// entre pontos ATIVOS é garantida por índice único parcial na migração
+// (drizzle/0038_service_points.sql) — dois pontos INATIVOS podem repetir o
+// nome (ex: reaproveitar "Mesa 05" depois de desativar a antiga).
+export type ServicePointType = "MESA" | "CARTAO";
+
+export const servicePoints = pgTable("service_points", {
+  id:           uuid("id").defaultRandom().primaryKey(),
+  storeId:      uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  nameOrNumber: text("name_or_number").notNull(),
+  type:         varchar("type", { length: 10 }).notNull().$type<ServicePointType>(), // "MESA" | "CARTAO"
+  isActive:     boolean("is_active").default(true).notNull(),
+  /** Cliente atualmente atrelado a esse ponto — opcional, sempre um cliente
+   *  já cadastrado (nunca texto livre). "set null" ao apagar o cliente: o
+   *  ponto continua existindo, só perde a referência. */
+  customerId:   uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
+  createdAt:    timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("service_points_store_idx").on(t.storeId),
+]);
+
+export const servicePointsRelations = relations(servicePoints, ({ one }) => ({
+  store:    one(stores,    { fields: [servicePoints.storeId],    references: [stores.id] }),
+  customer: one(customers, { fields: [servicePoints.customerId], references: [customers.id] }),
+}));
+
+// ─── SERVICE POINT SESSIONS (mesa/comanda aberta ↔ fechada) ──────
+// Registra quando um ponto de atendimento foi aberto (cliente sentou/
+// comanda foi entregue) e quando foi fechado — independente de quando (ou
+// se) um pedido chega a ser criado, já que o carrinho do PDV só vira
+// pedido de verdade na finalização do pagamento. É isso que dá ocupado/
+// livre real no mapa de atendimentos (antes, hardcoded pra "livre").
+export const servicePointSessions = pgTable("service_point_sessions", {
+  id:             uuid("id").defaultRandom().primaryKey(),
+  storeId:        uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  servicePointId: uuid("service_point_id").references(() => servicePoints.id, { onDelete: "cascade" }).notNull(),
+  /** Sessão de caixa aberta no momento em que o ponto foi aberto — capturada
+   *  aqui (não só via pedido) porque uma sessão pode ser fechada manualmente
+   *  sem nunca gerar pedido, e mesmo assim precisa aparecer na aba
+   *  "Encerrados" escopada à sessão de caixa em andamento. */
+  caixaSessaoId:  uuid("caixa_sessao_id").references(() => caixaSessoes.id, { onDelete: "set null" }),
+  openedAt:       timestamp("opened_at").defaultNow().notNull(),
+  closedAt:       timestamp("closed_at"),
+  orderId:        uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+}, (t) => [
+  index("service_point_sessions_store_idx").on(t.storeId),
+  index("service_point_sessions_point_idx").on(t.servicePointId),
+]);
+
+export const servicePointSessionsRelations = relations(servicePointSessions, ({ one }) => ({
+  store:        one(stores,       { fields: [servicePointSessions.storeId],       references: [stores.id] }),
+  servicePoint: one(servicePoints,{ fields: [servicePointSessions.servicePointId],references: [servicePoints.id] }),
+  caixaSessao:  one(caixaSessoes, { fields: [servicePointSessions.caixaSessaoId], references: [caixaSessoes.id] }),
+  order:        one(orders,       { fields: [servicePointSessions.orderId],       references: [orders.id] }),
 }));
 
 // ─── CAIXA SESSOES (Sessões de caixa PDV) ────────────────────────

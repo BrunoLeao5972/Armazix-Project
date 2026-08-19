@@ -1,11 +1,11 @@
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { and, eq, isNull, ne, or } from "drizzle-orm";
+import { and, eq, isNull, ne, or, desc } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 import { PLANS as PLAN_DEFS, getPlan } from "@/lib/plans";
 import { validateMercadoPagoSignature } from "@/lib/webhook-validator";
 
-const { stores } = schema;
+const { stores, subscriptionPayments } = schema;
 const MP_API = "https://api.mercadopago.com";
 
 function json(data: unknown, status = 200) {
@@ -372,6 +372,15 @@ export async function pixWebhookHandler(request: Request): Promise<Response> {
 
     if (!updated) {
       console.log(`[pix-webhook] payment ${payment.id} já aplicado para a loja ${payerStoreId} — ignorando replay`);
+    } else {
+      await db.insert(subscriptionPayments).values({
+        storeId:       payerStoreId,
+        plan:          planId,
+        amount:        payment.transaction_amount ? String(payment.transaction_amount) : "0",
+        paymentMethod: "pix_manual",
+        status:        "approved",
+        mpReference:   String(payment.id),
+      });
     }
   } else if (payment.status === "rejected" || payment.status === "cancelled") {
     await db.update(stores)
@@ -428,6 +437,9 @@ export async function subscriptionWebhookHandler(request: Request): Promise<Resp
   // Resolve o id do preapproval — direto se o evento já é sobre a assinatura,
   // ou buscando o authorized_payment primeiro se o evento é de uma cobrança.
   let preapprovalId = dataId;
+  // Só preenchido quando o evento é de uma cobrança processada — usado pra
+  // registrar a linha no ledger (subscription_payments) mais abaixo.
+  let processedPayment: { mpReference: string; amount: number } | null = null;
   if (isAuthorizedPayment) {
     const apRes = await fetch(`${MP_API}/authorized_payments/${dataId}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -436,7 +448,7 @@ export async function subscriptionWebhookHandler(request: Request): Promise<Resp
       console.error(`[mp-webhook] Falha ao buscar authorized_payment ${dataId}: ${apRes.status}`);
       return new Response("ok", { status: 200 });
     }
-    const authorizedPayment = await apRes.json() as { preapproval_id?: string; status?: string };
+    const authorizedPayment = await apRes.json() as { preapproval_id?: string; status?: string; transaction_amount?: number };
     if (!authorizedPayment.preapproval_id) return new Response("ok", { status: 200 });
     // Só renova em cobrança de fato processada — evita estender o acesso em
     // cima de uma tentativa de cobrança que falhou/está pendente.
@@ -445,6 +457,7 @@ export async function subscriptionWebhookHandler(request: Request): Promise<Resp
       return new Response("ok", { status: 200 });
     }
     preapprovalId = authorizedPayment.preapproval_id;
+    processedPayment = { mpReference: String(dataId), amount: authorizedPayment.transaction_amount ?? 0 };
   }
 
   // Fetch the preapproval from MP
@@ -515,6 +528,19 @@ export async function subscriptionWebhookHandler(request: Request): Promise<Resp
       updatedAt: new Date(),
     })
     .where(eq(stores.id, storeId));
+
+  // Ledger — só quando o evento era mesmo de uma cobrança processada (não
+  // toda mudança de status da preapproval em si).
+  if (processedPayment) {
+    await db.insert(subscriptionPayments).values({
+      storeId,
+      plan: planId,
+      amount: String(processedPayment.amount),
+      paymentMethod: "card_recurring",
+      status: "processed",
+      mpReference: processedPayment.mpReference,
+    });
+  }
 
   return new Response("ok", { status: 200 });
 }

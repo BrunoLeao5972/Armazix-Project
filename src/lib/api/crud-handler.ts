@@ -1,7 +1,8 @@
 import { createDb, createUnscopedDb, createTenantDbTransactional, setTenantContext } from "@/lib/db";
 import type { PromoConfig } from "@/lib/promo-engine";
 import { schema } from "@/lib/db";
-import { eq, desc, sql, and, ne, isNotNull, inArray } from "drizzle-orm";
+import { eq, desc, sql, and, ne, isNotNull, isNull, inArray } from "drizzle-orm";
+import { hasPdvAccess } from "@/lib/plans";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 import { verifyCustomerJWT } from "@/lib/auth";
 import { notifyOwnerNewOrder, notifyCustomerStatus, normalizePhone, DEFAULT_WPP_CONFIG, migrateWppConfig } from "@/lib/whatsapp-sender";
@@ -9,6 +10,7 @@ import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey, 
 import { waitUntil } from "@/lib/execution-context";
 import { canCreateProduct } from "@/lib/api/plan-limits";
 import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
+import { reserveStock, releaseReservation, concretizeReservation, StockReservationError } from "@/lib/inventory/stock-reservation";
 
 const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements, addresses, financeiroLancamentos, orderTimeline } = schema;
 
@@ -45,6 +47,10 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
     trackStock?: boolean;
     active?: boolean | null;
     allowObservation?: boolean;
+    isMadeToOrder?: boolean;
+    madeToOrderLeadTime?: number | null;
+    madeToOrderLeadTimeUnit?: "days" | "hours" | null;
+    showPrice?: boolean;
     promoConfig?: PromoConfig | null;
     productType?: string;
     isWeightScale?: boolean;
@@ -114,6 +120,10 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
       trackStock: body.trackStock ?? false,
       active: body.active !== undefined ? body.active : true,
       allowObservation: body.allowObservation ?? false,
+      isMadeToOrder: body.isMadeToOrder ?? false,
+      madeToOrderLeadTime: body.isMadeToOrder ? (body.madeToOrderLeadTime ?? null) : null,
+      madeToOrderLeadTimeUnit: body.isMadeToOrder ? (body.madeToOrderLeadTimeUnit ?? null) : null,
+      showPrice: body.showPrice ?? true,
       promoConfig: body.promoConfig ?? null,
       productType: body.productType || "Produto",
       isWeightScale: body.isWeightScale ?? false,
@@ -197,6 +207,10 @@ export async function listProductsHandler(request: Request): Promise<Response> {
               rating:            products.rating,
               reviewCount:       products.reviewCount,
               allowObservation:  products.allowObservation,
+              isMadeToOrder:     products.isMadeToOrder,
+              madeToOrderLeadTime:     products.madeToOrderLeadTime,
+              madeToOrderLeadTimeUnit: products.madeToOrderLeadTimeUnit,
+              showPrice:         products.showPrice,
               variationGroups:   products.variationGroups,
               trackStock:        products.trackStock,
             })
@@ -263,6 +277,10 @@ export async function listProductsHandler(request: Request): Promise<Response> {
                 rating:            products.rating,
                 reviewCount:       products.reviewCount,
                 allowObservation:  products.allowObservation,
+                isMadeToOrder:     products.isMadeToOrder,
+                madeToOrderLeadTime:     products.madeToOrderLeadTime,
+                madeToOrderLeadTimeUnit: products.madeToOrderLeadTimeUnit,
+                showPrice:         products.showPrice,
                 variationGroups:   products.variationGroups,
                 trackStock:        products.trackStock,
               })
@@ -370,6 +388,10 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     trackStock?: boolean;
     active?: boolean | null;
     allowObservation?: boolean;
+    isMadeToOrder?: boolean;
+    madeToOrderLeadTime?: number | null;
+    madeToOrderLeadTimeUnit?: "days" | "hours" | null;
+    showPrice?: boolean;
     promoConfig?: PromoConfig | null;
     productType?: string;
     isWeightScale?: boolean;
@@ -437,6 +459,17 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     if (body.trackStock  !== undefined) updates.trackStock  = body.trackStock;
     if (body.active      !== undefined) updates.active      = body.active;
     if (body.allowObservation !== undefined) updates.allowObservation = body.allowObservation;
+    if (body.isMadeToOrder    !== undefined) updates.isMadeToOrder    = body.isMadeToOrder;
+    // Prazo só faz sentido junto do toggle ligado — desligar o toggle limpa
+    // qualquer prazo salvo antes, pra não deixar dado órfão pra trás.
+    if (body.isMadeToOrder === false) {
+      updates.madeToOrderLeadTime     = null;
+      updates.madeToOrderLeadTimeUnit = null;
+    } else {
+      if (body.madeToOrderLeadTime     !== undefined) updates.madeToOrderLeadTime     = body.madeToOrderLeadTime;
+      if (body.madeToOrderLeadTimeUnit !== undefined) updates.madeToOrderLeadTimeUnit = body.madeToOrderLeadTimeUnit;
+    }
+    if (body.showPrice        !== undefined) updates.showPrice        = body.showPrice;
     if (body.promoConfig      !== undefined) updates.promoConfig      = body.promoConfig;
     if (body.productType      !== undefined) updates.productType      = body.productType;
     if (body.isWeightScale    !== undefined) updates.isWeightScale    = body.isWeightScale;
@@ -814,7 +847,9 @@ export async function createOrderHandler(request: Request): Promise<Response> {
   const db = createDb(dbUrl);
 
   try {
-    // ── 0. Validação de estoque (quando a loja bloqueia venda sem estoque) ─���──
+    // ── 0. Config da loja — allowNegativeStock decide se a reserva de
+    // estoque (passo 2-4, dentro da transação) bloqueia por falta de saldo
+    // ou só soma em `reserved` sem checar limite (ver reserveStock). ───────
     const [storeConfig] = await db
       .select({ allowNegativeStock: stores.allowNegativeStock })
       .from(stores)
@@ -823,40 +858,6 @@ export async function createOrderHandler(request: Request): Promise<Response> {
 
     if (!storeConfig) {
       return new Response(JSON.stringify({ error: "Loja não encontrada" }), { status: 404, headers: { "content-type": "application/json" } });
-    }
-
-    if (storeConfig.allowNegativeStock === false) {
-      const productIds = body.items.map(i => i.productId).filter(Boolean) as string[];
-      if (productIds.length > 0) {
-        const stockRows = await db
-          .select({ id: products.id, name: products.name, stock: products.stock, trackStock: products.trackStock })
-          .from(products)
-          .where(and(eq(products.storeId, body.storeId), inArray(products.id, productIds)));
-
-        // Agrega quantidades por productId — captura o mesmo produto em duas linhas
-        const aggregated = new Map<string, { qty: number; name: string }>();
-        for (const item of body.items) {
-          if (!item.productId) continue;
-          const cur = aggregated.get(item.productId);
-          aggregated.set(item.productId, {
-            qty:  (cur?.qty ?? 0) + item.quantity,
-            name: item.productName ?? cur?.name ?? item.productId,
-          });
-        }
-
-        const stockMap = new Map(stockRows.map(r => [r.id, r]));
-        for (const [productId, { qty, name }] of aggregated) {
-          const prod = stockMap.get(productId);
-          if (!prod?.trackStock) continue;
-          const available = prod.stock ?? 0;
-          if (available < qty) {
-            return new Response(
-              JSON.stringify({ error: `Estoque insuficiente para "${name}": ${available} disponível(is), ${qty} solicitado(s)` }),
-              { status: 400, headers: { "content-type": "application/json" } },
-            );
-          }
-        }
-      }
     }
 
     // ── 1. Preço — recalculado do banco, nunca o que veio no corpo ────────────
@@ -888,66 +889,89 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       );
     }
 
-    // ── 2. Número sequencial por loja ─────────────────────────────────────────
-    const [maxOrder] = await db
-      .select({ max: sql<number>`COALESCE(MAX(${orders.number}), 0)` })
-      .from(orders)
-      .where(eq(orders.storeId, body.storeId));
-    const nextNumber = (Number(maxOrder?.max) || 0) + 1;
+    // ── 2-4. Reserva de estoque + pedido + itens — tudo numa transação com
+    // RLS real: se a reserva falhar (estoque insuficiente), a transação
+    // inteira desfaz e o pedido nunca chega a ser criado. Substitui a
+    // validação solta de antes (SELECT + comparação manual, sem travar
+    // nada) por um UPDATE atômico condicional dentro de reserveStock — é
+    // isso que fecha a corrida entre dois checkouts simultâneos.
+    const tenantDb = await createTenantDbTransactional(dbUrl, body.storeId);
+    let order: typeof orders.$inferSelect;
+    let nextNumber: number;
+    try {
+      const result = await tenantDb.transaction(async (tx) => {
+        await tx.execute(setTenantContext(body.storeId));
 
-    // ── 3. Inserir pedido ─────────────────────────────────────────────────────
-    const [order] = await db.insert(orders).values({
-      storeId:           body.storeId,
-      customerId:        verifiedCustomerId || body.customerId || null,
-      number:            nextNumber,
-      status:            "received",
-      type:              body.type || "delivery",
-      paymentMethod:     body.paymentMethod || null,
-      installments:      body.installments && body.installments > 1 ? body.installments : 1,
-      cardFeeAmount:     body.cardFeeAmount || null,
-      paymentStatus:     "pending",
-      subtotal:          priced.subtotal,
-      deliveryFee:       priced.deliveryFee,
-      discount:          priced.discount,
-      total:             priced.total,
-      couponId:          priced.couponId,
-      notes:             priced.deliveryFeeNotice
-        ? `⚠️ Frete a combinar — endereço não localizado automaticamente.${body.notes ? ` ${body.notes}` : ""}`
-        : (body.notes || null),
-      addressSnapshot:   body.addressSnapshot || null,
-      estimatedDelivery: body.estimatedDelivery ? new Date(body.estimatedDelivery) : null,
-    }).returning();
+        const [maxOrder] = await tx
+          .select({ max: sql<number>`COALESCE(MAX(${orders.number}), 0)` })
+          .from(orders)
+          .where(eq(orders.storeId, body.storeId));
+        const seqNumber = (Number(maxOrder?.max) || 0) + 1;
+
+        await reserveStock(tx, body.storeId, priced.items, storeConfig.allowNegativeStock !== false);
+
+        const [insertedOrder] = await tx.insert(orders).values({
+          storeId:           body.storeId,
+          customerId:        verifiedCustomerId || body.customerId || null,
+          number:            seqNumber,
+          status:            "received",
+          type:              body.type || "delivery",
+          paymentMethod:     body.paymentMethod || null,
+          installments:      body.installments && body.installments > 1 ? body.installments : 1,
+          cardFeeAmount:     body.cardFeeAmount || null,
+          paymentStatus:     "pending",
+          subtotal:          priced.subtotal,
+          deliveryFee:       priced.deliveryFee,
+          discount:          priced.discount,
+          total:             priced.total,
+          couponId:          priced.couponId,
+          notes:             priced.deliveryFeeNotice
+            ? `⚠️ Frete a combinar — endereço não localizado automaticamente.${body.notes ? ` ${body.notes}` : ""}`
+            : (body.notes || null),
+          addressSnapshot:   body.addressSnapshot || null,
+          estimatedDelivery: body.estimatedDelivery ? new Date(body.estimatedDelivery) : null,
+        }).returning();
+
+        await Promise.all([
+          tx.insert(orderItems).values(priced.items.map(item => ({
+            orderId:           insertedOrder.id,
+            productId:         item.productId,
+            productName:       item.productName,
+            productEmoji:      item.productEmoji,
+            productImage:      item.productImage,
+            quantity:          item.quantity,
+            unitPrice:         item.unitPrice,
+            additionsTotal:    item.additionsTotal,
+            total:             item.total,
+            additionsSnapshot: item.additionsSnapshot,
+            notes:             item.notes,
+          }))),
+          tx.insert(schema.orderTimeline).values({
+            orderId: insertedOrder.id,
+            status:  "received",
+            note:    "Pedido recebido e confirmado",
+          }),
+          ...(priced.deliveryFeeNotice
+            ? [tx.insert(schema.orderTimeline).values({
+                orderId: insertedOrder.id,
+                status:  "received",
+                note:    "⚠️ Frete não calculado automaticamente (endereço não localizado) — combine o valor com o cliente.",
+              })]
+            : []),
+        ]);
+
+        return { insertedOrder, seqNumber };
+      });
+      order       = result.insertedOrder;
+      nextNumber  = result.seqNumber;
+    } catch (err) {
+      if (err instanceof StockReservationError) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 400, headers: { "content-type": "application/json" } });
+      }
+      throw err;
+    }
 
     const resolvedCouponId = priced.couponId;
-
-    // ── 4. Itens + entrada na timeline — independentes, rodam em paralelo ─────
-    await Promise.all([
-      db.insert(orderItems).values(priced.items.map(item => ({
-        orderId:           order.id,
-        productId:         item.productId,
-        productName:       item.productName,
-        productEmoji:      item.productEmoji,
-        productImage:      item.productImage,
-        quantity:          item.quantity,
-        unitPrice:         item.unitPrice,
-        additionsTotal:    item.additionsTotal,
-        total:             item.total,
-        additionsSnapshot: item.additionsSnapshot,
-        notes:             item.notes,
-      }))),
-      db.insert(schema.orderTimeline).values({
-        orderId: order.id,
-        status:  "received",
-        note:    "Pedido recebido e confirmado",
-      }),
-      ...(priced.deliveryFeeNotice
-        ? [db.insert(schema.orderTimeline).values({
-            orderId: order.id,
-            status:  "received",
-            note:    "⚠️ Frete não calculado automaticamente (endereço não localizado) — combine o valor com o cliente.",
-          })]
-        : []),
-    ]);
 
     // ══════════════════════════════════════════════════════════════════════════
     // ACIMA: caminho crítico — falha retorna 500 antes de qualquer dado persistido.
@@ -1000,43 +1024,12 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       }
     }
 
-    // ── 6. Estoque + cupom — background, nunca bloqueia a resposta ───────────
-    // Separado do caminho principal para que falhas de stock_movements ou de
-    // tabelas inexistentes não causem 500 ao cliente.
+    // ── 6. Cupom — background, nunca bloqueia a resposta ─────────────────────
+    // Estoque agora é reservado dentro da transação do passo 2-4; a baixa
+    // real (stockMovements tipo VENDA) só acontece na concretização da
+    // venda (encerramento no PDV, ou status "delivered" pra lojas sem PDV).
     waitUntil(request, (async () => {
       try {
-        for (const item of priced.items) {
-          const [prod] = await db
-            .select({ stock: products.stock, trackStock: products.trackStock })
-            .from(products)
-            .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)))
-            .limit(1);
-
-          // Pula produtos sem rastreio de estoque
-          if (!prod?.trackStock) continue;
-
-          const balanceBefore = prod.stock ?? 0;
-          const balanceAfter  = balanceBefore - item.quantity; // permite saldo negativo
-
-          await db.update(products)
-            .set({ stock: balanceAfter, updatedAt: new Date() })
-            .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)));
-
-          await db.insert(stockMovements).values({
-            storeId:      body.storeId,
-            productId:    item.productId,
-            productName:  item.productName,
-            type:         "VENDA",
-            quantity:     item.quantity,
-            balanceBefore,
-            balanceAfter,
-            origem:       balanceAfter < 0
-              ? `Venda s/ estoque — Pedido #${nextNumber}`
-              : `Venda — Pedido #${nextNumber}`,
-            orderId:      order.id,
-          });
-        }
-
         // Incrementa o uso do cupom. A condição no WHERE evita estourar o teto
         // quando dois pedidos usam o último uso disponível ao mesmo tempo.
         if (resolvedCouponId) {
@@ -1049,7 +1042,7 @@ export async function createOrderHandler(request: Request): Promise<Response> {
             ));
         }
       } catch (err) {
-        console.error("[createOrder] stock/coupon background task failed:", err);
+        console.error("[createOrder] coupon usage tracking failed:", err);
       }
     })());
 
@@ -1255,16 +1248,35 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     const now = new Date();
     const finalPaymentMethod = body.paymentMethod || existingOrder.paymentMethod;
 
+    // Loja com PDV não pode concretizar "delivered" por aqui — o botão de
+    // avançar do kanban virava um atalho de um clique que marcava a venda
+    // como paga sem forma de pagamento real confirmada. Precisa passar pelo
+    // encerramento na aba Delivery do PDV primeiro (que seta concretizedAt).
+    // Pedidos que já foram concretizados por lá (concretizedAt setado, ex:
+    // fluxo normal delivering→delivered pós-"Expedir") passam direto — é só
+    // uma atualização de status, sem reprocessar nada.
+    if (body.status === "delivered" && existingOrder.concretizedAt === null) {
+      const [storeRow] = await db
+        .select({ pdvEnabled: stores.pdvEnabled, plan: stores.plan, planStatus: stores.planStatus })
+        .from(stores)
+        .where(eq(stores.id, storeId))
+        .limit(1);
+      if (hasPdvAccess(storeRow)) {
+        return new Response(JSON.stringify({
+          error: "Encerre esse pedido pela aba Delivery do PDV antes de marcar como entregue/retirado.",
+        }), { status: 409, headers: { "content-type": "application/json" } });
+      }
+    }
+
     const statusPatch: Record<string, unknown> = {
       status:    body.status,
       updatedAt: now,
       ...(body.status === "delivered" && { deliveredAt: now }),
       ...(body.status === "cancelled" && { cancelledAt: now }),
       ...(body.paymentMethod && { paymentMethod: body.paymentMethod }),
-      ...(body.status === "delivered" && { paymentStatus: "paid" }),
     };
 
-    // Transação atômica: status + timeline + lançamento financeiro (se delivered)
+    // Transação atômica: status + timeline + reserva de estoque + financeiro
     await db.transaction(async (tx) => {
       // Ativa a RLS real para esta transação (db vem de createTenantDbTransactional,
       // role sem BYPASSRLS) — sem isso a conexão não tem contexto de loja nenhum.
@@ -1280,16 +1292,38 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
         note:    statusLabels[body.status] || body.status,
       });
 
-      if (body.status === "delivered" && finalPaymentMethod) {
-        // Evita lançamento duplicado se o pedido for concluído mais de uma vez
-        const existingEntry = await tx.query.financeiroLancamentos.findFirst({
-          where: and(
-            eq(financeiroLancamentos.orderId, body.orderId),
-            eq(financeiroLancamentos.storeId, storeId),
-          ),
-          columns: { id: true },
+      if (body.status === "cancelled" && existingOrder.concretizedAt === null) {
+        // Pedido ainda não concretizado — libera a reserva sem nunca ter
+        // mexido no estoque físico. Cancelar uma venda já concretizada é um
+        // caso de estorno/devolução, fora de escopo aqui (não mexe em nada,
+        // igual já era antes dessa mudança).
+        const items = await tx.query.orderItems.findMany({
+          where: eq(orderItems.orderId, body.orderId),
+          columns: { productId: true, productName: true, quantity: true },
         });
-        if (!existingEntry) {
+        await releaseReservation(tx, storeId, items);
+      }
+
+      if (body.status === "delivered" && finalPaymentMethod) {
+        // Idempotência: o UPDATE só bate a primeira vez (guard concretizedAt
+        // IS NULL) — evita concretizar estoque/financeiro duas vezes numa
+        // corrida de clique duplo ou evento fora de ordem.
+        const [claimed] = await tx.update(orders)
+          .set({ concretizedAt: now, paymentStatus: "paid" })
+          .where(and(
+            eq(orders.id, body.orderId),
+            eq(orders.storeId, storeId),
+            isNull(orders.concretizedAt),
+          ))
+          .returning({ id: orders.id });
+
+        if (claimed) {
+          const items = await tx.query.orderItems.findMany({
+            where: eq(orderItems.orderId, body.orderId),
+            columns: { productId: true, productName: true, quantity: true },
+          });
+          await concretizeReservation(tx, storeId, items, body.orderId, existingOrder.number);
+
           const today = now.toISOString().split("T")[0];
           await tx.insert(financeiroLancamentos).values({
             storeId,
@@ -1375,12 +1409,19 @@ export async function createCouponHandler(request: Request, auth?: AuthContext):
     discount: string;
     minOrderValue?: string;
     maxUses?: number;
+    validFrom?: string;
     expiresAt?: string;
     active?: boolean;
   };
 
   if (!body.code || !body.type || !body.discount) {
     return new Response(JSON.stringify({ error: "code, type e discount obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
+  }
+
+  const validFrom = body.validFrom ? new Date(body.validFrom) : null;
+  const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+  if (validFrom && expiresAt && validFrom >= expiresAt) {
+    return new Response(JSON.stringify({ error: "A data \"De\" precisa ser antes da data \"Até\"" }), { status: 400, headers: { "content-type": "application/json" } });
   }
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -1400,7 +1441,8 @@ export async function createCouponHandler(request: Request, auth?: AuthContext):
       discount: body.discount,
       minOrderValue: body.minOrderValue || "0",
       maxUses: body.maxUses || null,
-      expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+      validFrom,
+      expiresAt,
       active: body.active !== false,
     }).returning();
 
@@ -1512,6 +1554,40 @@ export async function listSuppliersHandler(request: Request, auth?: AuthContext)
     return new Response(JSON.stringify({ suppliers: filtered.slice(0, 20) }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("List suppliers error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── Search Customers (busca leve — combobox, sem estatísticas de pedido) ──
+export async function searchCustomersHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const url = new URL(request.url);
+  const q = (url.searchParams.get("q") || "").toLowerCase();
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = await createUnscopedDb(dbUrl, storeId);
+
+  try {
+    const rows = await db.select({ id: customers.id, name: customers.name, phone: customers.phone })
+      .from(customers)
+      .where(and(eq(customers.storeId, storeId), eq(customers.active, true)));
+
+    const filtered = q
+      ? rows.filter(c => c.name.toLowerCase().includes(q) || (c.phone || "").includes(q))
+      : rows;
+    return new Response(JSON.stringify({ customers: filtered.slice(0, 20) }), { status: 200, headers: { "content-type": "application/json" } });
+  } catch (error) {
+    console.error("Search customers error:", error);
     return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
   }
 }
@@ -1655,6 +1731,10 @@ export async function validatePublicCouponHandler(request: Request): Promise<Res
 
     if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) {
       return new Response(JSON.stringify({ error: "Cupom expirado" }), { status: 400, headers: { "content-type": "application/json" } });
+    }
+
+    if (coupon.validFrom && new Date(coupon.validFrom) > new Date()) {
+      return new Response(JSON.stringify({ error: "Cupom ainda não é válido" }), { status: 400, headers: { "content-type": "application/json" } });
     }
 
     const minOrder = parseFloat(coupon.minOrderValue || "0");

@@ -137,6 +137,11 @@ function RootComponent() {
   // <html class="dark"> em si, que o admin continua controlando normalmente.
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isAdminRoute = pathname.startsWith("/admin");
+  // Reforça no DOM (não só via <meta name="google"> em store.tsx) que a
+  // loja pública nunca deve ser traduzida pelo navegador — o tradutor
+  // reescreve texto direto no DOM por fora do React, e ao reconciliar
+  // contra esses nós alterados a UI quebra (preços, botões, frases soltas).
+  const isStorefront = pathname.startsWith("/store");
   // Vira o container do Portal do Radix (ver src/lib/portal-container.tsx) —
   // precisa ser estado (não só ref) para que o Provider seja re-renderizado
   // assim que o nó existir no DOM.
@@ -147,7 +152,11 @@ function RootComponent() {
       <ThemeProvider active={isAdminRoute}>
         <div
           ref={setPortalContainer}
-          className={isAdminRoute ? "contents" : "contents theme-light-locked"}
+          className={
+            isAdminRoute
+              ? "contents"
+              : `contents theme-light-locked${isStorefront ? " notranslate" : ""}`
+          }
         >
           <PortalContainerContext.Provider value={portalContainer}>
             <Outlet />

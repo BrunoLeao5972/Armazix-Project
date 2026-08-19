@@ -769,16 +769,26 @@ export async function getCouponsHandler(request: Request, auth?: AuthContext): P
   try {
     const storeCoupons = await db.select().from(schema.coupons).where(eq(schema.coupons.storeId, storeId));
 
-    const couponsList = storeCoupons.map(c => ({
-      id: c.id,
-      code: c.code,
-      type: c.type,
-      discount: c.type === "percent" ? `${c.discount}%` : c.type === "fixed" ? `R$ ${parseFloat(c.discount).toFixed(2).replace(".", ",")}` : c.discount,
-      uses: c.usedCount || 0,
-      maxUses: c.maxUses || 0,
-      expires: c.expiresAt ? new Date(c.expiresAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "Sem prazo",
-      status: c.active && (!c.expiresAt || new Date(c.expiresAt) > new Date()) ? "active" : "expired",
-    }));
+    const now = new Date();
+    const fmtDateTime = (d: Date) =>
+      d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+    const couponsList = storeCoupons.map(c => {
+      const isExpired   = !c.active || (c.expiresAt && new Date(c.expiresAt) < now);
+      const isScheduled = !isExpired && c.validFrom && new Date(c.validFrom) > now;
+      const status = isExpired ? "expired" : isScheduled ? "scheduled" : "active";
+      return {
+        id: c.id,
+        code: c.code,
+        type: c.type,
+        discount: c.type === "percent" ? `${c.discount}%` : c.type === "fixed" ? `R$ ${parseFloat(c.discount).toFixed(2).replace(".", ",")}` : c.discount,
+        uses: c.usedCount || 0,
+        maxUses: c.maxUses || 0,
+        starts: c.validFrom ? fmtDateTime(new Date(c.validFrom)) : null,
+        expires: c.expiresAt ? fmtDateTime(new Date(c.expiresAt)) : "Sem prazo",
+        status,
+      };
+    });
 
     return new Response(JSON.stringify({ coupons: couponsList }), {
       status: 200, headers: { "content-type": "application/json" },

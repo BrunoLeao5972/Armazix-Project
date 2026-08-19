@@ -253,6 +253,10 @@ export interface StoreProduct {
   rating: string | null;
   reviewCount: number | null;
   allowObservation: boolean | null;
+  isMadeToOrder: boolean | null;
+  madeToOrderLeadTime: number | null;
+  madeToOrderLeadTimeUnit: "days" | "hours" | null;
+  showPrice: boolean | null;
   trackStock: boolean | null;
   promoConfig: PromoConfig | null;
   variationGroups: Array<{
@@ -330,4 +334,46 @@ export function resolveStoreSlug(): string | null {
 export function formatPrice(value: string | number): string {
   const n = typeof value === "string" ? parseFloat(value) : value;
   return n.toFixed(2).replace(".", ",");
+}
+
+/**
+ * Mensagem de "sob encomenda" pra mostrar no produto. Com prazo informado,
+ * monta "Sob encomenda — prazo de N dia(s)/hora(s)"; sem prazo, cai na
+ * mensagem padrão genérica.
+ */
+export function getMadeToOrderMessage(product: {
+  madeToOrderLeadTime?: number | null;
+  madeToOrderLeadTimeUnit?: "days" | "hours" | null;
+}): string {
+  const { madeToOrderLeadTime: n, madeToOrderLeadTimeUnit: unit } = product;
+  if (!n || n <= 0) return "Sob encomenda — prazo maior de entrega";
+  const unitLabel = unit === "hours" ? (n === 1 ? "hora" : "horas") : n === 1 ? "dia" : "dias";
+  return `Sob encomenda — prazo de ${n} ${unitLabel}`;
+}
+
+/**
+ * Loja em modo catálogo (preço oculto) não deixa adicionar ao carrinho —
+ * vira um link direto pro WhatsApp do lojista perguntando sobre o item.
+ * Mesmo padrão de URL usado no checkout/mini-carrinho (wa.me + texto
+ * codificado), só que pra um produto isolado em vez do carrinho inteiro.
+ */
+export function buildProductInquiryWhatsAppUrl(phone: string, productName: string): string | null {
+  const digits = phone.replace(/\D/g, "");
+  if (!digits) return null;
+  const message = `Olá, tudo bem? Vim pelo link do catálogo e necessito de informações desse item: ${productName}`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+}
+
+/**
+ * Preço deste produto deve aparecer? A loja tem um "Exibir preço" geral
+ * (storeShowsPrice), mas cada produto pode desligar o próprio preço mesmo
+ * com a loja exibindo normalmente — vira modo catálogo só pra esse item.
+ * showPrice === false no produto sempre vence; null/true/undefined herda o
+ * valor da loja.
+ */
+export function productShowsPrice(
+  product: { showPrice?: boolean | null },
+  storeShowsPrice: boolean,
+): boolean {
+  return storeShowsPrice && product.showPrice !== false;
 }

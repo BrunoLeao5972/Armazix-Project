@@ -24,7 +24,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { type CartItem, type ConfiguracaoVitrine, type StorePublicData, resolveStoreSlug, formatPrice, getBaseDeliveryFee } from "@/lib/store-context";
+import { type CartItem, type ConfiguracaoVitrine, type StorePublicData, DEFAULT_PAYMENT_CONFIG, resolveStoreSlug, formatPrice, getBaseDeliveryFee } from "@/lib/store-context";
 import { fetchRetry } from "@/lib/fetch-retry";
 import { PortalContainerContext } from "@/lib/portal-container";
 import { ProfileDrawer } from "@/components/storefront/ProfileDrawer";
@@ -101,6 +101,16 @@ export const useStore = () => useContext(StoreContext);
 
 export const Route = createFileRoute("/store")({
   component: StoreLayout,
+  // O tradutor automático do navegador (Google Tradutor no Chrome/Edge etc.)
+  // reescreve o texto direto no DOM, sem saber de re-renders do React — ao
+  // trocar de página ou o carrinho atualizar um número, o React tenta
+  // reconciliar contra nós que o tradutor já modificou por fora e quebra a
+  // UI. "notranslate" é a tag que o Google reconhece pra nunca oferecer/
+  // aplicar tradução nessa página. Head de rota aninhada, então vale pra
+  // toda a árvore /store/* (index, categorias, checkout, produto...).
+  head: () => ({
+    meta: [{ name: "google", content: "notranslate" }],
+  }),
 });
 
 // ── StoreFooter helpers ───────────────────────────────────────────────────────
@@ -139,7 +149,11 @@ function StoreFooter({ store, isOpen }: { store: StorePublicData; isOpen: boolea
 
   // ── Formas de pagamento ──────────────────────────────────────────────────
   // Cada método só aparece se o grupo ao qual pertence estiver ativo.
-  const payCfg   = store.paymentConfig;
+  // Mesmo fallback que o checkout (store/checkout.tsx) já aplica: lojas que
+  // nunca configuraram paymentConfig (v2) ficam com null no banco, mas ainda
+  // assim aceitam pagamento na entrega com as formas padrão — o rodapé
+  // precisa concordar com o que o checkout realmente aceita.
+  const payCfg   = store.paymentConfig ?? DEFAULT_PAYMENT_CONFIG;
   const onlineOn = payCfg?.online?.enabled   === true;
   const delivOn  = payCfg?.delivery?.enabled === true;
 
@@ -172,19 +186,9 @@ function StoreFooter({ store, isOpen }: { store: StorePublicData; isOpen: boolea
   if (delivOn && payCfg!.delivery.cash.enabled)
     payMethods.push({ key: "cash",   label: "Dinheiro",          icon: Banknote });
 
-  // Fallback: config legada (deprecated) se v2 não estiver preenchida
-  if (!payCfg && store.paymentMethodsConfig) {
-    const legacyMap: Record<string, PayMethod> = {
-      pix:         { key: "pix",    label: "PIX",               icon: QrCode },
-      card:        { key: "credit", label: "Cartão de Crédito", icon: CreditCard },
-      debit:       { key: "debit",  label: "Cartão de Débito",  icon: CreditCard },
-      cash:        { key: "cash",   label: "Dinheiro",          icon: Banknote },
-      mercadopago: { key: "mp",     label: "Mercado Pago",      icon: Wallet,    accent: "#009ee3" },
-    };
-    store.paymentMethodsConfig
-      .filter(m => m.enabled)
-      .forEach(m => { const mapped = legacyMap[m.key]; if (mapped) payMethods.push(mapped); });
-  }
+  // Sem fallback pra paymentMethodsConfig (legado/deprecated) — checkout.tsx
+  // já não usa mais essa config, então o rodapé segue a mesma fonte de
+  // verdade em vez de poder divergir do que é realmente aceito na compra.
 
   // ── Links e endereço ─────────────────────────────────────────────────────
   const waRaw   = (store.whatsappPhone || store.phone || "").replace(/\D/g, "");

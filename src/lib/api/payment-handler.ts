@@ -1,12 +1,13 @@
-import { createDb } from "@/lib/db";
+import { createDb, createTenantDbTransactional, setTenantContext } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { and, eq, sql } from "drizzle-orm";
 import { encrypt, decrypt } from "@/lib/crypto";
 import { requireStoreOwner, type AuthContext } from "@/lib/auth/require-store-access";
 import { waitUntil } from "@/lib/execution-context";
 import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
+import { reserveStock, releaseReservation, StockReservationError } from "@/lib/inventory/stock-reservation";
 
-const { stores, orders, orderItems, products } = schema;
+const { stores, orders, orderItems } = schema;
 
 const MP_API = "https://api.mercadopago.com";
 
@@ -121,58 +122,70 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
     return json({ error: priced.error }, priced.status);
   }
 
-  // Create the order with status awaiting_payment
-  const [maxOrder] = await db
-    .select({ max: sql<number>`COALESCE(MAX(${orders.number}), 0)` })
-    .from(orders)
-    .where(eq(orders.storeId, body.storeId));
+  // Pedido + itens + reserva de estoque — tudo numa transação com RLS real:
+  // se a reserva falhar (estoque insuficiente), a transação inteira desfaz e
+  // o pedido nunca chega a ser criado (nem a preferência do MP, abaixo).
+  // Antes essa dedução era direta em `stock`, sem checar trackStock/
+  // allowNegativeStock e sem nunca ser restaurada se o pagamento falhasse —
+  // agora vira reserva, liberada pelo webhook se o pagamento não se confirmar.
+  const tenantDb = await createTenantDbTransactional(dbUrl, body.storeId);
+  let order: typeof orders.$inferSelect;
+  try {
+    order = await tenantDb.transaction(async (tx) => {
+      await tx.execute(setTenantContext(body.storeId));
 
-  const nextNumber = (Number(maxOrder?.max) || 0) + 1;
+      const [maxOrder] = await tx
+        .select({ max: sql<number>`COALESCE(MAX(${orders.number}), 0)` })
+        .from(orders)
+        .where(eq(orders.storeId, body.storeId));
+      const nextNumber = (Number(maxOrder?.max) || 0) + 1;
 
-  const [order] = await db.insert(orders).values({
-    storeId: body.storeId,
-    number: nextNumber,
-    status: "received",
-    type: body.type || "delivery",
-    paymentMethod: "mercadopago",
-    paymentStatus: "pending",
-    subtotal: priced.subtotal,
-    deliveryFee: priced.deliveryFee,
-    discount: priced.discount,
-    total: priced.total,
-    couponId: priced.couponId,
-    addressSnapshot: body.addressSnapshot || null,
-    estimatedDelivery: body.estimatedDelivery ? new Date(body.estimatedDelivery) : null,
-  }).returning();
+      await reserveStock(tx, body.storeId, priced.items, store.allowNegativeStock !== false);
 
-  // Insert order items
-  await db.insert(orderItems).values(priced.items.map((item) => ({
-    orderId: order.id,
-    productId: item.productId,
-    productName: item.productName,
-    productEmoji: item.productEmoji,
-    productImage: item.productImage,
-    quantity: item.quantity,
-    unitPrice: item.unitPrice,
-    additionsTotal: item.additionsTotal,
-    total: item.total,
-    additionsSnapshot: item.additionsSnapshot,
-    notes: item.notes,
-  })));
+      const [insertedOrder] = await tx.insert(orders).values({
+        storeId: body.storeId,
+        number: nextNumber,
+        status: "received",
+        type: body.type || "delivery",
+        paymentMethod: "mercadopago",
+        paymentStatus: "pending",
+        subtotal: priced.subtotal,
+        deliveryFee: priced.deliveryFee,
+        discount: priced.discount,
+        total: priced.total,
+        couponId: priced.couponId,
+        addressSnapshot: body.addressSnapshot || null,
+        estimatedDelivery: body.estimatedDelivery ? new Date(body.estimatedDelivery) : null,
+      }).returning();
 
-  // Insert timeline entry
-  await db.insert(schema.orderTimeline).values({
-    orderId: order.id,
-    status: "received",
-    note: "Pedido criado — aguardando pagamento via Mercado Pago",
-  });
+      await Promise.all([
+        tx.insert(orderItems).values(priced.items.map((item) => ({
+          orderId: insertedOrder.id,
+          productId: item.productId,
+          productName: item.productName,
+          productEmoji: item.productEmoji,
+          productImage: item.productImage,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          additionsTotal: item.additionsTotal,
+          total: item.total,
+          additionsSnapshot: item.additionsSnapshot,
+          notes: item.notes,
+        }))),
+        tx.insert(schema.orderTimeline).values({
+          orderId: insertedOrder.id,
+          status: "received",
+          note: "Pedido criado — aguardando pagamento via Mercado Pago",
+        }),
+      ]);
 
-  // Deduct stock
-  for (const item of priced.items) {
-    await db
-      .update(products)
-      .set({ stock: sql`${products.stock} - ${item.quantity}`, updatedAt: new Date() })
-      .where(and(eq(products.id, item.productId), eq(products.storeId, body.storeId)));
+      return insertedOrder;
+    });
+  } catch (err) {
+    if (err instanceof StockReservationError) {
+      return json({ error: err.message }, 400);
+    }
+    throw err;
   }
 
   // Build the origin URL for back_urls and notification_url
@@ -410,7 +423,7 @@ function mapPaymentStatus(status?: string): PaymentOutcome {
 
 async function applyPaymentOutcome(
   db: ReturnType<typeof createDb>,
-  order: { id: string; paymentStatus: string | null; gatewayPaymentId: string | null },
+  order: { id: string; storeId: string; paymentStatus: string | null; gatewayPaymentId: string | null; concretizedAt: Date | null },
   paymentId: string,
   rawStatus: string | undefined,
   outcome: PaymentOutcome,
@@ -448,6 +461,23 @@ async function applyPaymentOutcome(
     status:  outcome.orderStatus,
     note:    `Pagamento ${rawStatus ?? outcome.paymentStatus} via Mercado Pago`,
   });
+
+  // Pagamento recusado/estornado antes de a venda ser concretizada — libera
+  // a reserva de estoque sem nunca ter mexido no estoque físico (a dedução
+  // real só acontece na concretização, ver stock-reservation.ts). Sem isso o
+  // estoque reservado na criação do pedido ficava preso pra sempre.
+  if (outcome.orderStatus === "cancelled" && order.concretizedAt === null) {
+    const items = await db
+      .select({ productId: orderItems.productId, productName: orderItems.productName, quantity: orderItems.quantity })
+      .from(orderItems)
+      .where(eq(orderItems.orderId, order.id));
+
+    const tenantDb = await createTenantDbTransactional(process.env.DATABASE_URL!, order.storeId);
+    await tenantDb.transaction(async (tx) => {
+      await tx.execute(setTenantContext(order.storeId));
+      await releaseReservation(tx, order.storeId, items);
+    });
+  }
 }
 
 // ─── POST /api/payments/mp-token ────────────────────────────────

@@ -576,12 +576,13 @@ function AdminLayout() {
 
       {/* ── Main content ───────────────────────────────────────────────────── */}
       <div
-        className={`flex-1 flex flex-col min-w-0 transition-[margin] duration-200 ${
+        className={`flex-1 flex flex-col min-w-0 h-screen overflow-hidden transition-[margin] duration-200 ${
           collapsed ? "lg:ml-[68px]" : "lg:ml-[240px]"
         }`}
       >
-        {/* Topbar */}
-        <header className="h-16 border-b border-border/50 bg-surface sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 shrink-0">
+        {/* Topbar — não precisa mais de "sticky": a coluna inteira agora tem
+            altura travada em h-screen, então quem rola é só o <main> abaixo. */}
+        <header className="h-16 border-b border-border/50 bg-surface z-30 flex items-center justify-between px-4 sm:px-6 shrink-0">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileOpen(true)}

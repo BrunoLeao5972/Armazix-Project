@@ -1,12 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Star, Minus, Plus, Heart, Share2, Truck, Clock, Shield,
-  ChevronLeft, Loader2, CheckCircle2, Package, MapPin, Search,
+  ChevronLeft, Loader2, CheckCircle2, Package, MapPin, Search, MessageCircle,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../store";
-import { type StoreProduct, formatPrice, getBaseDeliveryFee } from "@/lib/store-context";
+import { type StoreProduct, formatPrice, getBaseDeliveryFee, getMadeToOrderMessage, buildProductInquiryWhatsAppUrl, productShowsPrice } from "@/lib/store-context";
 import { getEffectivePrice, type PromoConfig } from "@/lib/promo-engine";
 
 export const Route = createFileRoute("/store/product/$productId")({
@@ -54,7 +54,11 @@ function ProductPage() {
   const [cepError,   setCepError]   = useState("");
   const cepInputRef = useRef<HTMLInputElement>(null);
 
-  const { store, addToCart, favorites, toggleFavorite } = useStore();
+  const { store, addToCart, favorites, toggleFavorite, configuracaoVitrine } = useStore();
+  const showPrice = productShowsPrice(product ?? {}, configuracaoVitrine.exibirPreco);
+  const whatsappUrl = !showPrice && product
+    ? buildProductInquiryWhatsAppUrl(configuracaoVitrine.telefoneWhatsapp || "", product.name)
+    : null;
 
   useEffect(() => {
     if (!store?.id) return;
@@ -275,7 +279,20 @@ function ProductPage() {
   };
 
   // ── Barra de ações ────────────────────────────────────────────────────────
-  const ActionBar = ({ compact = false }: { compact?: boolean }) => (
+  // Sem preço visível (modo catálogo), não faz sentido oferecer quantidade +
+  // adicionar ao carrinho — vira um botão único que manda uma mensagem pro
+  // WhatsApp do lojista perguntando sobre este produto.
+  const ActionBar = ({ compact = false }: { compact?: boolean }) => whatsappUrl ? (
+    <a
+      href={whatsappUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`flex items-center justify-center gap-2 h-11 rounded-xl font-semibold text-sm bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-md ${compact ? "" : "mt-1"}`}
+    >
+      <MessageCircle className="w-4 h-4" />
+      Perguntar no WhatsApp
+    </a>
+  ) : (
     <div className={`flex items-center gap-3 ${compact ? "" : "pt-1"}`}>
       <div className="flex items-center rounded-xl border border-border/60 overflow-hidden shrink-0">
         <button
@@ -448,20 +465,29 @@ function ProductPage() {
           )}
 
           {/* Preço — substituído pela variação "opcional" quando selecionada */}
-          <div className="flex items-end gap-2.5">
-            <span className="text-[2rem] font-black text-emerald-600 tabular-nums leading-none">
-              R$ {formatPrice(baseUnitPrice)}
-            </span>
-            {!hasSubstitutiveSelection && displayOld && displayOld > displayPrice && (
-              <span className="text-base text-slate-400 line-through tabular-nums mb-0.5">
-                R$ {formatPrice(displayOld)}
+          {showPrice ? (
+            <div className="flex items-end gap-2.5">
+              <span className="text-[2rem] font-black text-emerald-600 tabular-nums leading-none">
+                R$ {formatPrice(baseUnitPrice)}
               </span>
-            )}
-          </div>
+              {!hasSubstitutiveSelection && displayOld && displayOld > displayPrice && (
+                <span className="text-base text-slate-400 line-through tabular-nums mb-0.5">
+                  R$ {formatPrice(displayOld)}
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="text-lg font-semibold text-muted-foreground">Sob consulta</p>
+          )}
 
           {/* Badges de apoio */}
           <div className="flex flex-wrap gap-2">
-            {store?.deliveryEstimate && (
+            {product.isMadeToOrder && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold">
+                <Clock className="w-3 h-3" /> {getMadeToOrderMessage(product)}
+              </span>
+            )}
+            {!product.isMadeToOrder && store?.deliveryEstimate && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100 text-xs font-medium">
                 <Clock className="w-3 h-3" /> {store.deliveryEstimate}
               </span>

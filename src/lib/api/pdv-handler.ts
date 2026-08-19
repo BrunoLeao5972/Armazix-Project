@@ -1,12 +1,14 @@
-import { createDb, createDbTransactional, createUnscopedDb } from "@/lib/db";
+import { createDb, createDbTransactional, createUnscopedDb, createTenantDbTransactional, setTenantContext } from "@/lib/db";
 import { schema } from "@/lib/db";
-import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
-import { getPlan } from "@/lib/plans";
+import { hasPdvAccess } from "@/lib/plans";
+import { concretizeReservation } from "@/lib/inventory/stock-reservation";
 
 const {
   caixaSessoes, caixaMovimentos, financeiroLancamentos,
-  mesas, orders, products, stockMovements, stores,
+  mesas, orders, orderItems, orderTimeline, products, stockMovements, stores,
+  servicePointSessions,
 } = schema;
 
 const JSON_HDR = { "content-type": "application/json" };
@@ -35,8 +37,7 @@ async function requirePdvAccess(storeId: string): Promise<Response | null> {
     .where(eq(stores.id, storeId))
     .limit(1);
 
-  const hasPdvAccess = !!store?.pdvEnabled || getPlan(store?.plan).pdvIncluded;
-  if (!hasPdvAccess || store?.planStatus !== "active") {
+  if (!hasPdvAccess(store)) {
     return err("PDV não contratado para esta loja. Ative o add-on em Configurações → Planos.", 402);
   }
   return null;
@@ -329,6 +330,7 @@ export async function finalizarVendaPdvHandler(
   const body = await request.json() as {
     sessaoId: string;
     mesaLabel?: string;
+    servicePointId?: string;
     paymentMethod: string;
     installments?: number;
     items: {
@@ -387,6 +389,20 @@ export async function finalizarVendaPdvHandler(
       notes:         body.mesaLabel ? `PDV — ${body.mesaLabel}` : "PDV",
       deliveredAt:   new Date(),
     }).returning();
+
+    // 1b. Se veio de um ponto de atendimento (mesa/comanda) aberto pelo
+    // mapa, fecha a sessão e vincula o pedido — best effort: se não achar
+    // sessão aberta (venda direta, sem passar pelo mapa), não falha a
+    // venda inteira.
+    if (body.servicePointId) {
+      await tx.update(servicePointSessions)
+        .set({ closedAt: new Date(), orderId: order.id })
+        .where(and(
+          eq(servicePointSessions.servicePointId, body.servicePointId),
+          eq(servicePointSessions.storeId, storeId),
+          isNull(servicePointSessions.closedAt),
+        ));
+    }
 
     // 2. Itens
     await tx.insert(schema.orderItems).values(
@@ -465,6 +481,151 @@ export async function finalizarVendaPdvHandler(
 
   return json({ success: true, order: result.order, lancamento: result.lancamento }, 201);
 }
+
+// ─── POST /api/pdv/encerrar-encomenda ─────────────────────────────
+// Encerra um pedido de delivery/retirada do site que chegou como "encomenda
+// pendente" (reserva de estoque, ainda sem forma de pagamento real
+// confirmada): concretiza a reserva (baixa real de estoque), grava o
+// lançamento financeiro atrelado à sessão de caixa aberta, e — se
+// `expedir` — avança o pedido pro status "Saiu para entrega" (o kanban já
+// imprime a ficha de entrega automaticamente nessa transição, se
+// configurado). Diferente do resto deste arquivo, usa
+// createTenantDbTransactional (RLS real) em vez do createDbTransactional
+// (BYPASSRLS) do resto do arquivo — código novo segue o padrão mais
+// hardened em vez de copiar o padrão antigo por inércia.
+const VALID_CLOSE_PAYMENT_METHODS = ["pix", "card", "debit", "cash", "mercadopago"];
+
+export async function encerrarEncomendaHandler(
+  request: Request, auth?: AuthContext,
+): Promise<Response> {
+  let storeId: string;
+  try { ({ storeId } = await requireStoreAccess(auth)); }
+  catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
+
+  const pdvBlocked = await requirePdvAccess(storeId);
+  if (pdvBlocked) return pdvBlocked;
+
+  const body = await request.json() as {
+    sessaoId: string;
+    orderId: string;
+    paymentMethod: string;
+    installments?: number;
+    expedir?: boolean;
+  };
+  if (!body.sessaoId || !body.orderId || !body.paymentMethod) {
+    return err("sessaoId, orderId e paymentMethod obrigatórios");
+  }
+  if (!VALID_CLOSE_PAYMENT_METHODS.includes(body.paymentMethod)) {
+    return err("Método de pagamento inválido");
+  }
+
+  const db = createDb(process.env.DATABASE_URL!);
+
+  const [sessao] = await db
+    .select({ id: caixaSessoes.id, status: caixaSessoes.status })
+    .from(caixaSessoes)
+    .where(and(eq(caixaSessoes.id, body.sessaoId), eq(caixaSessoes.storeId, storeId)))
+    .limit(1);
+  if (!sessao || sessao.status !== "aberta") return err("Sessão de caixa não encontrada ou encerrada", 409);
+
+  const [existingOrder] = await db
+    .select({ id: orders.id, concretizedAt: orders.concretizedAt })
+    .from(orders)
+    .where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)))
+    .limit(1);
+  if (!existingOrder) return err("Pedido não encontrado", 404);
+  if (existingOrder.concretizedAt !== null) return err("Pedido já foi encerrado", 409);
+
+  const tenantDb = await createTenantDbTransactional(process.env.DATABASE_URL!, storeId);
+
+  try {
+    const result = await tenantDb.transaction(async (tx) => {
+      await tx.execute(setTenantContext(storeId));
+
+      const now = new Date();
+      const novoStatus = body.expedir ? "delivering" : "delivered";
+
+      // Guard atômico de idempotência: o WHERE só bate a primeira vez
+      // (concretized_at IS NULL) — evita concretizar duas vezes numa
+      // corrida de clique duplo.
+      const [claimed] = await tx.update(orders)
+        .set({
+          paymentMethod: body.paymentMethod,
+          paymentStatus: "paid",
+          status:        novoStatus,
+          installments:  body.installments && body.installments > 1 ? body.installments : 1,
+          concretizedAt: now,
+          ...(novoStatus === "delivered" && { deliveredAt: now }),
+          updatedAt:     now,
+        })
+        .where(and(
+          eq(orders.id, body.orderId),
+          eq(orders.storeId, storeId),
+          isNull(orders.concretizedAt),
+        ))
+        .returning();
+
+      if (!claimed) {
+        throw new AlreadyClosedError();
+      }
+
+      const items = await tx.query.orderItems.findMany({
+        where: eq(orderItems.orderId, body.orderId),
+        columns: { productId: true, productName: true, quantity: true },
+      });
+
+      await concretizeReservation(tx, storeId, items, body.orderId, claimed.number);
+
+      const todayStr = today();
+      const [lancamento] = await tx.insert(financeiroLancamentos).values({
+        storeId,
+        tipo:            "entrada",
+        categoria:       "venda",
+        descricao:       `Encomenda encerrada — Pedido #${claimed.number}`,
+        valor:           claimed.total,
+        metodoPagamento: body.paymentMethod,
+        status:          "liquidado",
+        dataCompetencia: todayStr,
+        dataPagamento:   todayStr,
+        orderId:         body.orderId,
+        sessaoId:        body.sessaoId,
+      }).returning();
+
+      const totalVal = parseFloat(claimed.total) || 0;
+      const updateSet: Record<string, unknown> = {
+        totalVendas: sql`${caixaSessoes.totalVendas} + 1`,
+      };
+      if (body.paymentMethod === "cash")        updateSet.totalDinheiro = sql`${caixaSessoes.totalDinheiro} + ${totalVal}`;
+      else if (body.paymentMethod === "pix")    updateSet.totalPix      = sql`${caixaSessoes.totalPix}      + ${totalVal}`;
+      else if (body.paymentMethod === "card")   updateSet.totalCartao   = sql`${caixaSessoes.totalCartao}   + ${totalVal}`;
+      else if (body.paymentMethod === "debit")  updateSet.totalDebito   = sql`${caixaSessoes.totalDebito}   + ${totalVal}`;
+      else                                       updateSet.totalOutros   = sql`${caixaSessoes.totalOutros}   + ${totalVal}`;
+
+      await tx.update(caixaSessoes)
+        .set(updateSet)
+        .where(eq(caixaSessoes.id, body.sessaoId));
+
+      await tx.insert(orderTimeline).values({
+        orderId: body.orderId,
+        status:  novoStatus,
+        note:    body.expedir
+          ? "Encomenda encerrada e expedida pelo PDV"
+          : "Encomenda encerrada pelo PDV",
+      });
+
+      return { order: claimed, lancamento };
+    });
+
+    return json({ success: true, order: result.order, lancamento: result.lancamento }, 200);
+  } catch (e) {
+    if (e instanceof AlreadyClosedError) {
+      return err("Pedido já foi encerrado", 409);
+    }
+    throw e;
+  }
+}
+
+class AlreadyClosedError extends Error {}
 
 // ─── GET /api/pdv/financeiro — Lançamentos para tela financeiro ──
 export async function listFinanceiroLancamentosHandler(

@@ -10,11 +10,13 @@ import {
   Star,
   Loader2,
   ChevronRight,
+  Clock,
+  MessageCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStore } from "../store";
-import { type StoreProduct, type StoreCategory, formatPrice } from "@/lib/store-context";
+import { type StoreProduct, type StoreCategory, formatPrice, buildProductInquiryWhatsAppUrl, productShowsPrice } from "@/lib/store-context";
 import { fetchRetry } from "@/lib/fetch-retry";
 import { getEffectivePrice } from "@/lib/promo-engine";
 import { CategoryIcon } from "@/lib/category-icons";
@@ -367,7 +369,7 @@ function StoreHome() {
                         onAdd={handleAdd}
                         isFavorite={favorites.includes(p.id)}
                         onToggleFavorite={toggleFavorite}
-                        showPrice={configuracaoVitrine.exibirPreco}
+                        showPrice={productShowsPrice(p, configuracaoVitrine.exibirPreco)}
                         highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
                         primaryColor={configuracaoVitrine.corPrimaria}
                         layoutType="list"
@@ -393,7 +395,7 @@ function StoreHome() {
                             onAdd={handleAdd}
                             isFavorite={favorites.includes(p.id)}
                             onToggleFavorite={toggleFavorite}
-                            showPrice={configuracaoVitrine.exibirPreco}
+                            showPrice={productShowsPrice(p, configuracaoVitrine.exibirPreco)}
                             highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
                             primaryColor={configuracaoVitrine.corPrimaria}
                           />
@@ -432,7 +434,7 @@ function StoreHome() {
                       onAdd={handleAdd}
                       isFavorite={favorites.includes(p.id)}
                       onToggleFavorite={toggleFavorite}
-                      showPrice={configuracaoVitrine.exibirPreco}
+                      showPrice={productShowsPrice(p, configuracaoVitrine.exibirPreco)}
                       highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
                       primaryColor={configuracaoVitrine.corPrimaria}
                       layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'}
@@ -474,7 +476,7 @@ function StoreHome() {
                     onAdd={handleAdd}
                     isFavorite={favorites.includes(product.id)}
                     onToggleFavorite={toggleFavorite}
-                    showPrice={configuracaoVitrine.exibirPreco}
+                    showPrice={productShowsPrice(product, configuracaoVitrine.exibirPreco)}
                     highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
                     primaryColor={configuracaoVitrine.corPrimaria}
                     layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'}
@@ -532,6 +534,10 @@ export function ProductCard({
   layoutType?: 'grid' | 'list';
 }) {
   const [added, setAdded] = useState(false);
+  const { configuracaoVitrine } = useStore();
+  const whatsappUrl = !showPrice
+    ? buildProductInquiryWhatsAppUrl(configuracaoVitrine.telefoneWhatsapp || "", product.name)
+    : null;
   const promoResult = getEffectivePrice(product.price, product.promoConfig, "store");
   const price = promoResult.effectivePrice;
   const oldPrice = promoResult.promoActive
@@ -575,6 +581,11 @@ export function ProductCard({
                 {promoResult.promoActive ? "PROMO" : `-${discount}%`}
               </Badge>
             )}
+            {product.isMadeToOrder && (
+              <Badge className="absolute bottom-1 right-1 flex items-center gap-0.5 rounded-full bg-amber-600 text-white border-0 text-[9px] px-1">
+                <Clock className="w-2.5 h-2.5" />Encomenda
+              </Badge>
+            )}
           </div>
 
           {/* Info */}
@@ -595,15 +606,28 @@ export function ProductCard({
             )}
           </div>
 
-          {/* Add button */}
-          <button
-            onClick={handleAdd}
-            className="w-9 h-9 rounded-xl text-white flex items-center justify-center shrink-0 mr-3 transition-transform active:scale-95"
-            style={{ backgroundColor: primaryColor }}
-            aria-label="Adicionar"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
+          {/* Add button — vira link do WhatsApp quando o preço está oculto */}
+          {whatsappUrl ? (
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 mr-3 transition-transform active:scale-95"
+              aria-label="Perguntar no WhatsApp"
+            >
+              <MessageCircle className="w-4 h-4" />
+            </a>
+          ) : (
+            <button
+              onClick={handleAdd}
+              className="w-9 h-9 rounded-xl text-white flex items-center justify-center shrink-0 mr-3 transition-transform active:scale-95"
+              style={{ backgroundColor: primaryColor }}
+              aria-label="Adicionar"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </Link>
     );
@@ -633,6 +657,11 @@ export function ProductCard({
           {!promoResult.promoActive && discount > 0 && (
             <Badge className="absolute bottom-2 left-2 rounded-full bg-rose-600 text-white border-0 text-[10px]">
               -{discount}%
+            </Badge>
+          )}
+          {product.isMadeToOrder && (
+            <Badge className="absolute bottom-2 right-2 flex items-center gap-0.5 rounded-full bg-amber-600 text-white border-0 text-[10px]">
+              <Clock className="w-3 h-3" />Encomenda
             </Badge>
           )}
 
@@ -685,23 +714,50 @@ export function ProductCard({
 
             <div className="mt-2 flex items-center justify-between">
               <span className="text-[11px] text-slate-500">Ver opções</span>
-              <button
-                onClick={handleAdd}
-                className="md:hidden w-8 h-8 rounded-full text-white flex items-center justify-center"
-                style={{ backgroundColor: primaryColor }}
-                aria-label="Adicionar"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-              <motion.button
-                onClick={handleAdd}
-                animate={added ? { scale: [1, 0.92, 1] } : {}}
-                className="hidden md:flex h-9 px-4 rounded-xl text-xs font-semibold items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity text-white"
-                style={{ backgroundColor: primaryColor }}
-              >
-                <ShoppingBag className="w-3.5 h-3.5" />
-                Adicionar à Sacola
-              </motion.button>
+              {whatsappUrl ? (
+                <>
+                  <a
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="md:hidden w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center"
+                    aria-label="Perguntar no WhatsApp"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                  </a>
+                  <a
+                    href={whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => e.stopPropagation()}
+                    className="hidden md:flex h-9 px-4 rounded-xl bg-emerald-500 text-xs font-semibold items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity text-white"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    Perguntar no WhatsApp
+                  </a>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={handleAdd}
+                    className="md:hidden w-8 h-8 rounded-full text-white flex items-center justify-center"
+                    style={{ backgroundColor: primaryColor }}
+                    aria-label="Adicionar"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                  <motion.button
+                    onClick={handleAdd}
+                    animate={added ? { scale: [1, 0.92, 1] } : {}}
+                    className="hidden md:flex h-9 px-4 rounded-xl text-xs font-semibold items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity text-white"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    Adicionar à Sacola
+                  </motion.button>
+                </>
+              )}
             </div>
           </div>
         </div>

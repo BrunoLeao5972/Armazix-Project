@@ -574,6 +574,9 @@ async function resolveCoupon(
   if (cupom.expiresAt && new Date(cupom.expiresAt) < new Date()) {
     return { error: "Cupom expirado", status: 400 };
   }
+  if (cupom.validFrom && new Date(cupom.validFrom) > new Date()) {
+    return { error: "Cupom ainda não é válido", status: 400 };
+  }
   if (cupom.maxUses !== null && (cupom.usedCount ?? 0) >= cupom.maxUses) {
     return { error: "Cupom esgotado", status: 400 };
   }

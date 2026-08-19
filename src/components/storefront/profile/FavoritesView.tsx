@@ -3,7 +3,7 @@ import { Heart, Loader2 } from "lucide-react";
 import { useCustomerFavoriteProducts } from "@/lib/customer-profile-hooks";
 import { ProductCard } from "@/routes/store/index";
 import { getEffectivePrice } from "@/lib/promo-engine";
-import type { CartItem, ConfiguracaoVitrine, StoreProduct } from "@/lib/store-context";
+import { productShowsPrice, type CartItem, type ConfiguracaoVitrine, type StoreProduct } from "@/lib/store-context";
 
 export function FavoritesView({
   token, configuracaoVitrine, addToCart, toggleFavorite,
@@ -58,7 +58,7 @@ export function FavoritesView({
           onAdd={handleAdd}
           isFavorite
           onToggleFavorite={handleToggle}
-          showPrice={configuracaoVitrine.exibirPreco}
+          showPrice={productShowsPrice(product, configuracaoVitrine.exibirPreco)}
           highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
           primaryColor={configuracaoVitrine.corPrimaria}
         />

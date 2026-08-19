@@ -16,6 +16,8 @@ import { Separator } from "@/components/ui/separator";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
+import { imprimirComandaProducao, imprimirFichaEntrega } from "@/lib/print/print-order";
+import { hasPdvAccess } from "@/lib/plans";
 
 const PrintOrderDialog = lazy(() => import("./-modal-imprimir-pedido"));
 
@@ -181,124 +183,6 @@ function fmtDate(iso: string) {
   } catch { return ""; }
 }
 
-// ── Print agent utilities (mirrors printers.tsx) ─────────────────────────────
-const AGENT_URL = "http://localhost:3989";
-
-export function isNetworkPath(path: string): boolean {
-  const t = path.trim();
-  if (!t || t.startsWith("\\\\")) return false;
-  if (/^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?$/.test(t)) return true;
-  if (/^[\w-]+(?:\.[\w-]+)+(?::\d+)?$/.test(t)) return true;
-  return false;
-}
-
-export async function sendViaAgent(printerName: string, escposB64: string): Promise<void> {
-  const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20_000);
-  try {
-    const res  = await fetch(`${AGENT_URL}/print`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printer_name: printerName, escpos_b64: escposB64 }),
-      signal: ctrl.signal,
-    });
-    const data = await res.json() as { success?: boolean; error?: string };
-    if (!data.success) throw new Error(data.error ?? "Impressora não respondeu");
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// ── Auto-print helpers ────────────────────────────────────────────────────────
-function printViaIframe(html: string) {
-  const iframe = document.createElement("iframe");
-  iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:0;opacity:0";
-  document.body.appendChild(iframe);
-  const doc = iframe.contentDocument!;
-  doc.open(); doc.write(html); doc.close();
-  iframe.contentWindow?.focus();
-  iframe.contentWindow?.print();
-  setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 2000);
-}
-
-function buildPrintHtml(text: string): string {
-  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:11px;line-height:1.5;width:40ch;padding:8px;background:#fff;color:#000}pre{white-space:pre-wrap}@media print{@page{margin:4mm;size:58mm auto}body{width:100%}}</style>
-    </head><body><pre>${esc}</pre></body></html>`;
-}
-
-function buildBrowserText(order: Order, layout: "production" | "ficha"): string {
-  const sep = "=".repeat(36);
-  const lin = "-".repeat(36);
-  if (layout === "production") {
-    return [
-      sep, `  COMANDA DE PRODUCAO  #${order.number}`, sep,
-      `Cliente : ${order.customer}`,
-      `Tipo    : ${order.type === "pickup" ? "Retirada no local" : "Delivery"}`,
-      `Horario : ${fmtDate(order.rawDate)} ${fmtTime(order.rawDate)}`,
-      lin, `ITENS:`, ...order.items.map(i => `  ${i}`), lin,
-      `TOTAL: ${order.total}`, sep,
-    ].join("\n");
-  }
-  return [
-    sep, `  FICHA DE ENTREGA  #${order.number}`, sep,
-    `Cliente   : ${order.customer}`,
-    ...(order.address && order.type !== "pickup" ? [`Endereco  : ${order.address}`] : []),
-    lin, `ITENS:`, ...order.items.map(i => `  ${i}`), lin,
-    `TOTAL     : ${order.total}`,
-    `Pagamento : ${PAY_LABEL[order.payment] ?? order.payment}`,
-    sep,
-  ].join("\n");
-}
-
-// `onFallback` avisa a UI sempre que a impressão automática não sai direto
-// pela impressora configurada e cai para o preview do navegador — sem isso,
-// uma impressora de rede offline (ou o agente local fechado) falhava
-// completamente em silêncio, sem imprimir nada e sem qualquer aviso.
-async function autoPrint(order: Order, layout: "production" | "ficha", onFallback?: (reason: string) => void): Promise<void> {
-  try {
-    const listData = await fetch("/api/printers/list").then(r => r.json()) as { printers?: PrinterRecord[] };
-    const printer  = listData.printers?.[0];
-
-    if (!printer) {
-      onFallback?.("Nenhuma impressora cadastrada — abrindo impressão no navegador");
-      printViaIframe(buildPrintHtml(buildBrowserText(order, layout)));
-      return;
-    }
-
-    const res  = await api.post("/api/printers/print-order", {
-      printerId: printer.id,
-      orderId:   order.orderId,
-      layout,
-      send:      isNetworkPath(printer.path ?? ""),
-    });
-    const data = await res.json() as { sent?: boolean; escposB64?: string; error?: string };
-
-    if (data.sent) return;
-
-    if (!isNetworkPath(printer.path ?? "") && data.escposB64) {
-      await sendViaAgent(printer.path!, data.escposB64);
-      return;
-    }
-
-    // Impressora de rede configurada mas o envio TCP falhou (offline/IP
-    // errado) — ou nenhuma via de envio disponível. Sem este fallback o
-    // pedido não imprimia nada e não avisava ninguém.
-    onFallback?.(data.error || "Não foi possível enviar para a impressora — abrindo impressão no navegador");
-    printViaIframe(buildPrintHtml(buildBrowserText(order, layout)));
-  } catch {
-    onFallback?.("Agente de impressão não encontrado — abrindo impressão no navegador");
-    printViaIframe(buildPrintHtml(buildBrowserText(order, layout)));
-  }
-}
-
-function imprimirComandaProducao(order: Order, onFallback?: (reason: string) => void) {
-  autoPrint(order, "production", onFallback).catch(() => {});
-}
-function imprimirFichaEntrega(order: Order, onFallback?: (reason: string) => void) {
-  autoPrint(order, "ficha", onFallback).catch(() => {});
-}
 
 // ─── Toast (mesmo padrão usado nas demais páginas admin) ────────────────────
 function Toast({ msg, type }: { msg: string; type: "success" | "error" }) {
@@ -311,8 +195,6 @@ function Toast({ msg, type }: { msg: string; type: "success" | "error" }) {
     </div>
   );
 }
-
-export interface PrinterRecord { id: string; name: string; code: string; type: string; path: string | null; columns: number | null; }
 
 // ── OrderCard ─────────────────────────────────────────────────────────────────
 const PAY_OPTIONS = [
@@ -598,13 +480,15 @@ function OrdersPage() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // Detecta se a loja tem PDV com base no plano
+  // Detecta se a loja tem PDV — mesma regra do backend (requirePdvAccess em
+  // pdv-handler.ts): addon pago (pdvEnabled) OU plano que já inclui PDV
+  // (Pro/Full), com assinatura ativa. Checar só "plan === full" deixava loja
+  // Pro ou com addon avulso tratada como "sem PDV" aqui.
   useEffect(() => {
     api.get("/api/store/user")
       .then(r => r.json())
-      .then((d: { store?: { plan?: string } }) => {
-        const plan = d.store?.plan ?? "free";
-        setHasPdv(plan === "full");
+      .then((d: { store?: { plan?: string; pdvEnabled?: boolean; planStatus?: string } }) => {
+        setHasPdv(hasPdvAccess(d.store));
       })
       .catch(() => {});
   }, []);

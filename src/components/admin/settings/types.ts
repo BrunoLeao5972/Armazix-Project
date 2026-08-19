@@ -1,4 +1,5 @@
 import type { DeliveryModelConfig } from "@/components/admin/DeliveryPricingConfig";
+import type { PaymentConfig } from "@/lib/store-context";
 
 export interface StoreData {
   id: string;
@@ -37,4 +38,9 @@ export interface StoreData {
     zip: string;
     complement?: string;
   };
+  /** Modelo v2 de formas de pagamento aceitas (loja online) — null = nunca configurado, usa DEFAULT_PAYMENT_CONFIG. */
+  paymentConfig?: PaymentConfig | null;
+  mpPublicKey?: string | null;
+  /** Derivado no servidor a partir de mpAccessToken (nunca exposto). */
+  mpConnected?: boolean;
 }

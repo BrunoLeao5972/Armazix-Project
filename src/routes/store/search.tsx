@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useStore } from "../store";
-import { type StoreProduct, formatPrice } from "@/lib/store-context";
+import { type StoreProduct, formatPrice, productShowsPrice } from "@/lib/store-context";
 import { getEffectivePrice } from "@/lib/promo-engine";
 import { ProductCard } from "./index";
 
@@ -69,7 +69,7 @@ function SearchPage() {
               {results.map(product => (
                 <ProductCard key={product.id} product={product} onAdd={handleAdd}
                   isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite}
-                  showPrice={configuracaoVitrine.exibirPreco} highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                  showPrice={productShowsPrice(product, configuracaoVitrine.exibirPreco)} highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
                   primaryColor={configuracaoVitrine.corPrimaria} layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'} />
               ))}
             </div>
@@ -90,7 +90,7 @@ function SearchPage() {
               {activeProducts.slice(0, 8).map(product => (
                 <ProductCard key={product.id} product={product} onAdd={handleAdd}
                   isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite}
-                  showPrice={configuracaoVitrine.exibirPreco} highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+                  showPrice={productShowsPrice(product, configuracaoVitrine.exibirPreco)} highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
                   primaryColor={configuracaoVitrine.corPrimaria} layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'} />
               ))}
             </div>

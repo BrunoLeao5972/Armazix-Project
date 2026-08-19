@@ -6,6 +6,7 @@ import {
   type StoreProduct,
   type StorePublicData,
   formatPrice,
+  productShowsPrice,
 } from "@/lib/store-context";
 import {
   CheckCircle2,
@@ -353,7 +354,9 @@ function PublicStorefrontPage() {
   };
 
   const goToCheckout = () => {
-    if (cart.length === 0) return;
+    // Loja em modo catálogo (sem preço) — fechar pedido formal não se
+    // aplica; dúvida sobre item vira WhatsApp direto no card/detalhe.
+    if (cart.length === 0 || !configuracaoVitrine.exibirPreco) return;
     setOrderDone(false);
     setOrderError(null);
     setShowCheckout(true);
@@ -394,12 +397,13 @@ function PublicStorefrontPage() {
     <ProductCard
       key={product.id}
       product={product}
-      showPrice={configuracaoVitrine.exibirPreco}
+      showPrice={productShowsPrice(product, configuracaoVitrine.exibirPreco)}
       highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
       onAdd={() => addToCart(product)}
       onOpenDetail={() => setSelectedProduct(product)}
       primaryColor={primaryColor}
       layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'}
+      whatsappPhone={configuracaoVitrine.telefoneWhatsapp}
     />
   );
 
@@ -924,11 +928,12 @@ function PublicStorefrontPage() {
       <ProductDetailModal
         product={selectedProduct}
         open={selectedProduct !== null}
-        showPrice={configuracaoVitrine.exibirPreco}
+        showPrice={productShowsPrice(selectedProduct ?? {}, configuracaoVitrine.exibirPreco)}
         highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
         primaryColor={primaryColor}
         onClose={() => setSelectedProduct(null)}
         onAddToCart={(product, obs) => { addToCart(product, obs); setSelectedProduct(null); }}
+        whatsappPhone={configuracaoVitrine.telefoneWhatsapp}
       />
 
       {/* ── Modal de checkout ─────────────────────────────────────── */}

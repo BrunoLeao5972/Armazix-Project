@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Heart } from "lucide-react";
-import { type StoreProduct, formatPrice } from "@/lib/store-context";
+import { Heart, MessageCircle } from "lucide-react";
+import { type StoreProduct, formatPrice, buildProductInquiryWhatsAppUrl } from "@/lib/store-context";
 
 interface ProductCardProps {
   product: StoreProduct;
@@ -10,6 +10,7 @@ interface ProductCardProps {
   onOpenDetail: () => void;
   primaryColor: string;
   layoutType?: 'grid' | 'list';
+  whatsappPhone?: string | null;
 }
 
 export function ProductCard({
@@ -20,8 +21,10 @@ export function ProductCard({
   onOpenDetail,
   primaryColor,
   layoutType = 'grid',
+  whatsappPhone,
 }: ProductCardProps) {
   const [isFavorite, setIsFavorite] = useState(false);
+  const whatsappUrl = !showPrice ? buildProductInquiryWhatsAppUrl(whatsappPhone || "", product.name) : null;
 
   const hasPromo =
     !!product.compareAtPrice && parseFloat(product.compareAtPrice) > parseFloat(product.price);
@@ -88,6 +91,13 @@ export function ProductCard({
               </div>
             </div>
           )}
+          {product.isMadeToOrder && (
+            <div className="absolute bottom-1 right-1">
+              <div className="px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold">
+                Encomenda
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Content */}
@@ -116,20 +126,33 @@ export function ProductCard({
           )}
         </div>
 
-        {/* Add button */}
+        {/* Add button — vira link do WhatsApp quando o preço está oculto */}
         <div className="flex flex-col items-center justify-end self-stretch pb-3 pr-3">
-          <button
-            onClick={(e) => { e.stopPropagation(); if (!outOfStock) onAdd(); }}
-            disabled={outOfStock}
-            className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center transition-all text-lg ${
-              outOfStock
-                ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                : "text-white hover:opacity-90 active:scale-95"
-            }`}
-            style={outOfStock ? undefined : { backgroundColor: primaryColor }}
-          >
-            +
-          </button>
+          {whatsappUrl ? (
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center hover:opacity-90 active:scale-95 transition-all"
+              aria-label="Perguntar no WhatsApp"
+            >
+              <MessageCircle className="w-4 h-4" />
+            </a>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); if (!outOfStock) onAdd(); }}
+              disabled={outOfStock}
+              className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center transition-all text-lg ${
+                outOfStock
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  : "text-white hover:opacity-90 active:scale-95"
+              }`}
+              style={outOfStock ? undefined : { backgroundColor: primaryColor }}
+            >
+              +
+            </button>
+          )}
         </div>
       </div>
     );
@@ -180,6 +203,15 @@ export function ProductCard({
           <div className="absolute bottom-3 left-3">
             <div className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
               -{discountPercent}%
+            </div>
+          </div>
+        )}
+
+        {/* Made-to-order Badge - Bottom Right */}
+        {product.isMadeToOrder && (
+          <div className="absolute bottom-3 right-3">
+            <div className="px-2.5 py-1 rounded-full bg-amber-500 text-white text-[11px] font-semibold">
+              Sob Encomenda
             </div>
           </div>
         )}
@@ -242,24 +274,37 @@ export function ProductCard({
           <p className="text-xs text-slate-500 pt-1">Sob consulta</p>
         )}
 
-        {/* Add to Cart Button */}
-        <button
-          onClick={(e) => { e.stopPropagation(); if (!outOfStock) onAdd(); }}
-          disabled={outOfStock}
-          className={`w-full h-11 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all mt-3 ${
-            outOfStock
-              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-              : "text-white hover:opacity-90 active:scale-[0.98]"
-          }`}
-          style={outOfStock ? undefined : { backgroundColor: primaryColor }}
-        >
-          {outOfStock ? "Esgotado" : (
-            <>
-              <span className="text-lg">+</span>
-              Adicionar
-            </>
-          )}
-        </button>
+        {/* Add to Cart Button — vira link do WhatsApp quando o preço está oculto */}
+        {whatsappUrl ? (
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="w-full h-11 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all mt-3 bg-emerald-500 text-white hover:opacity-90 active:scale-[0.98]"
+          >
+            <MessageCircle className="w-4 h-4" />
+            Perguntar no WhatsApp
+          </a>
+        ) : (
+          <button
+            onClick={(e) => { e.stopPropagation(); if (!outOfStock) onAdd(); }}
+            disabled={outOfStock}
+            className={`w-full h-11 rounded-lg font-semibold flex items-center justify-center gap-2 transition-all mt-3 ${
+              outOfStock
+                ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                : "text-white hover:opacity-90 active:scale-[0.98]"
+            }`}
+            style={outOfStock ? undefined : { backgroundColor: primaryColor }}
+          >
+            {outOfStock ? "Esgotado" : (
+              <>
+                <span className="text-lg">+</span>
+                Adicionar
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -34,6 +34,8 @@ const EMPTY_FORM: ProductForm = {
   costPrice: "", lowStockThreshold: "5",
   sku: "", barcode: "", pdvCode: "", unit: "un", images: [],
   badge: "", categoryId: "", trackStock: false, status: "ativo", allowObservation: false,
+  isMadeToOrder: false, madeToOrderLeadTime: "", madeToOrderLeadTimeUnit: "days",
+  showPrice: true,
   variationGroups: [], promoConfig: null,
   productType: "Produto", isWeightScale: false,
 };
@@ -564,6 +566,10 @@ export default function ProductFormModal({
         trackStock: editing.trackStock === true,
         status: editing.active === null ? "suspenso" : editing.active === false ? "inativo" : "ativo",
         allowObservation: editing.allowObservation === true,
+        isMadeToOrder: editing.isMadeToOrder === true,
+        madeToOrderLeadTime: editing.madeToOrderLeadTime !== null && editing.madeToOrderLeadTime !== undefined ? String(editing.madeToOrderLeadTime) : "",
+        madeToOrderLeadTimeUnit: editing.madeToOrderLeadTimeUnit || "days",
+        showPrice: editing.showPrice !== false,
         variationGroups: editing.variationGroups || [],
         promoConfig: editing.promoConfig || null,
         productType: (editing.productType as ProductType) || "Produto",
@@ -694,6 +700,11 @@ export default function ProductFormModal({
         trackStock: form.trackStock,
         active: form.status === "suspenso" ? null : form.status === "inativo" ? false : true,
         allowObservation: form.allowObservation,
+        isMadeToOrder: form.isMadeToOrder,
+        madeToOrderLeadTime: form.isMadeToOrder && form.madeToOrderLeadTime.trim() !== ""
+          ? Math.max(1, Number(form.madeToOrderLeadTime) || 0) : null,
+        madeToOrderLeadTimeUnit: form.isMadeToOrder ? form.madeToOrderLeadTimeUnit : null,
+        showPrice: form.showPrice,
         promoConfig: form.promoConfig?.enabled ? form.promoConfig : null,
         productType: form.productType,
         isWeightScale: form.isWeightScale,
@@ -1031,6 +1042,60 @@ export default function ProductFormModal({
                   }`} />
                 </button>
               </div>
+
+              <div className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20">
+                <div>
+                  <p className="text-sm font-medium">Pedido sob encomenda</p>
+                  <p className="text-xs text-muted-foreground">Mostra um destaque avisando o cliente que o produto não é pronta-entrega</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.isMadeToOrder}
+                  onClick={() => set("isMadeToOrder", !form.isMadeToOrder)}
+                  className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                    form.isMadeToOrder ? "bg-primary" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                    form.isMadeToOrder ? "translate-x-5" : "translate-x-0"
+                  }`} />
+                </button>
+              </div>
+
+              {form.isMadeToOrder && (
+                <div className="p-3.5 rounded-xl border border-border bg-secondary/20 space-y-2">
+                  <Field label="Prazo de produção" hint="Opcional">
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        min="1"
+                        placeholder="Ex: 5"
+                        value={form.madeToOrderLeadTime}
+                        onChange={e => set("madeToOrderLeadTime", e.target.value)}
+                        className="h-10 rounded-xl flex-1"
+                      />
+                      <div className="flex rounded-xl overflow-hidden border border-border shrink-0">
+                        {(["days", "hours"] as const).map(u => (
+                          <button key={u} type="button" onClick={() => set("madeToOrderLeadTimeUnit", u)}
+                            className={`px-3 h-10 text-xs font-semibold transition-colors ${
+                              form.madeToOrderLeadTimeUnit === u
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-card text-muted-foreground hover:bg-secondary"
+                            }`}>
+                            {u === "days" ? "Dias" : "Horas"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </Field>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {form.madeToOrderLeadTime.trim() !== ""
+                      ? `Mostra: "Sob encomenda — prazo de ${form.madeToOrderLeadTime} ${form.madeToOrderLeadTimeUnit === "days" ? "dia(s)" : "hora(s)"}"`
+                      : 'Sem prazo informado, mostra: "Sob encomenda — prazo maior de entrega"'}
+                  </p>
+                </div>
+              )}
             </>
           )}
 
@@ -1044,6 +1109,26 @@ export default function ProductFormModal({
                     onChange={e => set("price", e.target.value)} className="h-10 rounded-xl pl-8 font-semibold" />
                 </div>
               </Field>
+
+              <div className="flex items-center justify-between p-3.5 rounded-xl border border-border bg-secondary/20">
+                <div>
+                  <p className="text-sm font-medium">Exibir preço</p>
+                  <p className="text-xs text-muted-foreground">Desligado, vira modo catálogo só pra este item — o botão de comprar vira "Perguntar no WhatsApp", mesmo com o resto da loja mostrando preço</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.showPrice}
+                  onClick={() => set("showPrice", !form.showPrice)}
+                  className={`w-11 h-6 rounded-full transition-colors duration-200 relative shrink-0 ${
+                    form.showPrice ? "bg-primary" : "bg-muted-foreground/30"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
+                    form.showPrice ? "translate-x-5" : "translate-x-0"
+                  }`} />
+                </button>
+              </div>
 
               <Field label="Preço de Custo (R$)" hint="Não exibido na vitrine">
                 <div className="relative">

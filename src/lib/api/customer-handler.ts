@@ -639,6 +639,7 @@ export async function getCustomerCouponsHandler(request: Request): Promise<Respo
     const now = new Date();
     const valid = rows.filter(c =>
       (!c.expiresAt || new Date(c.expiresAt) > now) &&
+      (!c.validFrom || new Date(c.validFrom) <= now) &&
       (c.maxUses == null || (c.usedCount ?? 0) < c.maxUses),
     );
 

@@ -578,6 +578,21 @@ function CheckoutPage() {
     finally { setSubmitting(false); }
   };
 
+  // ── Loja em modo catálogo (sem preço) — checkout formal não se aplica;
+  // dúvidas sobre item viram WhatsApp direto no card/detalhe do produto,
+  // nunca fecham pedido sem preço nenhum ter sido mostrado. ─────────────────
+  if (!configuracaoVitrine.exibirPreco && !confirmed) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+        <ShoppingBag className="w-12 h-12 text-muted-foreground/40 mb-3" />
+        <p className="text-sm text-muted-foreground max-w-xs">
+          Esta loja está em modo catálogo — fale pelo WhatsApp direto no produto pra saber preço e fechar seu pedido.
+        </p>
+        <Link to="/store" className="mt-3 text-sm font-semibold text-primary">Voltar à loja</Link>
+      </div>
+    );
+  }
+
   // ── Carrinho vazio ────────────────────────────────────────────────────────
   if (cart.length === 0 && !confirmed) {
     return (

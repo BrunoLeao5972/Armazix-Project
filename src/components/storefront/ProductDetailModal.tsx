@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { X, ShoppingBag, Star } from "lucide-react";
-import { type StoreProduct, formatPrice } from "@/lib/store-context";
+import { X, ShoppingBag, Star, Clock, MessageCircle } from "lucide-react";
+import { type StoreProduct, formatPrice, getMadeToOrderMessage, buildProductInquiryWhatsAppUrl } from "@/lib/store-context";
 
 interface ProductDetailModalProps {
   product: StoreProduct | null;
@@ -10,6 +10,7 @@ interface ProductDetailModalProps {
   primaryColor: string;
   onClose: () => void;
   onAddToCart: (product: StoreProduct, obs: string) => void;
+  whatsappPhone?: string | null;
 }
 
 export function ProductDetailModal({
@@ -20,10 +21,13 @@ export function ProductDetailModal({
   primaryColor,
   onClose,
   onAddToCart,
+  whatsappPhone,
 }: ProductDetailModalProps) {
   const [obs, setObs] = useState("");
 
   if (!open || !product) return null;
+
+  const whatsappUrl = !showPrice ? buildProductInquiryWhatsAppUrl(whatsappPhone || "", product.name) : null;
 
   const hasPromo =
     !!product.compareAtPrice &&
@@ -88,6 +92,11 @@ export function ProductDetailModal({
               -{discountPercent}%
             </div>
           )}
+          {product.isMadeToOrder && (
+            <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-amber-500 text-white text-[11px] font-semibold">
+              Sob Encomenda
+            </div>
+          )}
         </div>
 
         {/* ── Conteúdo ── */}
@@ -146,6 +155,15 @@ export function ProductDetailModal({
             <p className="px-5 pb-3 text-sm text-slate-500">Sob consulta</p>
           )}
 
+          {/* Aviso de sob encomenda */}
+          {product.isMadeToOrder && (
+            <div className="px-5 pb-3">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold">
+                <Clock className="w-3 h-3" /> {getMadeToOrderMessage(product)}
+              </span>
+            </div>
+          )}
+
           {/* Campo de observação condicional */}
           {product.allowObservation === true && (
             <div className="px-5 pb-3 space-y-1.5">
@@ -165,16 +183,28 @@ export function ProductDetailModal({
             </div>
           )}
 
-          {/* Botão adicionar */}
+          {/* Botão adicionar — vira link do WhatsApp quando o preço está oculto */}
           <div className="px-5 pb-5 pt-2 mt-auto">
-            <button
-              onClick={handleAdd}
-              className="w-full h-12 rounded-xl font-semibold text-white flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98]"
-              style={{ backgroundColor: primaryColor }}
-            >
-              <ShoppingBag className="w-5 h-5" />
-              Adicionar ao carrinho
-            </button>
+            {whatsappUrl ? (
+              <a
+                href={whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full h-12 rounded-xl font-semibold text-white flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98] bg-emerald-500"
+              >
+                <MessageCircle className="w-5 h-5" />
+                Perguntar no WhatsApp
+              </a>
+            ) : (
+              <button
+                onClick={handleAdd}
+                className="w-full h-12 rounded-xl font-semibold text-white flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-[0.98]"
+                style={{ backgroundColor: primaryColor }}
+              >
+                <ShoppingBag className="w-5 h-5" />
+                Adicionar ao carrinho
+              </button>
+            )}
           </div>
         </div>
       </div>

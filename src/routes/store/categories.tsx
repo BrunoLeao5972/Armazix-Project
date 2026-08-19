@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useStore } from "../store";
-import { type StoreProduct, type StoreCategory, formatPrice } from "@/lib/store-context";
+import { type StoreProduct, type StoreCategory, formatPrice, productShowsPrice } from "@/lib/store-context";
 import { getEffectivePrice } from "@/lib/promo-engine";
 import { ProductCard } from "./index";
 
@@ -79,7 +79,7 @@ function CategoriesPage() {
           {displayed.map(product => (
             <ProductCard key={product.id} product={product} onAdd={handleAdd}
               isFavorite={favorites.includes(product.id)} onToggleFavorite={toggleFavorite}
-              showPrice={configuracaoVitrine.exibirPreco} highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
+              showPrice={productShowsPrice(product, configuracaoVitrine.exibirPreco)} highlightLowStock={configuracaoVitrine.destacarEstoqueBaixo}
               primaryColor={configuracaoVitrine.corPrimaria} layoutType={configuracaoVitrine.layoutType as 'grid' | 'list'} />
           ))}
         </div>

@@ -41,6 +41,23 @@ export function getPlan(planId: string | null | undefined): PlanDef {
   return (planId && planId in PLANS) ? PLANS[planId as PlanId] : PLANS.free;
 }
 
+/**
+ * Loja tem PDV liberado: ou comprou o add-on separado (pdvEnabled, planos
+ * Free/Start), ou está num plano que já inclui PDV sem custo adicional
+ * (Pro/Full), E a assinatura precisa estar ativa. Fonte única de verdade —
+ * usada tanto pelo gate server-side (pdv-handler.ts) quanto pela checagem
+ * client-side equivalente (pedidos.tsx), pra nunca divergir sobre se uma
+ * loja "tem PDV" ou não.
+ */
+export function hasPdvAccess(store: {
+  pdvEnabled?: boolean | null;
+  plan?: string | null;
+  planStatus?: string | null;
+} | null | undefined): boolean {
+  const pdvUnlocked = !!store?.pdvEnabled || getPlan(store?.plan).pdvIncluded;
+  return pdvUnlocked && store?.planStatus === "active";
+}
+
 /** Formata em R$ com vírgula, ex: 79.9 → "79,90". */
 export function formatPlanPrice(value: number): string {
   return value.toFixed(2).replace(".", ",");

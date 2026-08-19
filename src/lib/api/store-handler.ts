@@ -59,6 +59,9 @@ function toPublicStoreFields(store: typeof stores.$inferSelect & { banners?: unk
     // Chave PÚBLICA do Mercado Pago — não é segredo, é usada no tokenizador
     // do navegador do cliente (mpAccessToken, esse sim, nunca aparece aqui).
     mpPublicKey:            store.mpPublicKey,
+    // Só um booleano derivado — nunca o token em si — pra tela de
+    // Configurações saber se mostra "conectado" sem expor o segredo.
+    mpConnected:            !!store.mpAccessToken,
     paymentMethodsConfig:   store.paymentMethodsConfig,
     deliveryPaymentEnabled: store.deliveryPaymentEnabled,
     deliveryRules:          store.deliveryRules,

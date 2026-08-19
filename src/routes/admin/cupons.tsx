@@ -30,6 +30,7 @@ export const Route = createFileRoute("/admin/cupons")({
 
 const statusConfig: Record<string, { label: string; color: string }> = {
   active: { label: "Ativo", color: "bg-primary/15 text-primary" },
+  scheduled: { label: "Agendado", color: "bg-amber-500/15 text-amber-600" },
   expired: { label: "Expirado", color: "bg-destructive/15 text-destructive" },
 };
 
@@ -40,6 +41,7 @@ interface Coupon {
   discount: string;
   uses: number;
   maxUses: number;
+  starts: string | null;
   expires: string;
   status: string;
 }
@@ -52,9 +54,19 @@ function CouponsPage() {
   const [newType, setNewType] = useState("percent");
   const [newDiscount, setNewDiscount] = useState("");
   const [newMaxUses, setNewMaxUses] = useState("");
-  const [newExpires, setNewExpires] = useState("");
+  const [newValidFromDate, setNewValidFromDate] = useState("");
+  const [newValidFromTime, setNewValidFromTime] = useState("");
+  const [newExpiresDate, setNewExpiresDate] = useState("");
+  const [newExpiresTime, setNewExpiresTime] = useState("");
   const [creating, setCreating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  // Combina data + hora num datetime local (hora vazia vira início/fim do dia).
+  const combineDateTime = (date: string, time: string, endOfDay: boolean): string | undefined => {
+    if (!date) return undefined;
+    return `${date}T${time || (endOfDay ? "23:59" : "00:00")}:00`;
+  };
 
   useEffect(() => {
     const storeId = localStorage.getItem("storeId");
@@ -82,10 +94,22 @@ function CouponsPage() {
     }
   };
 
+  const fmtDateTime = (iso: string) =>
+    new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
   const handleCreateCoupon = async () => {
     if (!newCode || !newDiscount) return;
     const storeId = localStorage.getItem("storeId");
     if (!storeId) return;
+    setFormError("");
+
+    const validFrom = combineDateTime(newValidFromDate, newValidFromTime, false);
+    const expiresAt = combineDateTime(newExpiresDate, newExpiresTime, true);
+    if (validFrom && expiresAt && new Date(validFrom) >= new Date(expiresAt)) {
+      setFormError('A data "De" precisa ser antes da data "Até"');
+      return;
+    }
+
     setCreating(true);
     try {
       const res = await api.post("/api/coupons/create", {
@@ -94,11 +118,14 @@ function CouponsPage() {
         type: newType,
         discount: newDiscount,
         maxUses: newMaxUses ? Number(newMaxUses) : undefined,
-        expiresAt: newExpires || undefined,
+        validFrom,
+        expiresAt,
       });
       const data = await res.json();
       if (res.ok && data.success) {
         const c = data.coupon;
+        const now = new Date();
+        const isScheduled = c.validFrom && new Date(c.validFrom) > now;
         setCoupons(prev => [...prev, {
           id: c.id,
           code: c.code,
@@ -106,13 +133,17 @@ function CouponsPage() {
           discount: c.type === "percent" ? `${c.discount}%` : `R$ ${parseFloat(c.discount).toFixed(2).replace(".", ",")}`,
           uses: 0,
           maxUses: c.maxUses || 0,
-          expires: c.expiresAt ? new Date(c.expiresAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }) : "Sem prazo",
-          status: "active",
+          starts: c.validFrom ? fmtDateTime(c.validFrom) : null,
+          expires: c.expiresAt ? fmtDateTime(c.expiresAt) : "Sem prazo",
+          status: isScheduled ? "scheduled" : "active",
         }]);
-        setNewCode(""); setNewDiscount(""); setNewMaxUses(""); setNewExpires("");
+        setNewCode(""); setNewDiscount(""); setNewMaxUses("");
+        setNewValidFromDate(""); setNewValidFromTime(""); setNewExpiresDate(""); setNewExpiresTime("");
         setDialogOpen(false);
+      } else {
+        setFormError(data.error || "Erro ao criar cupom");
       }
-    } catch {} finally { setCreating(false); }
+    } catch { setFormError("Erro de conexão"); } finally { setCreating(false); }
   };
 
   if (loading) {
@@ -143,7 +174,7 @@ function CouponsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Cupons</h1>
           <p className="text-sm text-muted-foreground mt-1">Gerencie descontos e promoções</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={open => { setDialogOpen(open); if (open) setFormError(""); }}>
           <DialogTrigger asChild>
             <Button className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow gap-2">
               <Plus className="w-4 h-4" />
@@ -172,16 +203,39 @@ function CouponsPage() {
                   <Input placeholder={newType === "percent" ? "10" : "5.00"} value={newDiscount} onChange={e => setNewDiscount(e.target.value)} className="h-11 rounded-xl" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Usos máximos</Label>
-                  <Input placeholder="100" type="number" value={newMaxUses} onChange={e => setNewMaxUses(e.target.value)} className="h-11 rounded-xl" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Validade</Label>
-                  <Input type="date" value={newExpires} onChange={e => setNewExpires(e.target.value)} className="h-11 rounded-xl" />
-                </div>
+              <div className="space-y-2">
+                <Label>Usos máximos</Label>
+                <Input placeholder="100" type="number" value={newMaxUses} onChange={e => setNewMaxUses(e.target.value)} className="h-11 rounded-xl" />
               </div>
+
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  Validade
+                  <span className="text-xs font-normal text-muted-foreground">(opcional — deixe em branco pra não restringir)</span>
+                </Label>
+                <div className="space-y-2">
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">De</span>
+                    <div className="flex gap-2">
+                      <Input type="date" value={newValidFromDate} onChange={e => setNewValidFromDate(e.target.value)} className="h-11 rounded-xl flex-1 min-w-0" />
+                      <Input type="time" value={newValidFromTime} onChange={e => setNewValidFromTime(e.target.value)} className="h-11 rounded-xl w-28 shrink-0" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">Até</span>
+                    <div className="flex gap-2">
+                      <Input type="date" value={newExpiresDate} onChange={e => setNewExpiresDate(e.target.value)} className="h-11 rounded-xl flex-1 min-w-0" />
+                      <Input type="time" value={newExpiresTime} onChange={e => setNewExpiresTime(e.target.value)} className="h-11 rounded-xl w-28 shrink-0" />
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Sem hora informada, considera início/fim do dia.</p>
+              </div>
+
+              {formError && (
+                <p className="text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">{formError}</p>
+              )}
+
               <Button onClick={handleCreateCoupon} disabled={creating || !newCode || !newDiscount} className="w-full h-11 rounded-xl bg-gradient-primary text-primary-foreground font-semibold">
                 {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Criar cupom"}
               </Button>
@@ -214,6 +268,12 @@ function CouponsPage() {
                         <Percent className="w-3 h-3" />
                         {coupon.discount}
                       </span>
+                      {coupon.starts && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          De {coupon.starts}
+                        </span>
+                      )}
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
                         Até {coupon.expires}

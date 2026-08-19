@@ -11,6 +11,7 @@ import {
   ShieldAlert,
   Truck,
   User,
+  Wallet,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DEFAULT_DELIVERY_MODEL_CONFIG } from "@/components/admin/DeliveryPricingConfig";
@@ -21,6 +22,7 @@ const GeralTab = lazy(() => import("@/components/admin/settings/GeralTab").then(
 const HorariosTab = lazy(() => import("@/components/admin/settings/HorariosTab").then((m) => ({ default: m.HorariosTab })));
 const PersonalizacaoTab = lazy(() => import("@/components/admin/settings/PersonalizacaoTab").then((m) => ({ default: m.PersonalizacaoTab })));
 const EntregaTab = lazy(() => import("@/components/admin/settings/EntregaTab").then((m) => ({ default: m.EntregaTab })));
+const PagamentoTab = lazy(() => import("@/components/admin/settings/PagamentoTab").then((m) => ({ default: m.PagamentoTab })));
 const PerfilTab = lazy(() => import("@/components/admin/settings/PerfilTab").then((m) => ({ default: m.PerfilTab })));
 const PlansSection = lazy(() => import("@/components/admin/settings/PlansSection").then((m) => ({ default: m.PlansSection })));
 const AuditoriaSection = lazy(() => import("@/components/admin/settings/AuditoriaSection").then((m) => ({ default: m.AuditoriaSection })));
@@ -41,6 +43,7 @@ const NAV_ITEMS = [
   { value: "horarios",       label: "Horários",        icon: Clock },
   { value: "personalizacao", label: "Personalização",  icon: Palette },
   { value: "entrega",        label: "Entrega",         icon: Truck },
+  { value: "pagamento",      label: "Pagamento",       icon: Wallet },
   { value: "permissoes",     label: "Permissões",      icon: Shield },
   { value: "perfil",         label: "Perfil",          icon: User },
   { value: "planos",         label: "Planos",          icon: TrendingUp },
@@ -358,6 +361,12 @@ function SettingsPage() {
                   storeLng={storeLng} setStoreLng={setStoreLng}
                   simuladorFreteHabilitado={simuladorFreteHabilitado} setSimuladorFreteHabilitado={setSimuladorFreteHabilitado}
                 />
+              </Suspense>
+            </TabsContent>
+
+            <TabsContent value="pagamento" className="mt-0 space-y-6">
+              <Suspense fallback={<TabFallback />}>
+                <PagamentoTab store={store} setStore={setStore} />
               </Suspense>
             </TabsContent>
 

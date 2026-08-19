@@ -5,7 +5,7 @@ import {
   Plus, Search, Package,
   Hash, LayoutGrid, List, Check,
   TrendingUp, AlertTriangle, CheckCircle2, XCircle, RefreshCw,
-  Pencil, FileDown, Percent, X,
+  Pencil, FileDown, Percent, X, Clock, Copy, Loader2,
 } from "lucide-react";
 import { type PromoConfig, getEffectivePrice } from "@/lib/promo-engine";
 import { escapeHtml } from "@/lib/utils";
@@ -47,6 +47,10 @@ export interface Product {
   trackStock: boolean | null;
   active: boolean | null;
   allowObservation: boolean | null;
+  isMadeToOrder: boolean | null;
+  madeToOrderLeadTime: number | null;
+  madeToOrderLeadTimeUnit: "days" | "hours" | null;
+  showPrice: boolean | null;
   categoryId: string | null;
   promoConfig: PromoConfig | null;
   productType: ProductType | null;
@@ -101,6 +105,10 @@ export interface ProductForm {
   trackStock: boolean;
   status: ProductStatus;
   allowObservation: boolean;
+  isMadeToOrder: boolean;
+  madeToOrderLeadTime: string;
+  madeToOrderLeadTimeUnit: "days" | "hours";
+  showPrice: boolean;
   variationGroups: VariationGroup[];
   promoConfig: PromoConfig | null;
   productType: ProductType;
@@ -186,6 +194,7 @@ function ProductsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [hasOpenedModal, setHasOpenedModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [cloningId, setCloningId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirmDialog();
 
@@ -245,6 +254,52 @@ function ProductsPage() {
 
   const openCreate = () => { setEditing(null); setModalOpen(true); setHasOpenedModal(true); };
   const openEdit = (p: Product) => { setEditing(p); setModalOpen(true); setHasOpenedModal(true); };
+
+  // Duplica um produto existente: cria um novo com os mesmos dados (exceto
+  // código PDV e código de barras, que precisam ser únicos) e já abre pra
+  // edição, pra poupar tempo cadastrando itens parecidos.
+  const handleClone = async (p: Product) => {
+    if (cloningId) return;
+    setCloningId(p.id);
+    try {
+      const payload = {
+        name: `${p.name} (cópia)`,
+        description: p.description || undefined,
+        price: p.price,
+        costPrice: p.costPrice || undefined,
+        lowStockThreshold: p.lowStockThreshold ?? 5,
+        sku: p.sku || undefined,
+        unit: p.unit || "un",
+        imageUrl: p.imageUrl || undefined,
+        images: p.images || [],
+        badge: p.badge || undefined,
+        categoryId: p.categoryId || undefined,
+        trackStock: p.trackStock ?? false,
+        active: p.active,
+        allowObservation: p.allowObservation ?? false,
+        isMadeToOrder: p.isMadeToOrder ?? false,
+        madeToOrderLeadTime: p.madeToOrderLeadTime ?? undefined,
+        madeToOrderLeadTimeUnit: p.madeToOrderLeadTimeUnit ?? undefined,
+        promoConfig: p.promoConfig ?? null,
+        productType: p.productType || undefined,
+        isWeightScale: p.isWeightScale ?? false,
+        variationGroups: p.variationGroups ?? [],
+      };
+      const res = await api.post("/api/products/create", payload);
+      const data = await res.json() as { success?: boolean; product?: Product; error?: string };
+      if (!res.ok || !data.success || !data.product) {
+        showToast(data.error || "Erro ao duplicar produto", "error");
+        return;
+      }
+      setProducts(prev => [...prev, data.product!]);
+      showToast("Produto duplicado — ajuste os dados e salve", "success");
+      openEdit(data.product);
+    } catch {
+      showToast("Erro de rede ao duplicar produto", "error");
+    } finally {
+      setCloningId(null);
+    }
+  };
 
   const filtered = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -414,13 +469,29 @@ function ProductsPage() {
                       <Percent className="w-2.5 h-2.5" /> PROMO
                     </span>
                   )}
+                  {p.isMadeToOrder && (
+                    <span className="absolute bottom-2 right-2 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[9px] font-bold shadow">
+                      <Clock className="w-2.5 h-2.5" /> ENCOMENDA
+                    </span>
+                  )}
                   <div className="absolute top-2 right-2">
                     <StatusDot active={p.active} />
                   </div>
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                 </div>
                 <CardContent className="p-3 space-y-1.5">
-                  <p className="text-sm font-semibold truncate leading-tight">{p.name}</p>
+                  <div className="flex items-start justify-between gap-1.5">
+                    <p className="text-sm font-semibold truncate leading-tight flex-1 min-w-0">{p.name}</p>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); handleClone(p); }}
+                      disabled={cloningId === p.id}
+                      title="Duplicar produto"
+                      className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+                    >
+                      {cloningId === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                   <div className="flex items-center justify-between">
                     <div>
                       {promo.promoActive ? (
@@ -445,7 +516,7 @@ function ProductsPage() {
       ) : (
         /* ── List View ── */
         <Card className="rounded-2xl border-border/50 shadow-soft overflow-hidden">
-          <div className="hidden sm:grid grid-cols-[20px_2fr_1fr_1fr_1fr_40px] gap-4 px-4 py-2.5 bg-secondary/30 border-b border-border/50">
+          <div className="hidden sm:grid grid-cols-[20px_2fr_1fr_1fr_1fr_76px] gap-4 px-4 py-2.5 bg-secondary/30 border-b border-border/50">
             <span />
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Produto</span>
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Categoria</span>
@@ -458,7 +529,7 @@ function ProductsPage() {
               const promoL = getEffectivePrice(p.price, p.promoConfig, "store");
               return (
               <div key={p.id}
-                className={`grid grid-cols-[20px_1fr_40px] sm:grid-cols-[20px_2fr_1fr_1fr_1fr_40px] gap-4 px-4 py-3 hover:bg-secondary/20 transition-colors items-center ${p.active === false ? "opacity-60" : ""}`}>
+                className={`grid grid-cols-[20px_1fr_76px] sm:grid-cols-[20px_2fr_1fr_1fr_1fr_76px] gap-4 px-4 py-3 hover:bg-secondary/20 transition-colors items-center ${p.active === false ? "opacity-60" : ""}`}>
                 {/* Status */}
                 <StatusDot active={p.active} />
                 {/* Name */}
@@ -475,6 +546,11 @@ function ProductsPage() {
                       {p.pdvCode && (
                         <span className="inline-flex items-center gap-0.5 text-[10px] font-mono font-semibold bg-primary/8 text-primary px-1.5 py-0.5 rounded-md border border-primary/20">
                           <Hash className="w-2.5 h-2.5" />{p.pdvCode}
+                        </span>
+                      )}
+                      {p.isMadeToOrder && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold bg-amber-500/10 text-amber-600 px-1.5 py-0.5 rounded-md border border-amber-500/20">
+                          <Clock className="w-2.5 h-2.5" />Encomenda
                         </span>
                       )}
                     </div>
@@ -500,8 +576,17 @@ function ProductsPage() {
                 <div className="hidden sm:flex">
                   <StockBadge product={p} />
                 </div>
-                {/* Edit */}
-                <div className="flex justify-end">
+                {/* Ações */}
+                <div className="flex justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleClone(p)}
+                    disabled={cloningId === p.id}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+                    title="Duplicar produto"
+                  >
+                    {cloningId === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
                   <button
                     type="button"
                     onClick={() => openEdit(p)}
