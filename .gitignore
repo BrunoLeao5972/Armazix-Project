@@ -42,3 +42,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Ambiente Python isolado do gerador de relatório de auditoria de segurança
+# (docs/security-audit/gerar_relatorio.py) — recriar com:
+#   python -m venv docs/security-audit/.venv
+#   docs/security-audit/.venv/Scripts/python.exe -m pip install reportlab matplotlib
+docs/security-audit/.venv/

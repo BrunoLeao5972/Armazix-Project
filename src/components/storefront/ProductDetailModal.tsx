@@ -67,36 +67,42 @@ export function ProductDetailModal({
         className="w-full sm:max-w-2xl bg-white rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-xl max-h-[95dvh] flex flex-col sm:flex-row"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Área da imagem ── */}
-        <div className="relative shrink-0 bg-slate-50 aspect-square w-full sm:w-72 sm:rounded-l-2xl overflow-hidden">
-          {product.imageUrl ? (
-            <img
-              src={product.imageUrl}
-              alt={product.name}
-              className="w-full h-full object-contain"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-7xl">
-              {product.emoji || "📦"}
-            </div>
-          )}
+        {/* ── Área da imagem — caixa quadrada via padding-top, não
+             aspect-ratio (evita o bug do Safari/iOS de recalcular a imagem
+             pro tamanho intrínseco durante o scroll) ── */}
+        <div className="relative shrink-0 w-full sm:w-72">
+          <div className="relative w-full" style={{ paddingTop: "100%" }}>
+            <div className="absolute inset-0 bg-slate-50 sm:rounded-l-2xl overflow-hidden">
+              {product.imageUrl ? (
+                <img
+                  src={product.imageUrl}
+                  alt={product.name}
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-7xl">
+                  {product.emoji || "📦"}
+                </div>
+              )}
 
-          {/* Badges sobre a imagem */}
-          {lowStock && (
-            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-red-500 text-white text-[11px] font-semibold">
-              Últimas unidades
+              {/* Badges sobre a imagem */}
+              {lowStock && (
+                <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-red-500 text-white text-[11px] font-semibold">
+                  Últimas unidades
+                </div>
+              )}
+              {hasPromo && (
+                <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
+                  -{discountPercent}%
+                </div>
+              )}
+              {product.isMadeToOrder && (
+                <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-amber-500 text-white text-[11px] font-semibold">
+                  Sob Encomenda
+                </div>
+              )}
             </div>
-          )}
-          {hasPromo && (
-            <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
-              -{discountPercent}%
-            </div>
-          )}
-          {product.isMadeToOrder && (
-            <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-amber-500 text-white text-[11px] font-semibold">
-              Sob Encomenda
-            </div>
-          )}
+          </div>
         </div>
 
         {/* ── Conteúdo ── */}

@@ -218,6 +218,33 @@ export const AuditActions = {
  */
 export const MERCHANT_HIDDEN_ACTIONS: readonly string[] = [AuditActions.IMPERSONATE];
 
+/**
+ * Subconjunto de AuditActions considerado "crítico" — alteração de valores,
+ * exclusões e estornos — usado pelo relatório "Logs de Alterações Críticas"
+ * (src/lib/api/reports-handler.ts) pra filtrar o volume total de audit_logs
+ * (que também registra ações rotineiras como LOGIN) só no que interessa pra
+ * uma revisão de segurança/auditoria.
+ */
+export const CRITICAL_AUDIT_ACTIONS: readonly string[] = [
+  AuditActions.RECEBER_ATUALIZAR,
+  AuditActions.RECEBER_EXCLUIR,
+  AuditActions.RECEBER_ESTORNAR,
+  AuditActions.PAGAR_ATUALIZAR,
+  AuditActions.PAGAR_EXCLUIR,
+  AuditActions.PAGAR_ESTORNAR,
+  AuditActions.CAIXA_SANGRIA,
+  AuditActions.ESTOQUE_AJUSTE,
+  AuditActions.BALANCO_EDITAR,
+  AuditActions.BALANCO_EXCLUIR,
+  AuditActions.PRODUCT_DELETE,
+  AuditActions.ORDER_DELETE,
+  AuditActions.CUSTOMER_DELETE,
+  AuditActions.PAYMENT_REFUNDED,
+  AuditActions.STORE_DELETE,
+  AuditActions.USER_DELETE,
+  AuditActions.COUPON_DELETE,
+];
+
 // Resource types for consistency
 export const ResourceTypes = {
   USER: "user",

@@ -32,6 +32,16 @@ import {
   getDashboardChartDataHandler,
 } from "./api/stock-handler";
 import {
+  getEstoqueBaixoHandler,
+  getClientesTopHandler,
+  getProdutosLucrativosHandler,
+  getVendasPeriodoHandler,
+  getFluxoCaixaHandler,
+  getLucroBrutoLiquidoHandler,
+  getLogsCriticosHandler,
+  getCategoriasFinanceiroHandler,
+} from "./api/reports-handler";
+import {
   createProductHandler,
   listProductsHandler,
   listProductsAdminHandler,
@@ -322,6 +332,14 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/dashboard/stats": (req, auth) => getDashboardStatsHandler(req, auth),
   "/api/stock/stats": getStockStatsHandler,
   "/api/reports/stats": getReportsStatsHandler,
+  "/api/reports/estoque-baixo": getEstoqueBaixoHandler,
+  "/api/reports/clientes-top": getClientesTopHandler,
+  "/api/reports/produtos-lucrativos": getProdutosLucrativosHandler,
+  "/api/reports/vendas-periodo": getVendasPeriodoHandler,
+  "/api/reports/fluxo-caixa": getFluxoCaixaHandler,
+  "/api/reports/lucro-bruto-liquido": getLucroBrutoLiquidoHandler,
+  "/api/reports/logs-criticos": getLogsCriticosHandler,
+  "/api/reports/categorias-financeiro": getCategoriasFinanceiroHandler,
   "/api/store/business-hours": getBusinessHoursHandler,
   "/api/user/get": getUserDataHandler,
   "/api/financial/stats": getFinancialStatsHandler,

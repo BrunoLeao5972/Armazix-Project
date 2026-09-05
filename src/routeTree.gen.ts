@@ -30,8 +30,6 @@ import { Route as StoreAccountRouteImport } from './routes/store/account'
 import { Route as LojaSlugOuIdRouteImport } from './routes/loja.$slugOuId'
 import { Route as AdminUsuariosRouteImport } from './routes/admin/usuarios'
 import { Route as AdminSetoresRouteImport } from './routes/admin/setores'
-import { Route as AdminRelatoriosPreviewRouteImport } from './routes/admin/relatorios-preview'
-import { Route as AdminRelatoriosDashboardRouteImport } from './routes/admin/relatorios-dashboard'
 import { Route as AdminRelatoriosRouteImport } from './routes/admin/relatorios'
 import { Route as AdminProdutosRouteImport } from './routes/admin/produtos'
 import { Route as AdminPedidosRouteImport } from './routes/admin/pedidos'
@@ -172,17 +170,6 @@ const AdminSetoresRoute = AdminSetoresRouteImport.update({
   path: '/setores',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminRelatoriosPreviewRoute = AdminRelatoriosPreviewRouteImport.update({
-  id: '/relatorios-preview',
-  path: '/relatorios-preview',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminRelatoriosDashboardRoute =
-  AdminRelatoriosDashboardRouteImport.update({
-    id: '/relatorios-dashboard',
-    path: '/relatorios-dashboard',
-    getParentRoute: () => AdminRoute,
-  } as any)
 const AdminRelatoriosRoute = AdminRelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
@@ -384,8 +371,6 @@ export interface FileRoutesByFullPath {
   '/admin/pedidos': typeof AdminPedidosRoute
   '/admin/produtos': typeof AdminProdutosRoute
   '/admin/relatorios': typeof AdminRelatoriosRoute
-  '/admin/relatorios-dashboard': typeof AdminRelatoriosDashboardRoute
-  '/admin/relatorios-preview': typeof AdminRelatoriosPreviewRoute
   '/admin/setores': typeof AdminSetoresRoute
   '/admin/usuarios': typeof AdminUsuariosRoute
   '/loja/$slugOuId': typeof LojaSlugOuIdRoute
@@ -439,8 +424,6 @@ export interface FileRoutesByTo {
   '/admin/pedidos': typeof AdminPedidosRoute
   '/admin/produtos': typeof AdminProdutosRoute
   '/admin/relatorios': typeof AdminRelatoriosRoute
-  '/admin/relatorios-dashboard': typeof AdminRelatoriosDashboardRoute
-  '/admin/relatorios-preview': typeof AdminRelatoriosPreviewRoute
   '/admin/setores': typeof AdminSetoresRoute
   '/admin/usuarios': typeof AdminUsuariosRoute
   '/loja/$slugOuId': typeof LojaSlugOuIdRoute
@@ -499,8 +482,6 @@ export interface FileRoutesById {
   '/admin/pedidos': typeof AdminPedidosRoute
   '/admin/produtos': typeof AdminProdutosRoute
   '/admin/relatorios': typeof AdminRelatoriosRoute
-  '/admin/relatorios-dashboard': typeof AdminRelatoriosDashboardRoute
-  '/admin/relatorios-preview': typeof AdminRelatoriosPreviewRoute
   '/admin/setores': typeof AdminSetoresRoute
   '/admin/usuarios': typeof AdminUsuariosRoute
   '/loja/$slugOuId': typeof LojaSlugOuIdRoute
@@ -560,8 +541,6 @@ export interface FileRouteTypes {
     | '/admin/pedidos'
     | '/admin/produtos'
     | '/admin/relatorios'
-    | '/admin/relatorios-dashboard'
-    | '/admin/relatorios-preview'
     | '/admin/setores'
     | '/admin/usuarios'
     | '/loja/$slugOuId'
@@ -615,8 +594,6 @@ export interface FileRouteTypes {
     | '/admin/pedidos'
     | '/admin/produtos'
     | '/admin/relatorios'
-    | '/admin/relatorios-dashboard'
-    | '/admin/relatorios-preview'
     | '/admin/setores'
     | '/admin/usuarios'
     | '/loja/$slugOuId'
@@ -674,8 +651,6 @@ export interface FileRouteTypes {
     | '/admin/pedidos'
     | '/admin/produtos'
     | '/admin/relatorios'
-    | '/admin/relatorios-dashboard'
-    | '/admin/relatorios-preview'
     | '/admin/setores'
     | '/admin/usuarios'
     | '/loja/$slugOuId'
@@ -870,20 +845,6 @@ declare module '@tanstack/react-router' {
       path: '/setores'
       fullPath: '/admin/setores'
       preLoaderRoute: typeof AdminSetoresRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/relatorios-preview': {
-      id: '/admin/relatorios-preview'
-      path: '/relatorios-preview'
-      fullPath: '/admin/relatorios-preview'
-      preLoaderRoute: typeof AdminRelatoriosPreviewRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/relatorios-dashboard': {
-      id: '/admin/relatorios-dashboard'
-      path: '/relatorios-dashboard'
-      fullPath: '/admin/relatorios-dashboard'
-      preLoaderRoute: typeof AdminRelatoriosDashboardRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/relatorios': {
@@ -1198,8 +1159,6 @@ interface AdminRouteChildren {
   AdminPedidosRoute: typeof AdminPedidosRoute
   AdminProdutosRoute: typeof AdminProdutosRoute
   AdminRelatoriosRoute: typeof AdminRelatoriosRoute
-  AdminRelatoriosDashboardRoute: typeof AdminRelatoriosDashboardRoute
-  AdminRelatoriosPreviewRoute: typeof AdminRelatoriosPreviewRoute
   AdminSetoresRoute: typeof AdminSetoresRoute
   AdminUsuariosRoute: typeof AdminUsuariosRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -1220,8 +1179,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminPedidosRoute: AdminPedidosRoute,
   AdminProdutosRoute: AdminProdutosRoute,
   AdminRelatoriosRoute: AdminRelatoriosRoute,
-  AdminRelatoriosDashboardRoute: AdminRelatoriosDashboardRoute,
-  AdminRelatoriosPreviewRoute: AdminRelatoriosPreviewRoute,
   AdminSetoresRoute: AdminSetoresRoute,
   AdminUsuariosRoute: AdminUsuariosRoute,
   AdminIndexRoute: AdminIndexRoute,

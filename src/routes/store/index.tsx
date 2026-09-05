@@ -563,7 +563,7 @@ export function ProductCard({
 
   if (layoutType === 'list') {
     return (
-      <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group">
+      <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group touch-pan-y">
         <div className="relative bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all group-hover:shadow-md flex items-center gap-3">
           {/* Image */}
           <div className="relative w-24 h-24 shrink-0 bg-slate-100 flex items-center justify-center overflow-hidden rounded-l-2xl">
@@ -634,43 +634,52 @@ export function ProductCard({
   }
 
   return (
-    <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group h-full">
+    <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group h-full touch-pan-y">
       <div className="relative bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all group-hover:shadow-md h-full flex flex-col">
-        {/* Image */}
-        <div className="relative m-2 aspect-square bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
-          {product.imageUrl
-            ? <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain" />
-            : <span className="text-4xl sm:text-5xl">{product.emoji || "📦"}</span>
-          }
+        {/* Image — caixa quadrada via padding-top (não aspect-ratio): o
+            Safari/iOS tem um bug conhecido de recalcular aspect-ratio pro
+            tamanho intrínseco da imagem durante o scroll (reflow do toolbar
+            dinâmico), fazendo a foto "estourar" pro tamanho natural por um
+            instante. padding-top é resolvido pelo box model clássico, sem
+            essa recomputação. */}
+        <div className="relative m-2 shrink-0">
+          <div className="relative w-full" style={{ paddingTop: "100%" }}>
+            <div className="absolute inset-0 bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden">
+              {product.imageUrl
+                ? <img src={product.imageUrl} alt={product.name} className="w-full h-full object-contain" />
+                : <span className="text-4xl sm:text-5xl">{product.emoji || "📦"}</span>
+              }
 
-          {lowStock && (
-            <Badge className="absolute top-2 left-2 rounded-full bg-amber-500/15 text-amber-700 border-0 text-[10px]">
-              Últimas unidades
-            </Badge>
-          )}
+              {lowStock && (
+                <Badge className="absolute top-2 left-2 rounded-full bg-amber-500/15 text-amber-700 border-0 text-[10px]">
+                  Últimas unidades
+                </Badge>
+              )}
 
-          {promoResult.promoActive && (
-            <Badge className="absolute bottom-2 left-2 rounded-full bg-violet-600 text-white border-0 text-[10px]">
-              PROMO
-            </Badge>
-          )}
-          {!promoResult.promoActive && discount > 0 && (
-            <Badge className="absolute bottom-2 left-2 rounded-full bg-rose-600 text-white border-0 text-[10px]">
-              -{discount}%
-            </Badge>
-          )}
-          {product.isMadeToOrder && (
-            <Badge className="absolute bottom-2 right-2 flex items-center gap-0.5 rounded-full bg-amber-600 text-white border-0 text-[10px]">
-              <Clock className="w-3 h-3" />Encomenda
-            </Badge>
-          )}
+              {promoResult.promoActive && (
+                <Badge className="absolute bottom-2 left-2 rounded-full bg-violet-600 text-white border-0 text-[10px]">
+                  PROMO
+                </Badge>
+              )}
+              {!promoResult.promoActive && discount > 0 && (
+                <Badge className="absolute bottom-2 left-2 rounded-full bg-rose-600 text-white border-0 text-[10px]">
+                  -{discount}%
+                </Badge>
+              )}
+              {product.isMadeToOrder && (
+                <Badge className="absolute bottom-2 right-2 flex items-center gap-0.5 rounded-full bg-amber-600 text-white border-0 text-[10px]">
+                  <Clock className="w-3 h-3" />Encomenda
+                </Badge>
+              )}
 
-          <button
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(product.id); }}
-            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/90 backdrop-blur-sm border border-slate-200 flex items-center justify-center"
-          >
-            <Heart className={`w-3.5 h-3.5 transition-colors ${isFavorite ? "fill-rose-500 text-rose-500" : "text-slate-600"}`} />
-          </button>
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(product.id); }}
+                className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/90 backdrop-blur-sm border border-slate-200 flex items-center justify-center"
+              >
+                <Heart className={`w-3.5 h-3.5 transition-colors ${isFavorite ? "fill-rose-500 text-rose-500" : "text-slate-600"}`} />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Info — flex col so price/button are always pinned to bottom */}

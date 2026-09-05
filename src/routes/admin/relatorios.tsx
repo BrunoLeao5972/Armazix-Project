@@ -5,6 +5,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  ResultadoRelatorioModal, RELATORIOS_IMPLEMENTADOS, DEFAULT_FILTROS,
+  type FiltrosDrawer,
+} from "./-modal-resultado-relatorio";
 
 export const Route = createFileRoute("/admin/relatorios")({ component: ReportsPage, head: () => ({ meta: [{ title: "Central de Relatórios — ARMAZIX" }] }) });
 
@@ -38,13 +42,13 @@ const CATALOGO_RELATORIOS: ReportConfig[] = [
   // 🏷️ CADASTRO DE PRODUTOS
   { id: "prod-001", nome: "Lista de Produtos", descricao: "Catálogo completo com preços e estoques", modulo: "produtos", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Package, filtrosDisponiveis: ["produto", "status"] },
   { id: "prod-002", nome: "Produtos por Categoria", descricao: "Organização hierárquica por departamentos", modulo: "produtos", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Tag, filtrosDisponiveis: ["periodo", "produto"] },
-  { id: "prod-003", nome: "Produtos Mais Lucrativos", descricao: "Ranking por margem de contribuição real", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "prod-003", nome: "Produtos Mais Lucrativos", descricao: "Ranking por margem de contribuição real", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo"] },
   { id: "prod-004", nome: "Produtos com Baixa Margem", descricao: "Itens com margem abaixo do esperado", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: Percent, filtrosDisponiveis: ["periodo", "produto"] },
   { id: "prod-005", nome: "Produtos sem Estoque", descricao: "Itens esgotados ou descontinuados", modulo: "produtos", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: AlertCircle, filtrosDisponiveis: ["produto"] },
   { id: "prod-006", nome: "Produtos com Maior Giro", descricao: "Itens mais vendidos por velocidade de rotatividade", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "produto"] },
 
   // 📊 VENDAS & PDV
-  { id: "vnd-001", nome: "Vendas por Período", descricao: "Consolidado completo de vendas diárias, semanais ou mensais", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente"], icone: ShoppingCart, destaque: true, filtrosDisponiveis: ["periodo", "vendedor", "cliente", "formaPagamento", "canal", "status"] },
+  { id: "vnd-001", nome: "Vendas por Período", descricao: "Consolidado completo de vendas diárias, semanais ou mensais", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente"], icone: ShoppingCart, destaque: true, filtrosDisponiveis: ["periodo", "cliente", "formaPagamento", "status"] },
   { id: "vnd-002", nome: "Vendas por Produto", descricao: "Detalhamento de vendas por item com quantidades e valores", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Package, filtrosDisponiveis: ["periodo", "vendedor", "produto", "formaPagamento"] },
   { id: "vnd-003", nome: "Vendas por Cliente", descricao: "Análise de compras por cliente com ticket médio", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente", "vendedor"], icone: User, filtrosDisponiveis: ["periodo", "cliente", "vendedor"] },
   { id: "vnd-004", nome: "Vendas por Forma de Pagamento", descricao: "Distribuição de vendas por meio de pagamento", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: CreditCard, filtrosDisponiveis: ["periodo", "formaPagamento"] },
@@ -53,7 +57,7 @@ const CATALOGO_RELATORIOS: ReportConfig[] = [
   { id: "vnd-007", nome: "Cancelamentos e Devoluções", descricao: "Relatório de cancelamentos no PDV com motivos", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente"], icone: X, filtrosDisponiveis: ["periodo", "vendedor", "status"] },
 
   // 💰 FINANCEIRO INTEGRADO
-  { id: "fin-001", nome: "Fluxo de Caixa", descricao: "Entradas e saídas com projeção de saldo", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo", "conta", "historico"] },
+  { id: "fin-001", nome: "Fluxo de Caixa", descricao: "Entradas e saídas com projeção de saldo", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo", "historico"] },
   { id: "fin-002", nome: "Contas a Receber", descricao: "Títulos em aberto e recebidos por período", modulo: "financeiro", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "cliente", "status", "historico"] },
   { id: "fin-003", nome: "Contas a Pagar", descricao: "Obrigações financeiras e vencimentos", modulo: "financeiro", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "fornecedor", "status", "historico"] },
   { id: "fin-004", nome: "Inadimplência", descricao: "Clientes com pagamentos atrasados e valores", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: AlertCircle, filtrosDisponiveis: ["periodo", "cliente", "status"] },
@@ -69,125 +73,131 @@ const CATALOGO_RELATORIOS: ReportConfig[] = [
   { id: "aud-002", nome: "Logs de Alterações Críticas", descricao: "Rastreamento de alterações em valores, exclusões e estornos", modulo: "auditoria", uso: "auditoria", permissao: ["admin"], icone: Shield, destaque: true, filtrosDisponiveis: ["periodo", "vendedor", "status"] },
 ];
 
-const MOCK_USUARIOS: { id: string; nome: string; cargo: string }[] = [];
-const MOCK_CLIENTES: { id: string; nome: string; doc: string }[] = [];
+// Fornecedor/Conta Bancária continuam mock — nenhum dos 7 relatórios reais
+// usa esses dois filtros (não existe tabela de fornecedor vinculável nem de
+// conta bancária no schema), então ficam como estavam pros outros 21
+// relatórios do catálogo que ainda são fora de escopo.
 const MOCK_FORNECEDORES: { id: string; nome: string; cnpj: string }[] = [];
-const MOCK_PRODUTOS: { id: string; nome: string; codigo: string }[] = [];
 const MOCK_CONTAS: { id: string; nome: string; tipo: string }[] = [];
-const MOCK_HISTORICOS: { id: string; nome: string; nivel: number }[] = [];
-const TIPOS_DATA = [{ id: "emissao", nome: "Data de Emissão" }, { id: "vencimento", nome: "Data de Vencimento" }, { id: "recebimento", nome: "Data de Recebimento/Pagamento" }, { id: "inclusao", nome: "Data de Inclusão no Sistema" }];
-const FORMAS_PAGAMENTO = ["Dinheiro", "Cartão de Crédito", "Cartão de Débito", "Pix", "Boleto", "Transferência"];
-const CANAIS = ["PDV - Balcão", "Delivery", "E-commerce", "WhatsApp"];
-const STATUS_OPTIONS: Record<string, string[]> = { vendas: ["Emitida", "Cancelada", "Pendente"], financeiro: ["Em Aberto", "Pago", "Atrasado", "Cancelado"], fiscal: ["Autorizada", "Cancelada", "Denegada"], estoque: ["Venda", "Avaria", "Uso Interno", "Devolução"] };
+// Valores reais aceitos pelo backend — não são só rótulos de exibição.
+const PAYMENT_METHOD_OPTIONS = [{ key: "pix", label: "PIX" }, { key: "card", label: "Cartão" }, { key: "cash", label: "Dinheiro" }];
+const ORDER_STATUS_OPTIONS = [{ key: "received", label: "Recebido" }, { key: "preparing", label: "Preparando" }, { key: "ready", label: "Pronto" }, { key: "delivering", label: "Em entrega" }, { key: "delivered", label: "Entregue" }, { key: "cancelled", label: "Cancelado" }];
+const AUDIT_STATUS_OPTIONS = [{ key: "success", label: "Sucesso" }, { key: "failure", label: "Falha" }, { key: "denied", label: "Negado" }];
 const MODULOS_LABEL: Record<ModuloReport, { label: string; cor: string }> = { estoque: { label: "Estoque", cor: "text-emerald-600 bg-emerald-500/10" }, clientes: { label: "Clientes", cor: "text-blue-600 bg-blue-500/10" }, produtos: { label: "Produtos", cor: "text-violet-600 bg-violet-500/10" }, vendas: { label: "Vendas", cor: "text-amber-600 bg-amber-500/10" }, financeiro: { label: "Financeiro", cor: "text-rose-600 bg-rose-500/10" }, fiscal: { label: "Fiscal", cor: "text-muted-foreground bg-slate-500/10" }, auditoria: { label: "Auditoria", cor: "text-red-600 bg-red-500/10" } };
 
 function usePermissaoUsuario(): Permissao { return "admin"; }
 function temPermissao(p: Permissao, req: Permissao[]): boolean { return req.includes(p); }
-function ReportFilterDrawer({ report, isOpen, onClose }: { report: ReportConfig | null; isOpen: boolean; onClose: () => void }) {
-  if (!isOpen || !report) return null;
-  const [tipoData, setTipoData] = useState("emissao");
-  const [dataDe, setDataDe] = useState("2026-06-01");
-  const [horaDe, setHoraDe] = useState("00:00");
-  const [dataAte, setDataAte] = useState("2026-06-02");
-  const [horaAte, setHoraAte] = useState("23:59");
-  const [vendedores, setVendedores] = useState<string[]>([]);
+
+function hojeISO(offsetDias = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDias);
+  return d.toISOString().slice(0, 10);
+}
+
+function ReportFilterDrawer({
+  report, isOpen, onClose, onGerar,
+}: {
+  report: ReportConfig | null; isOpen: boolean; onClose: () => void;
+  onGerar: (filtros: FiltrosDrawer) => void;
+}) {
+  const [dataDe, setDataDe] = useState(hojeISO(-30));
+  const [dataAte, setDataAte] = useState(hojeISO());
+  const [usuarioId, setUsuarioId] = useState("");
   const [cliente, setCliente] = useState("");
   const [fornecedor, setFornecedor] = useState("");
   const [conta, setConta] = useState("");
   const [historico, setHistorico] = useState("");
-  const [formasPag, setFormasPag] = useState<string[]>([]);
+  const [formaPagamento, setFormaPagamento] = useState("");
+  const [status, setStatus] = useState("");
   const [buscaUser, setBuscaUser] = useState("");
   const [buscaCli, setBuscaCli] = useState("");
   const [buscaForn, setBuscaForn] = useState("");
 
-  const usersFiltered = MOCK_USUARIOS.filter(u => u.nome.toLowerCase().includes(buscaUser.toLowerCase()));
-  const cliFiltered = MOCK_CLIENTES.filter(c => c.nome.toLowerCase().includes(buscaCli.toLowerCase()) || c.doc.includes(buscaCli));
+  // Dados reais dos combos — buscados sob demanda, só quando o bloco
+  // correspondente é realmente exibido pra esse relatório.
+  const [usuarios, setUsuarios] = useState<{ userId: string; name: string }[]>([]);
+  const [clientesEncontrados, setClientesEncontrados] = useState<{ id: string; name: string; phone: string | null }[]>([]);
+  const [categorias, setCategorias] = useState<string[]>([]);
+
+  const mostrarUsuario = report?.filtrosDisponiveis?.includes("vendedor") ?? false;
+  const mostrarCliente = report?.filtrosDisponiveis?.includes("cliente") ?? false;
+  const mostrarFornecedor = report?.filtrosDisponiveis?.includes("fornecedor") ?? false;
+  const mostrarConta = report?.filtrosDisponiveis?.includes("conta") ?? false;
+  const mostrarFormaPagamento = report?.filtrosDisponiveis?.includes("formaPagamento") ?? false;
+  const mostrarHistorico = report?.filtrosDisponiveis?.includes("historico") ?? false;
+  const mostrarStatus = report?.filtrosDisponiveis?.includes("status") ?? false;
+  const statusOptions = report?.modulo === "auditoria" ? AUDIT_STATUS_OPTIONS : ORDER_STATUS_OPTIONS;
+
+  useEffect(() => {
+    if (!isOpen || !mostrarUsuario) return;
+    fetch("/api/store-users/list").then(r => r.json())
+      .then((d: { users?: { userId: string; name: string }[] }) => setUsuarios(d.users ?? []))
+      .catch(() => {});
+  }, [isOpen, mostrarUsuario]);
+
+  useEffect(() => {
+    if (!isOpen || !mostrarHistorico) return;
+    fetch("/api/reports/categorias-financeiro").then(r => r.json())
+      .then((d: { categorias?: string[] }) => setCategorias(d.categorias ?? []))
+      .catch(() => {});
+  }, [isOpen, mostrarHistorico]);
+
+  useEffect(() => {
+    if (!mostrarCliente || !buscaCli.trim()) { setClientesEncontrados([]); return; }
+    const t = setTimeout(() => {
+      fetch(`/api/customers/search?q=${encodeURIComponent(buscaCli.trim())}`).then(r => r.json())
+        .then((d: { customers?: { id: string; name: string; phone: string | null }[] }) => setClientesEncontrados(d.customers ?? []))
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
+  }, [buscaCli, mostrarCliente]);
+
+  if (!isOpen || !report) return null;
+
+  const usuariosFiltrados = usuarios.filter(u => u.name.toLowerCase().includes(buscaUser.toLowerCase()));
   const fornFiltered = MOCK_FORNECEDORES.filter(f => f.nome.toLowerCase().includes(buscaForn.toLowerCase()));
-
-  // Lógica condicional baseada no módulo do relatório
-  const mostrarVendedor = report.modulo === "vendas" || report.modulo === "auditoria" || report.modulo === "estoque";
-  const mostrarFornecedor = report.modulo === "financeiro" || report.modulo === "estoque";
-  const mostrarFormaPagamento = report.modulo === "vendas";
-  const mostrarHistorico = report.modulo === "financeiro";
-
-  // Função para montar o payload da API
-  const payload = () => ({
-    idRelatorio: report.id,
-    tipoData,
-    dataInicio: `${dataDe}T${horaDe}:00Z`,
-    dataFim: `${dataAte}T${horaAte}:59Z`,
-    filtrosEspecificos: {
-      idVendedor: vendedores.length ? vendedores : null,
-      idCliente: cliente || null,
-      idFornecedor: fornecedor || null,
-      idConta: conta || null,
-      idHistorico: historico || null,
-      formaPagto: formasPag.length ? formasPag : null,
-    },
-  });
-
-  const gerarRelatorio = () => {
-    console.log("Payload para API:", payload());
-    // Aqui você chamaria a API real
-    // api.post('/relatorios/gerar', payload());
-  };
+  const clienteSelecionado = clientesEncontrados.find(c => c.id === cliente);
+  const usuarioSelecionado = usuarios.find(u => u.userId === usuarioId);
 
   const limpar = () => {
-    setTipoData("emissao");
-    setDataDe("2026-06-01");
-    setDataAte("2026-06-02");
-    setHoraDe("00:00");
-    setHoraAte("23:59");
-    setVendedores([]);
-    setCliente("");
-    setFornecedor("");
-    setConta("");
-    setHistorico("");
-    setFormasPag([]);
-    setBuscaUser("");
-    setBuscaCli("");
-    setBuscaForn("");
+    setDataDe(hojeISO(-30)); setDataAte(hojeISO());
+    setUsuarioId(""); setCliente(""); setFornecedor(""); setConta("");
+    setHistorico(""); setFormaPagamento(""); setStatus("");
+    setBuscaUser(""); setBuscaCli(""); setBuscaForn("");
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-end" onClick={onClose}>
       <div className="h-full w-full max-w-xl bg-card shadow-2xl flex flex-col rounded-l-3xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b">
-          <div><h2 className="text-lg font-semibold">Filtros Avançados</h2><p className="text-xs text-muted-foreground">{report.nome}</p></div>
+          <div><h2 className="text-lg font-semibold">Filtros</h2><p className="text-xs text-muted-foreground">{report.nome}</p></div>
           <div className="flex items-center gap-2"><button onClick={limpar} className="text-xs px-3 py-1.5 rounded-lg border hover:bg-secondary">Limpar Filtros</button><button onClick={onClose} className="p-2 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button></div>
         </div>
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="space-y-4 p-4 bg-secondary rounded-2xl border">
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Calendar className="w-4 h-4" /> Período de Análise</div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">Filtrar por</label>
-              <select value={tipoData} onChange={e => setTipoData(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card text-sm focus:ring-2 focus:ring-primary/20">
-                <option value="emissao">Data de Emissão</option>
-                <option value="vencimento">Data de Vencimento</option>
-                <option value="recebimento">Data de Recebimento/Pagamento</option>
-                <option value="inclusao">Data de Inclusão no Sistema</option>
-              </select>
-            </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">De</label><div className="flex gap-2"><input type="date" value={dataDe} onChange={e => setDataDe(e.target.value)} className="flex-1 h-10 px-3 rounded-xl border bg-card text-sm" /><div className="relative w-24"><Clock className="w-3.5 h-3.5 absolute left-3 top-3.5 text-muted-foreground" /><input type="time" value={horaDe} onChange={e => setHoraDe(e.target.value)} className="w-full h-10 pl-9 pr-2 rounded-xl border bg-card text-sm" /></div></div></div>
-              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">Até</label><div className="flex gap-2"><input type="date" value={dataAte} onChange={e => setDataAte(e.target.value)} className="flex-1 h-10 px-3 rounded-xl border bg-card text-sm" /><div className="relative w-24"><Clock className="w-3.5 h-3.5 absolute left-3 top-3.5 text-muted-foreground" /><input type="time" value={horaAte} onChange={e => setHoraAte(e.target.value)} className="w-full h-10 pl-9 pr-2 rounded-xl border bg-card text-sm" /></div></div></div>
+              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">De</label><input type="date" value={dataDe} onChange={e => setDataDe(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card text-sm" /></div>
+              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">Até</label><input type="date" value={dataAte} onChange={e => setDataAte(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card text-sm" /></div>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {mostrarVendedor && (
+            {mostrarUsuario && (
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Users className="w-3 h-3" /> Vendedor/Operador</label>
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Users className="w-3 h-3" /> Usuário Responsável</label>
                 <div className="relative"><input type="text" placeholder="Buscar usuário..." value={buscaUser} onChange={e => setBuscaUser(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
-                {buscaUser && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{usersFiltered.map(u => <div key={u.id} onClick={() => { if (!vendedores.includes(u.id)) setVendedores([...vendedores, u.id]); setBuscaUser(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm flex justify-between"><span>{u.nome}</span><span className="text-xs text-muted-foreground">{u.cargo}</span></div>)}</div>}
-                {vendedores.length > 0 && <div className="flex flex-wrap gap-1">{vendedores.map(id => { const u = MOCK_USUARIOS.find(x => x.id === id); return u ? <span key={id} className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-lg text-xs">{u.nome}<button onClick={() => setVendedores(vendedores.filter(x => x !== id))} className="hover:text-red-500"><X className="w-3 h-3" /></button></span> : null; })}</div>}
+                {buscaUser && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{usuariosFiltrados.map(u => <div key={u.userId} onClick={() => { setUsuarioId(u.userId); setBuscaUser(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm">{u.name}</div>)}</div>}
+                {usuarioSelecionado && <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg"><span className="text-sm font-medium">{usuarioSelecionado.name}</span><button onClick={() => setUsuarioId("")} className="text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button></div>}
               </div>
             )}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><User className="w-3 h-3" /> Cliente</label>
-              <div className="relative"><input type="text" placeholder="Buscar por nome ou CPF/CNPJ..." value={buscaCli} onChange={e => setBuscaCli(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
-              {buscaCli && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{cliFiltered.map(c => <div key={c.id} onClick={() => { setCliente(c.id); setBuscaCli(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm"><p className="font-medium">{c.nome}</p><p className="text-xs text-muted-foreground">{c.doc}</p></div>)}</div>}
-              {cliente && <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg"><span className="text-sm font-medium">{MOCK_CLIENTES.find(c => c.id === cliente)?.nome}</span><button onClick={() => setCliente("")} className="text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button></div>}
-            </div>
+            {mostrarCliente && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><User className="w-3 h-3" /> Cliente</label>
+                <div className="relative"><input type="text" placeholder="Buscar por nome ou telefone..." value={buscaCli} onChange={e => setBuscaCli(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
+                {buscaCli && clientesEncontrados.length > 0 && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{clientesEncontrados.map(c => <div key={c.id} onClick={() => { setCliente(c.id); setBuscaCli(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm"><p className="font-medium">{c.name}</p>{c.phone && <p className="text-xs text-muted-foreground">{c.phone}</p>}</div>)}</div>}
+                {clienteSelecionado && <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg"><span className="text-sm font-medium">{clienteSelecionado.name}</span><button onClick={() => setCliente("")} className="text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button></div>}
+              </div>
+            )}
             {mostrarFornecedor && (
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Truck className="w-3 h-3" /> Fornecedor/Favorecido</label>
@@ -196,31 +206,52 @@ function ReportFilterDrawer({ report, isOpen, onClose }: { report: ReportConfig 
                 {fornecedor && <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg"><span className="text-sm font-medium">{MOCK_FORNECEDORES.find(f => f.id === fornecedor)?.nome}</span><button onClick={() => setFornecedor("")} className="text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button></div>}
               </div>
             )}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Landmark className="w-3 h-3" /> Conta Bancária</label>
-              <select value={conta} onChange={e => setConta(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
-                <option value="">Selecione uma conta</option>
-                {MOCK_CONTAS.map(c => <option key={c.id} value={c.id}>{c.nome} ({c.tipo})</option>)}
-              </select>
-            </div>
+            {mostrarConta && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Landmark className="w-3 h-3" /> Conta Bancária</label>
+                <select value={conta} onChange={e => setConta(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+                  <option value="">Selecione uma conta</option>
+                  {MOCK_CONTAS.map(c => <option key={c.id} value={c.id}>{c.nome} ({c.tipo})</option>)}
+                </select>
+              </div>
+            )}
             {mostrarFormaPagamento && (
               <div className="space-y-2">
                 <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><CreditCard className="w-3 h-3" /> Forma de Pagamento</label>
-                <div className="flex flex-wrap gap-2">{FORMAS_PAGAMENTO.map(f => <button key={f} onClick={() => formasPag.includes(f) ? setFormasPag(formasPag.filter(x => x !== f)) : setFormasPag([...formasPag, f])} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${formasPag.includes(f) ? 'bg-emerald-100 text-emerald-700 border border-emerald-300' : 'bg-secondary text-muted-foreground border border-border hover:bg-secondary/80'}`}>{f}</button>)}</div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setFormaPagamento("")} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${formaPagamento === "" ? "bg-primary/10 text-primary border border-primary/30" : "bg-secondary text-muted-foreground border border-border hover:bg-secondary/80"}`}>Todas</button>
+                  {PAYMENT_METHOD_OPTIONS.map(f => <button key={f.key} onClick={() => setFormaPagamento(f.key)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${formaPagamento === f.key ? "bg-emerald-100 text-emerald-700 border border-emerald-300" : "bg-secondary text-muted-foreground border border-border hover:bg-secondary/80"}`}>{f.label}</button>)}
+                </div>
+              </div>
+            )}
+            {mostrarStatus && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Status</label>
+                <select value={status} onChange={e => setStatus(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+                  <option value="">Todos</option>
+                  {statusOptions.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+                </select>
               </div>
             )}
             {mostrarHistorico && (
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><BarChart3 className="w-3 h-3" /> Histórico Estruturado</label>
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><BarChart3 className="w-3 h-3" /> Categoria</label>
                 <select value={historico} onChange={e => setHistorico(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
-                  <option value="">Selecione um histórico</option>
-                  {MOCK_HISTORICOS.map(h => <option key={h.id} value={h.id}>{h.id} | {h.nome.toUpperCase()}</option>)}
+                  <option value="">Todas</option>
+                  {categorias.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             )}
           </div>
         </div>
-        <div className="p-6 border-t bg-card"><Button onClick={gerarRelatorio} className="w-full h-12 rounded-2xl text-base font-semibold bg-gradient-primary text-primary-foreground"><Search className="w-4 h-4 mr-2" /> Gerar Relatório</Button></div>
+        <div className="p-6 border-t bg-card">
+          <Button
+            onClick={() => onGerar({ dataDe, dataAte, clienteId: cliente, usuarioId, formaPagamento, status, historico })}
+            className="w-full h-12 rounded-2xl text-base font-semibold bg-gradient-primary text-primary-foreground"
+          >
+            <Search className="w-4 h-4 mr-2" /> Gerar Relatório
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -247,6 +278,8 @@ function ReportsPage() {
   const [reportSelecionado, setReportSelecionado] = useState<ReportConfig | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [ultimoRelatorio, setUltimoRelatorio] = useState<ReportConfig | null>(null);
+  const [resultadoAberto, setResultadoAberto] = useState<{ reportId: string; filtros: FiltrosDrawer } | null>(null);
+  const [avisoNaoImplementado, setAvisoNaoImplementado] = useState<ReportConfig | null>(null);
 
   useEffect(() => { if (typeof window !== "undefined") { localStorage.setItem("armazix-reports-favoritos", JSON.stringify(favoritos)); } }, [favoritos]);
 
@@ -258,13 +291,36 @@ function ReportsPage() {
     setDrawerOpen(true);
   };
 
+  // Ponto de entrada do "Ver" em cada card — decide entre abrir o drawer de
+  // filtros, pular direto pro resultado (relatório sem filtro, ex: estoque
+  // baixo), ou avisar que aquele relatório ainda não foi implementado (os
+  // outros 21 do catálogo, fora de escopo por enquanto).
+  const handleVisualizar = (report: ReportConfig) => {
+    setUltimoRelatorio(report);
+    if (!(RELATORIOS_IMPLEMENTADOS as readonly string[]).includes(report.id)) {
+      setAvisoNaoImplementado(report);
+      return;
+    }
+    if (!report.filtrosDisponiveis || report.filtrosDisponiveis.length === 0) {
+      setResultadoAberto({ reportId: report.id, filtros: DEFAULT_FILTROS });
+      return;
+    }
+    abrirDrawer(report);
+  };
+
+  const handleGerar = (filtros: FiltrosDrawer) => {
+    if (!reportSelecionado) return;
+    setDrawerOpen(false);
+    setResultadoAberto({ reportId: reportSelecionado.id, filtros });
+  };
+
   const scrollToFavoritos = () => {
     const element = document.getElementById("secao-favoritos");
     if (element) element.scrollIntoView({ behavior: "smooth" });
   };
 
   const scrollToUltimo = () => {
-    if (ultimoRelatorio) abrirDrawer(ultimoRelatorio);
+    if (ultimoRelatorio) handleVisualizar(ultimoRelatorio);
   };
 
   // Filtrar relatórios disponíveis para o usuário
@@ -288,7 +344,7 @@ function ReportsPage() {
   );
 
   const destaques = useMemo(() =>
-    CATALOGO_RELATORIOS.filter(r => r.destaque && temPermissao(permissaoUsuario, r.permissao)).slice(0, 3),
+    CATALOGO_RELATORIOS.filter(r => r.destaque && temPermissao(permissaoUsuario, r.permissao)),
     [permissaoUsuario]
   );
 
@@ -323,7 +379,28 @@ function ReportsPage() {
         </div>
 
         {/* Drawer de Filtros */}
-        <ReportFilterDrawer report={reportSelecionado} isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
+        <ReportFilterDrawer report={reportSelecionado} isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} onGerar={handleGerar} />
+
+        {/* Resultado do relatório (os 7 com backend real) */}
+        {resultadoAberto && (
+          <ResultadoRelatorioModal
+            reportId={resultadoAberto.reportId}
+            filtros={resultadoAberto.filtros}
+            onClose={() => setResultadoAberto(null)}
+          />
+        )}
+
+        {/* Aviso pros outros 21 relatórios do catálogo, ainda fora de escopo */}
+        {avisoNaoImplementado && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setAvisoNaoImplementado(null)}>
+            <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center" onClick={e => e.stopPropagation()}>
+              <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+              <h3 className="font-semibold mb-1">{avisoNaoImplementado.nome}</h3>
+              <p className="text-sm text-muted-foreground mb-4">Este relatório ainda não está disponível — só os relatórios em destaque (⭐) já geram dado real.</p>
+              <Button onClick={() => setAvisoNaoImplementado(null)} className="w-full rounded-xl">Entendi</Button>
+            </div>
+          </div>
+        )}
 
         {/* KPI Cards - Indicadores Rápidos */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -426,7 +503,7 @@ function ReportsPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {destaques.map(report => (
-                <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => abrirDrawer(report)} />
+                <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => handleVisualizar(report)} />
               ))}
             </div>
           </div>
@@ -442,7 +519,7 @@ function ReportsPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {favoritosList.map(report => (
-                <ReportCard key={report.id} report={report} isFavorito={true} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => abrirDrawer(report)} />
+                <ReportCard key={report.id} report={report} isFavorito={true} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => handleVisualizar(report)} />
               ))}
             </div>
           </div>
@@ -463,7 +540,7 @@ function ReportsPage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {relatoriosModulo.map(report => (
-                    <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => abrirDrawer(report)} />
+                    <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => handleVisualizar(report)} />
                   ))}
                 </div>
               </div>
@@ -478,7 +555,7 @@ function ReportsPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {relatoriosFiltrados.map(report => (
-                <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => abrirDrawer(report)} />
+                <ReportCard key={report.id} report={report} isFavorito={favoritos.includes(report.id)} onToggleFavorito={() => toggleFavorito(report.id)} onVisualizar={() => handleVisualizar(report)} />
               ))}
             </div>
           </div>

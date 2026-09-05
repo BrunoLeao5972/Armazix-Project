@@ -53,11 +53,11 @@ export function ProductCard({
   if (layoutType === 'list') {
     return (
       <div
-        className="flex items-center gap-3 rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+        className="flex items-center gap-3 rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer touch-pan-y"
         onClick={onOpenDetail}
       >
         {/* Image */}
-        <div className="relative w-24 h-24 shrink-0 bg-slate-50 overflow-hidden">
+        <div className="relative w-24 h-24 shrink-0 bg-slate-50 overflow-hidden touch-pan-y">
           {product.imageUrl ? (
             <img
               src={product.imageUrl}
@@ -160,75 +160,80 @@ export function ProductCard({
 
   return (
     <div
-      className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+      className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer touch-pan-y"
       onClick={onOpenDetail}
     >
-      {/* Image Section */}
-      <div className="relative aspect-square bg-slate-50 overflow-hidden group">
-        {product.imageUrl ? (
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className={`w-full h-full object-contain transition-transform duration-300 ${
-              outOfStock ? "grayscale opacity-60" : "group-hover:scale-105"
-            }`}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-          />
-        ) : (
-          <div className={`w-full h-full flex items-center justify-center text-5xl ${outOfStock ? "grayscale opacity-60" : ""}`}>
-            {product.emoji || "📦"}
-          </div>
-        )}
-
-        {/* Carimbo de esgotado — centralizado, estilo carimbo de borracha */}
-        {outOfStock && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="px-4 py-1.5 rounded-md border-[3px] border-slate-700/80 text-slate-700/90 text-sm font-extrabold uppercase tracking-wider -rotate-12 bg-white/70 backdrop-blur-[1px] shadow-sm">
-              Esgotado
+      {/* Image Section — caixa quadrada via padding-top (não aspect-ratio):
+          o Safari/iOS tem um bug conhecido de recalcular aspect-ratio como
+          o tamanho intrínseco da imagem durante o scroll (o toolbar dinâmico
+          reflow o layout), fazendo a foto "estourar" pro tamanho natural por
+          um instante. padding-top é resolvido pelo box model clássico, sem
+          essa recomputação. */}
+      <div className="relative w-full touch-pan-y" style={{ paddingTop: "100%" }}>
+        <div className="absolute inset-0 bg-slate-50 overflow-hidden group">
+          {product.imageUrl ? (
+            <img
+              src={product.imageUrl}
+              alt={product.name}
+              className={`w-full h-full object-contain ${outOfStock ? "grayscale opacity-60" : ""}`}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : (
+            <div className={`w-full h-full flex items-center justify-center text-5xl ${outOfStock ? "grayscale opacity-60" : ""}`}>
+              {product.emoji || "📦"}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Low Stock Badge - Top Left */}
-        {!outOfStock && lowStock && (
-          <div className="absolute top-3 left-3">
-            <div className="px-2.5 py-1 rounded-full bg-red-500 text-white text-[11px] font-semibold">
-              Últimas unidades
+          {/* Carimbo de esgotado — centralizado, estilo carimbo de borracha */}
+          {outOfStock && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="px-4 py-1.5 rounded-md border-[3px] border-slate-700/80 text-slate-700/90 text-sm font-extrabold uppercase tracking-wider -rotate-12 bg-white/70 backdrop-blur-[1px] shadow-sm">
+                Esgotado
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Discount Badge - Bottom Left */}
-        {!outOfStock && hasPromo && (
-          <div className="absolute bottom-3 left-3">
-            <div className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
-              -{discountPercent}%
+          {/* Low Stock Badge - Top Left */}
+          {!outOfStock && lowStock && (
+            <div className="absolute top-3 left-3">
+              <div className="px-2.5 py-1 rounded-full bg-red-500 text-white text-[11px] font-semibold">
+                Últimas unidades
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Made-to-order Badge - Bottom Right */}
-        {product.isMadeToOrder && (
-          <div className="absolute bottom-3 right-3">
-            <div className="px-2.5 py-1 rounded-full bg-amber-500 text-white text-[11px] font-semibold">
-              Sob Encomenda
+          {/* Discount Badge - Bottom Left */}
+          {!outOfStock && hasPromo && (
+            <div className="absolute bottom-3 left-3">
+              <div className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
+                -{discountPercent}%
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Wishlist Button - Top Right */}
-        <button
-          onClick={(e) => { e.stopPropagation(); setIsFavorite(!isFavorite); }}
-          className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur flex items-center justify-center hover:bg-white transition-colors"
-        >
-          <Heart
-            className="w-5 h-5 transition-colors"
-            style={{
-              color: isFavorite ? primaryColor : "rgb(203, 213, 225)",
-              fill: isFavorite ? primaryColor : "none",
-            }}
-          />
-        </button>
+          {/* Made-to-order Badge - Bottom Right */}
+          {product.isMadeToOrder && (
+            <div className="absolute bottom-3 right-3">
+              <div className="px-2.5 py-1 rounded-full bg-amber-500 text-white text-[11px] font-semibold">
+                Sob Encomenda
+              </div>
+            </div>
+          )}
+
+          {/* Wishlist Button - Top Right */}
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsFavorite(!isFavorite); }}
+            className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur flex items-center justify-center hover:bg-white transition-colors"
+          >
+            <Heart
+              className="w-5 h-5 transition-colors"
+              style={{
+                color: isFavorite ? primaryColor : "rgb(203, 213, 225)",
+                fill: isFavorite ? primaryColor : "none",
+              }}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Content Section */}

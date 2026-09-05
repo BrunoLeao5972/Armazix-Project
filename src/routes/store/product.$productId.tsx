@@ -363,30 +363,35 @@ function ProductPage() {
         {/* ── Coluna esquerda: Galeria ── */}
         <div className="space-y-3 px-4 mt-4 lg:px-0 lg:mt-0 lg:sticky lg:top-6">
 
-          {/* Imagem principal */}
-          <div className="relative aspect-square bg-slate-50 rounded-2xl overflow-hidden border border-slate-100/80">
-            {currentImg ? (
-              <img
-                key={currentImg}
-                src={currentImg}
-                alt={product.name}
-                className="w-full h-full object-contain p-6 animate-in fade-in duration-200"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <span className="text-8xl select-none">{product.emoji || "📦"}</span>
-              </div>
-            )}
-            {discountPct > 0 && (
-              <span className="absolute top-3 left-3 text-[11px] font-bold px-2 py-1 rounded-lg bg-red-500 text-white shadow-sm">
-                -{discountPct}%
-              </span>
-            )}
-            {product.badge && (
-              <span className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded-lg bg-primary text-primary-foreground shadow-sm">
-                {product.badge}
-              </span>
-            )}
+          {/* Imagem principal — caixa quadrada via padding-top, não
+              aspect-ratio (mesmo ajuste do card de produto: evita o bug do
+              Safari/iOS de recalcular a imagem pro tamanho intrínseco
+              durante o scroll). */}
+          <div className="relative w-full" style={{ paddingTop: "100%" }}>
+            <div className="absolute inset-0 bg-slate-50 rounded-2xl overflow-hidden border border-slate-100/80">
+              {currentImg ? (
+                <img
+                  key={currentImg}
+                  src={currentImg}
+                  alt={product.name}
+                  className="w-full h-full object-contain p-6 animate-in fade-in duration-200"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <span className="text-8xl select-none">{product.emoji || "📦"}</span>
+                </div>
+              )}
+              {discountPct > 0 && (
+                <span className="absolute top-3 left-3 text-[11px] font-bold px-2 py-1 rounded-lg bg-red-500 text-white shadow-sm">
+                  -{discountPct}%
+                </span>
+              )}
+              {product.badge && (
+                <span className="absolute top-3 right-3 text-[11px] font-bold px-2 py-1 rounded-lg bg-primary text-primary-foreground shadow-sm">
+                  {product.badge}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Thumbnails — só renderiza se há mais de 1 imagem válida */}
