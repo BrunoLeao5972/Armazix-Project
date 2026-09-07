@@ -22,6 +22,11 @@ const configs: Record<string, RateLimitConfig> = {
   payments:          { windowMs: 60 * 60 * 1000,  max: 10   },
   // Operações sensíveis (configs, senha, tokens)
   sensitive:         { windowMs: 15 * 60 * 1000,  max: 20   },
+  // Teste/impressão em impressora de rede — abre conexão TCP de saída pro
+  // "Caminho / IP" informado (ver src/lib/security/network-guard.ts, achado
+  // F1 da auditoria); restritivo para dificultar varredura de rede mesmo
+  // dentro do que o guard já bloqueia.
+  "printer-network": { windowMs: 60 * 1000,       max: 10   },
   // Webhooks externos — permissivo
   webhook:           { windowMs: 60 * 1000,        max: 1000 },
 };

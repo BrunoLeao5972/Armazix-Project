@@ -4,7 +4,7 @@ import { Plus, Minus } from "lucide-react";
 const FAQS = [
   {
     q: "O Armazix é gratuito?",
-    a: "Sim, o plano gratuito permite testar a plataforma, cadastrar produtos, criar sua loja virtual e receber pedidos sem custo por 7 dias. Planos pagos desbloqueam relatórios avançados, múltiplos usuários e integração com gateways de pagamento.",
+    a: "Sim, o plano gratuito permite testar a plataforma, cadastrar produtos, criar sua loja virtual e receber pedidos sem custo por 10 dias. Planos pagos desbloqueam relatórios avançados, múltiplos usuários e integração com gateways de pagamento.",
   },
   {
     q: "Preciso de um site ou domínio próprio para usar?",

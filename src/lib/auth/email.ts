@@ -6,6 +6,23 @@ function getResend() {
   return new Resend(process.env.RESEND_API_KEY);
 }
 
+// Escapa todo valor de usuário antes de embuti-lo no HTML dos templates
+// abaixo — os templates são template literals, sem escape automático nenhum
+// (diferente de JSX). name/storeName chegam sanitizados na entrada (ver
+// register-handler.ts, store-invite-handler.ts, store-handler.ts), mas o
+// fechamento real da vulnerabilidade tem que ser aqui: há mais de um
+// caminho até o mesmo template, e um deles (nome da loja, alterável a
+// qualquer momento em Configurações) não passava por sanitização nenhuma
+// antes desta correção. Auditoria de segurança, achado F3.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // ─── Email verification ─────────────────────────────────────────
 export async function sendVerificationEmail(
   email: string,
@@ -69,9 +86,9 @@ function verificationTemplate(code: string, name: string): string {
           </tr>
         </table>
         <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#121212;">Verifique seu email</h1>
-        <p style="margin:0 0 24px;font-size:15px;color:#6B7280;">Olá, <strong>${name}</strong>! Use o código abaixo para confirmar seu email:</p>
+        <p style="margin:0 0 24px;font-size:15px;color:#6B7280;">Olá, <strong>${escapeHtml(name)}</strong>! Use o código abaixo para confirmar seu email:</p>
         <div style="background:#F6F7FB;border-radius:16px;padding:20px;margin:0 0 24px;">
-          <span style="font-size:36px;font-weight:800;letter-spacing:8px;color:#00C853;">${code}</span>
+          <span style="font-size:36px;font-weight:800;letter-spacing:8px;color:#00C853;">${escapeHtml(code)}</span>
         </div>
         <p style="margin:0 0 8px;font-size:13px;color:#6B7280;">Este código expira em <strong>15 minutos</strong>.</p>
         <p style="margin:0;font-size:13px;color:#9CA3AF;">Se você não criou uma conta no ARMAZIX, ignore este email.</p>
@@ -105,8 +122,8 @@ function teamInviteTemplate(name: string, storeName: string, roleLabel: string, 
           </tr>
         </table>
         <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#121212;">Você foi convidado</h1>
-        <p style="margin:0 0 24px;font-size:15px;color:#6B7280;">Olá, <strong>${name}</strong>! A loja <strong>${storeName}</strong> convidou você para fazer parte da equipe como <strong>${roleLabel}</strong>.</p>
-        <a href="${acceptUrl}" style="display:inline-block;background:#00C853;color:#fff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 32px;border-radius:14px;margin:0 0 24px;">Aceitar convite</a>
+        <p style="margin:0 0 24px;font-size:15px;color:#6B7280;">Olá, <strong>${escapeHtml(name)}</strong>! A loja <strong>${escapeHtml(storeName)}</strong> convidou você para fazer parte da equipe como <strong>${escapeHtml(roleLabel)}</strong>.</p>
+        <a href="${escapeHtml(acceptUrl)}" style="display:inline-block;background:#00C853;color:#fff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 32px;border-radius:14px;margin:0 0 24px;">Aceitar convite</a>
         <p style="margin:0 0 8px;font-size:13px;color:#6B7280;">Este convite expira em <strong>7 dias</strong>.</p>
         <p style="margin:0;font-size:13px;color:#9CA3AF;">Se você não esperava este convite, ignore este email — nada acontece sem você aceitar.</p>
       </td>
@@ -139,9 +156,9 @@ function passwordResetTemplate(code: string, name: string): string {
           </tr>
         </table>
         <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#121212;">Recuperar senha</h1>
-        <p style="margin:0 0 24px;font-size:15px;color:#6B7280;">Olá, <strong>${name}</strong>! Use o código abaixo para redefinir sua senha:</p>
+        <p style="margin:0 0 24px;font-size:15px;color:#6B7280;">Olá, <strong>${escapeHtml(name)}</strong>! Use o código abaixo para redefinir sua senha:</p>
         <div style="background:#F6F7FB;border-radius:16px;padding:20px;margin:0 0 24px;">
-          <span style="font-size:36px;font-weight:800;letter-spacing:8px;color:#00C853;">${code}</span>
+          <span style="font-size:36px;font-weight:800;letter-spacing:8px;color:#00C853;">${escapeHtml(code)}</span>
         </div>
         <p style="margin:0 0 8px;font-size:13px;color:#6B7280;">Este código expira em <strong>15 minutos</strong>.</p>
         <p style="margin:0;font-size:13px;color:#9CA3AF;">Se você não solicitou a recuperação, ignore este email.</p>

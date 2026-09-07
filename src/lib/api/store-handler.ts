@@ -7,6 +7,7 @@ import { generateCleanSlug } from "@/lib/slug";
 import { getCached, deleteKey, storeCacheKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
 import { geocodeAddress } from "@/lib/geocoding";
+import { sanitizeString } from "@/lib/validation/schemas";
 
 const { stores, storeUsers, orders, orderItems, products, customers } = schema;
 
@@ -263,6 +264,11 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
   const dbUrl = process.env.DATABASE_URL!;
   const db = await createUnscopedDb(dbUrl, storeId);
 
+  // stores.name é usado sem escape em teamInviteTemplate (e-mail de convite
+  // de equipe) — sanitiza aqui pra fechar essa entrada também, além do
+  // escape que já acontece no template (auditoria de segurança, achado F3).
+  if (body.name !== undefined) body.name = sanitizeString(body.name);
+
   const nextSlug = body.name ? generateCleanSlug(body.name) : null;
   if (body.name && (!nextSlug || nextSlug.length < 3)) {
     return new Response(JSON.stringify({ error: "Nome da loja gera um slug inválido (mínimo 3 caracteres alfanuméricos)" }), {
@@ -284,6 +290,16 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
       }
       const [cur] = await db.select({ slug: stores.slug }).from(stores).where(eq(stores.id, storeId)).limit(1);
       prevSlug = cur?.slug ?? null;
+    }
+
+    // Endereço de cadastro atual — só pra decidir se vale a pena regeocodificar
+    // (evita chamar o Nominatim de novo quando o endereço não mudou, ex: save
+    // vindo de outra aba que reenvia o mesmo address sem alteração real).
+    let enderecoMudou = false;
+    if (body.address) {
+      const [atual] = await db.select({ address: stores.address, addressLatitude: stores.addressLatitude })
+        .from(stores).where(eq(stores.id, storeId)).limit(1);
+      enderecoMudou = JSON.stringify(atual?.address ?? null) !== JSON.stringify(body.address) || atual?.addressLatitude == null;
     }
 
     const legacyDelivery = body.deliveryConfig !== undefined ? deriveLegacyDelivery(body.deliveryConfig) : null;
@@ -337,6 +353,15 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
       waitUntil(request, deleteKey(...keysToDelete));
     }
 
+    // Regeocodifica addressLatitude/addressLongitude em background — nunca
+    // atrasa nem derruba o save principal se o Nominatim falhar ou o
+    // endereço não for encontrado (mesma filosofia fail-open de
+    // requireAuth() pro plano vencido). Independente do pino de entrega
+    // (latitude/longitude), que este handler já trata acima sem mexer aqui.
+    if (updated && enderecoMudou && body.address) {
+      waitUntil(request, geocodeAndSaveAddressCoords(db, storeId, body.address));
+    }
+
     return new Response(JSON.stringify({ success: true, store: updated }), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -347,6 +372,29 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
       status: 500,
       headers: { "content-type": "application/json" },
     });
+  }
+}
+
+// Regeocodifica o endereço de CADASTRO e grava em addressLatitude/
+// addressLongitude — independente de latitude/longitude (pino de entrega).
+// Chamada em background (waitUntil) por updateStoreHandler acima sempre
+// que o endereço de cadastro muda. Nunca lança: endereço não encontrado ou
+// falha no Nominatim só deixa as colunas como estavam (fail-open — um
+// problema passageiro de geocodificação não pode nunca ser visível pro
+// lojista, que só está salvando o próprio endereço).
+async function geocodeAndSaveAddressCoords(
+  db: Awaited<ReturnType<typeof createUnscopedDb>>,
+  storeId: string,
+  address: { street: string; number: string; neighborhood: string; city: string; state: string; zip: string },
+): Promise<void> {
+  try {
+    const point = await geocodeAddress(address);
+    if (!point) return;
+    await db.update(stores)
+      .set({ addressLatitude: point.lat.toFixed(7), addressLongitude: point.lng.toFixed(7) })
+      .where(eq(stores.id, storeId));
+  } catch (error) {
+    console.error("[store-handler] falha ao regeocodificar endereço de cadastro (fail-open):", error);
   }
 }
 
@@ -524,6 +572,7 @@ export async function getUserStoreHandler(request: Request, auth?: AuthContext):
         deliveryEstimate: "30-45 min",
         active: true,
       },
+      storeRole: "admin",
     }), { status: 200, headers: { "content-type": "application/json" } });
   }
 
@@ -545,7 +594,7 @@ export async function getUserStoreHandler(request: Request, auth?: AuthContext):
       });
     }
 
-    return new Response(JSON.stringify({ store: storeUser.store }), {
+    return new Response(JSON.stringify({ store: storeUser.store, storeRole: storeUser.role }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });

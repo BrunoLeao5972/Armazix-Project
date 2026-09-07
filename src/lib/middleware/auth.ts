@@ -1,9 +1,10 @@
 import { verifyJWT } from "@/lib/auth";
 import { createDb, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { requireJwtSecret } from "@/lib/env";
+import { isStorePlanBlocked } from "@/lib/plans";
 
-const { users } = schema;
+const { users, storeUsers, stores } = schema;
 
 export interface AuthContext {
   userId: string;
@@ -11,6 +12,8 @@ export interface AuthContext {
   role: string;
   storeId?: string;
   storeRole?: string;
+  /** true quando o plano da loja está vencido/sem assinatura ativa — ver isStorePlanBlocked() em src/lib/plans.ts. */
+  planBlocked?: boolean;
 }
 
 // ─── Isolate-level session cache ─────────────────────────────────────────────
@@ -105,6 +108,15 @@ export async function requireAuth(request: Request): Promise<AuthContext | Respo
   // Usuário mock (dev-only, id não é UUID real) fica fora dessa checagem.
   const isMockUser = process.env.NODE_ENV === "development" && payload.userId === "mock-user-001";
 
+  // storeRole (storeUsers.role — admin/gerente/vendedor/operador/owner) é
+  // buscado aqui, na mesma query do sessionVersion, e não embutido no JWT:
+  // um papel dentro do token só atualizaria na próxima emissão (até 7 dias),
+  // então um dono rebaixando um funcionário de admin pra operador não
+  // travaria as permissões desse funcionário imediatamente. Handlers que
+  // precisam checar papel (ex.: reports-handler.ts) usam auth.storeRole.
+  let storeRole: string | undefined;
+  let planBlocked = false;
+
   if (!isMockUser) {
     const dbUrl = process.env.DATABASE_URL!;
     const db = createDb(dbUrl);
@@ -120,6 +132,34 @@ export async function requireAuth(request: Request): Promise<AuthContext | Respo
         { status: 401, headers: { "content-type": "application/json" } }
       );
     }
+
+    if (payload.storeId) {
+      const [membership] = await db
+        .select({ role: storeUsers.role })
+        .from(storeUsers)
+        .where(and(eq(storeUsers.userId, payload.userId), eq(storeUsers.storeId, payload.storeId)))
+        .limit(1);
+      storeRole = membership?.role;
+
+      // Bloqueio de plano vencido (ver src/lib/api-handler.ts — a decisão de
+      // QUAIS rotas ficam isentas mora lá, aqui só computamos o fato). Falha
+      // aberta: se a loja não for encontrada ou a query der erro, não bloqueia
+      // — um bug de leitura não pode travar um lojista pagante fora do painel.
+      try {
+        const [storeRow] = await db
+          .select({ planStatus: stores.planStatus, planExpiresAt: stores.planExpiresAt })
+          .from(stores)
+          .where(eq(stores.id, payload.storeId))
+          .limit(1);
+        planBlocked = isStorePlanBlocked(storeRow);
+      } catch (err) {
+        console.error("[requireAuth] falha ao checar plano da loja (fail-open):", err);
+      }
+    }
+  } else {
+    // Usuário mock (dev) — mesmo papel do MOCK_USER em mock-login-handler.ts,
+    // sem loja real por trás pra checar plano.
+    storeRole = "owner";
   }
 
   const auth: AuthContext = {
@@ -127,6 +167,8 @@ export async function requireAuth(request: Request): Promise<AuthContext | Respo
     email:   payload.email,
     role:    payload.role,
     storeId: payload.storeId,
+    storeRole,
+    planBlocked,
   };
 
   _sessionCache.set(token, { auth, exp: Date.now() + SESSION_CACHE_TTL });

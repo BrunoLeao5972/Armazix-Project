@@ -58,6 +58,30 @@ export function hasPdvAccess(store: {
   return pdvUnlocked && store?.planStatus === "active";
 }
 
+/**
+ * Loja com o plano vencido/sem assinatura ativa — usada pra bloquear o
+ * acesso ao admin inteiro (ver requireAuth em src/lib/middleware/auth.ts e
+ * o wrapper em src/routes/admin.tsx), não só o PDV como hasPdvAccess().
+ *
+ * Não dá pra confiar só em planStatus === "expired": esse valor só é
+ * setado de forma preguiçosa (autoExpirePixPlan(), dentro de
+ * getSubscriptionStatusHandler, e só pra planos PIX) — uma assinatura em
+ * cartão que a Mercado Pago parou de renovar sem mandar webhook fica com
+ * planStatus "active" e planExpiresAt no passado indefinidamente. Por
+ * isso a data manda: qualquer planExpiresAt no passado (ou nulo — o
+ * estado de uma assinatura cancelada/pausada) bloqueia, mesmo que o
+ * status ainda não tenha sido corrigido em nenhum lugar.
+ */
+export function isStorePlanBlocked(store: {
+  planStatus?: string | null;
+  planExpiresAt?: string | Date | null;
+} | null | undefined): boolean {
+  if (!store) return false;
+  if (store.planStatus !== "active") return true;
+  if (!store.planExpiresAt) return true;
+  return new Date(store.planExpiresAt).getTime() < Date.now();
+}
+
 /** Formata em R$ com vírgula, ex: 79.9 → "79,90". */
 export function formatPlanPrice(value: number): string {
   return value.toFixed(2).replace(".", ",");

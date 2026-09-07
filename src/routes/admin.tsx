@@ -3,6 +3,9 @@ import { useState, useEffect, lazy, Suspense } from "react";
 const WhatsAppModal = lazy(() =>
   import("@/components/admin/WhatsAppModal").then((m) => ({ default: m.WhatsAppModal }))
 );
+const PlansSection = lazy(() =>
+  import("@/components/admin/settings/PlansSection").then((m) => ({ default: m.PlansSection }))
+);
 
 import { createFileRoute, Link, Outlet, useRouterState, useNavigate } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
@@ -50,6 +53,7 @@ import {
   Settings2,
 } from "lucide-react";
 
+import { isStorePlanBlocked } from "@/lib/plans";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/admin/ThemeToggle";
@@ -377,6 +381,30 @@ function AdminLayout() {
   // Não é dispensável — se sumisse, o lojista podia perder acesso sem perceber.
   const [planId,        setPlanId]        = useState("free");
   const [planExpiresAt, setPlanExpiresAt] = useState<string | null>(null);
+  // planStatus/planChecked alimentam o bloqueio de plano vencido (ver
+  // src/lib/plans.ts). planChecked só vira true depois da 1ª resposta de
+  // /api/subscriptions/status — antes disso nunca mostra a tela de
+  // bloqueio, mesmo que os valores iniciais (planStatus null) tecnicamente
+  // "pareçam" vencidos pra isStorePlanBlocked().
+  const [planStatus,  setPlanStatus]  = useState<string | null>(null);
+  const [planChecked, setPlanChecked] = useState(false);
+  const planBlocked = planChecked && isStorePlanBlocked({ planStatus, planExpiresAt });
+
+  // Usada no mount e no polling da tela de bloqueio (mais abaixo) — mesma
+  // chamada, só muda de onde é disparada.
+  function checkPlanStatus(storeId: string) {
+    return fetch(`/api/subscriptions/status?storeId=${storeId}`)
+      .then(r => r.json())
+      .then((data: { plan?: string; planStatus?: string; planExpiresAt?: string | null }) => {
+        const labels: Record<string, string> = { free: "Free", start: "Start", pro: "Pro", full: "Full" };
+        if (data.plan) setUserPlan(labels[data.plan] || "Free");
+        if (data.plan) setPlanId(data.plan);
+        setPlanExpiresAt(data.planExpiresAt ?? null);
+        setPlanStatus(data.planStatus ?? null);
+        setPlanChecked(true);
+      })
+      .catch(() => {});
+  }
 
   useEffect(() => {
     setMounted(true);
@@ -423,19 +451,23 @@ function AdminLayout() {
       } catch { /* não crítico */ }
       if (!storeId) storeId = localStorage.getItem("storeId");
       if (storeId) {
-        fetch(`/api/subscriptions/status?storeId=${storeId}`)
-          .then(r => r.json())
-          .then((data: { plan?: string; planExpiresAt?: string | null }) => {
-            const labels: Record<string, string> = { free: "Free", start: "Start", pro: "Pro", full: "Full" };
-            if (data.plan) setUserPlan(labels[data.plan] || "Free");
-            if (data.plan) setPlanId(data.plan);
-            setPlanExpiresAt(data.planExpiresAt ?? null);
-          })
-          .catch(() => {});
+        checkPlanStatus(storeId);
       }
     }
     ensureStoreId();
   }, []);
+
+  // Enquanto a tela de bloqueio está no ar, revalida sozinho a cada ~8s —
+  // assim que o webhook do PIX aprovar o pagamento, a tela libera sem o
+  // lojista precisar recarregar a página.
+  useEffect(() => {
+    if (!planBlocked) return;
+    const storeId = localStorage.getItem("storeId");
+    if (!storeId) return;
+    const interval = setInterval(() => checkPlanStatus(storeId), 8000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planBlocked]);
 
   const handleLogout = async () => {
     try { await api.post("/api/auth/logout", {}); } catch { /* ignore */ }
@@ -521,12 +553,14 @@ function AdminLayout() {
 
         <Separator className="opacity-50 shrink-0" />
 
-        <SidebarNav
-          pathname={pathname}
-          collapsed={collapsed}
-          onAction={handleSidebarAction}
-          onClose={() => {}}
-        />
+        <div className={planBlocked ? "flex-1 min-h-0 overflow-hidden blur-[3px] pointer-events-none select-none opacity-60 transition-all" : "contents"}>
+          <SidebarNav
+            pathname={pathname}
+            collapsed={collapsed}
+            onAction={handleSidebarAction}
+            onClose={() => {}}
+          />
+        </div>
 
         <Separator className="opacity-50 shrink-0" />
         <SidebarFooter fullWidth={false} />
@@ -561,12 +595,14 @@ function AdminLayout() {
 
             <Separator className="opacity-50 shrink-0" />
 
-            <SidebarNav
-              pathname={pathname}
-              collapsed={false}
-              onAction={(a) => { setMobileOpen(false); handleSidebarAction(a); }}
-              onClose={() => setMobileOpen(false)}
-            />
+            <div className={planBlocked ? "flex-1 min-h-0 overflow-hidden blur-[3px] pointer-events-none select-none opacity-60 transition-all" : "contents"}>
+              <SidebarNav
+                pathname={pathname}
+                collapsed={false}
+                onAction={(a) => { setMobileOpen(false); handleSidebarAction(a); }}
+                onClose={() => setMobileOpen(false)}
+              />
+            </div>
 
             <Separator className="opacity-50 shrink-0" />
             <SidebarFooter fullWidth />
@@ -711,7 +747,26 @@ function AdminLayout() {
             (o que em touch se sente como a página/sidebar "balançando" ao rolar
             verticalmente). */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto overflow-x-hidden">
-          <Outlet />
+          {planBlocked ? (
+            <div className="max-w-2xl mx-auto space-y-5">
+              <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5 flex items-start gap-3">
+                <Lock className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <h1 className="font-semibold text-foreground">Seu plano venceu</h1>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    O acesso ao painel fica bloqueado até a renovação. Escolha um plano e pague
+                    por PIX ou cartão abaixo — assim que o pagamento for confirmado, o painel
+                    libera automaticamente.
+                  </p>
+                </div>
+              </div>
+              <Suspense fallback={<div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}>
+                <PlansSection />
+              </Suspense>
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
 

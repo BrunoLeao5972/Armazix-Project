@@ -1592,6 +1592,40 @@ export async function searchCustomersHandler(request: Request, auth?: AuthContex
   }
 }
 
+// ─── Search Products (autocomplete do filtro "Produto" dos Relatórios) ───
+export async function searchProductsHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const url = new URL(request.url);
+  const q = (url.searchParams.get("q") || "").toLowerCase();
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = await createUnscopedDb(dbUrl, storeId);
+
+  try {
+    const rows = await db.select({ id: products.id, name: products.name, sku: products.sku })
+      .from(products)
+      .where(eq(products.storeId, storeId));
+
+    const filtered = q
+      ? rows.filter(p => p.name.toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q))
+      : rows;
+    return new Response(JSON.stringify({ products: filtered.slice(0, 20) }), { status: 200, headers: { "content-type": "application/json" } });
+  } catch (error) {
+    console.error("Search products error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
 // ─── Create Customer ─────────────────────────────────────────────
 export async function createCustomerHandler(request: Request, auth?: AuthContext): Promise<Response> {
   // IDOR Fix: Validate store access using auth context only

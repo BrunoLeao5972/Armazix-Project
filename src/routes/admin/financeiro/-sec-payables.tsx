@@ -3,11 +3,120 @@ import { ChevronDown, Check, X, AlertTriangle, Plus, Search, RefreshCw, CreditCa
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getFinanceiroPagar } from "@/services/api";
+import {
+  getFinanceiroPagar, createContaPagar, updateContaPagar,
+  efetivarContaPagar, cancelarContaPagar, deleteContaPagar,
+} from "@/services/api";
 import {
   type StatusPag, type ContaPagar, type NaturezaHist,
   HISTORICOS, historicoIndent, historicoLabel, ActionMenu, EmptyState, fmt, Toast, StatusIconBadge,
 } from "./-fin-shared";
+
+// ── Modal Nova Conta a Pagar ──
+function ModalNovaContaPagar({ onClose, onSave }: { onClose: () => void; onSave: (dados: Record<string, unknown>) => void }) {
+  const [form, setForm] = useState({
+    fornecedor: "", desc: "", documento: "", categoria: "", centroCusto: "Compras",
+    contaFinanceira: "Caixa", valor: "", juros: "0", desconto: "0",
+    formaPgto: "Boleto", emissao: new Date().toLocaleDateString("pt-BR"),
+    vencimento: "", obs: "", parcelas: "1", responsavel: "",
+  });
+  const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+  const f = form as Record<string, string>;
+  const historicosDespesa = HISTORICOS.filter(h => h.natureza === "DESPESA" && h.nivel === 3);
+
+  const handleSubmit = () => {
+    if (!form.fornecedor.trim() || !form.desc.trim() || !form.valor || !form.vencimento) return;
+    onSave({
+      fornecedor: form.fornecedor, desc: form.desc, documento: form.documento,
+      categoria: form.categoria || historicosDespesa[0]?.descricao, centroCusto: form.centroCusto,
+      contaFinanceira: form.contaFinanceira, valor: form.valor, juros: form.juros, desconto: form.desconto,
+      formaPgto: form.formaPgto, emissao: form.emissao, vencimento: form.vencimento,
+      obs: form.obs, parcelas: form.parcelas, responsavel: form.responsavel,
+    });
+  };
+
+  const Field = ({ label, k, placeholder, type = "text" }: { label: string; k: string; placeholder?: string; type?: string }) => (
+    <div className="space-y-1.5">
+      <label className="text-xs font-semibold text-muted-foreground">{label}</label>
+      <Input value={f[k]} onChange={e => set(k, e.target.value)} placeholder={placeholder} type={type}
+        className="h-9 rounded-xl text-sm" />
+    </div>
+  );
+  const Sel = ({ label, k, opts }: { label: string; k: string; opts: string[] }) => (
+    <div className="space-y-1.5">
+      <label className="text-xs font-semibold text-muted-foreground">{label}</label>
+      <div className="relative">
+        <select value={f[k]} onChange={e => set(k, e.target.value)}
+          className="w-full h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
+          {opts.map(o => <option key={o}>{o}</option>)}
+        </select>
+        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+      </div>
+    </div>
+  );
+  const Sep = ({ title }: { title: string }) => (
+    <div className="border-t border-border/30 pt-4">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{title}</p>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-card border border-border/50 rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border/40">
+          <div>
+            <h2 className="text-base font-semibold">Nova Conta a Pagar</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Preencha os dados da despesa</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-6 space-y-0">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Informações Principais</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Fornecedor *" k="fornecedor" placeholder="Nome do fornecedor" />
+            <Field label="Documento" k="documento" placeholder="Ex: NF-1099" />
+            <Field label="Descrição *" k="desc" placeholder="Ex: Compra de mercadorias" />
+            <Sel label="Histórico" k="categoria" opts={historicosDespesa.map(h => historicoLabel(h))} />
+            <Sel label="Centro de Custo" k="centroCusto" opts={["Compras", "Infraestrutura", "Marketing", "RH", "TI", "Admin"]} />
+            <Field label="Responsável" k="responsavel" placeholder="Nome" />
+          </div>
+          <Sep title="Valores" />
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Valor *" k="valor" placeholder="0,00" />
+            <Field label="Juros" k="juros" placeholder="0,00" />
+            <Field label="Desconto" k="desconto" placeholder="0,00" />
+          </div>
+          <Sep title="Pagamento" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Sel label="Forma de Pagamento" k="formaPgto" opts={["Boleto", "PIX", "Transferência", "Débito Auto", "Cartão", "Dinheiro"]} />
+            <Sel label="Conta Financeira" k="contaFinanceira" opts={["Caixa", "Banco", "Cartão", "Débito"]} />
+            <Sel label="Parcelas" k="parcelas" opts={["1", "2", "3", "6", "12"]} />
+          </div>
+          <Sep title="Datas" />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Emissão" k="emissao" placeholder="DD/MM/AAAA" />
+            <Field label="Vencimento *" k="vencimento" placeholder="DD/MM/AAAA" />
+          </div>
+          <div className="border-t border-border/30 pt-4 mt-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">Observações</label>
+              <textarea value={form.obs} onChange={e => set("obs", e.target.value)}
+                placeholder="Informações adicionais..."
+                className="w-full rounded-xl border border-input bg-background text-sm p-3 h-20 resize-none focus:outline-none focus:ring-2 focus:ring-ring" />
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border/40">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-secondary transition-colors">Cancelar</button>
+          <Button onClick={handleSubmit} className="rounded-xl gap-1.5 h-9 text-sm bg-gradient-primary text-primary-foreground">
+            <Check className="w-3.5 h-3.5" />Salvar Conta
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────
 // VALIDAÇÃO DE EDIÇÃO — regras de integridade
@@ -244,6 +353,15 @@ export function SecaoPagar() {
   const [filterFornecedor, setFilterFornecedor] = useState("");
   const [search,           setSearch]           = useState("");
   const [dtrPag, setDtrPag]                     = useState(DTR_PAG_DEFAULT);
+  const carregarContas = async () => {
+    try {
+      const data = await getFinanceiroPagar();
+      setContas(Array.isArray(data) ? (data as unknown as ContaPagar[]) : []);
+    } catch {
+      setContas([]);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -301,29 +419,61 @@ export function SecaoPagar() {
   const toggleSelect = (id: string) => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleSelectAll = () => setSelectedIds(selectedIds.size === filtered.length && filtered.length > 0 ? new Set() : new Set(filtered.map(c => c.id)));
 
-  const handleBaixa = (ids: string[]) => {
-    setContas(prev => prev.map(c => ids.includes(c.id) && c.status !== "pago" && c.status !== "cancelado"
-      ? { ...c, status: "pago" as StatusPag, valorPago: c.valor, pagamento: new Date().toLocaleDateString("pt-BR") } : c));
-    setSelectedIds(new Set());
-    showToast(`${ids.length} pagamento${ids.length > 1 ? "s" : ""} registrado${ids.length > 1 ? "s" : ""}!`);
-  };
-  const handleCancelar = (ids: string[]) => {
-    setContas(prev => prev.map(c => ids.includes(c.id) ? { ...c, status: "cancelado" as StatusPag } : c));
-    setSelectedIds(new Set());
-  };
-  const handleSalvarEdicaoPag = (atualizada: ContaPagar, diff: { antes: Partial<ContaPagar>; depois: Partial<ContaPagar> }) => {
-    setContas(prev => prev.map(c => c.id === atualizada.id ? atualizada : c));
-    setEditando(null);
-    const campos = Object.keys(diff.depois);
-    if (campos.length > 0) {
-      console.log("[AUDITORIA] PAGAR_ATUALIZAR", { id: atualizada.id, antes: diff.antes, depois: diff.depois });
-      showToast(`Conta atualizada! Campos alterados: ${campos.join(", ")}`);
-    } else {
-      showToast("Nenhuma alteração detectada.");
+  const handleNovaConta = async (dados: Record<string, unknown>) => {
+    try {
+      await createContaPagar(dados);
+      setModalAberto(false);
+      await carregarContas();
+      showToast("Conta a pagar criada com sucesso!");
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao criar conta a pagar.");
     }
   };
-
-  void modalAberto;
+  const handleBaixa = async (ids: string[]) => {
+    try {
+      const { efetivadas } = await efetivarContaPagar(ids);
+      setSelectedIds(new Set());
+      await carregarContas();
+      showToast(`${efetivadas} pagamento${efetivadas > 1 ? "s" : ""} registrado${efetivadas > 1 ? "s" : ""}!`);
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao registrar pagamento.");
+    }
+  };
+  const handleCancelar = async (ids: string[]) => {
+    try {
+      await cancelarContaPagar(ids);
+      setSelectedIds(new Set());
+      await carregarContas();
+      showToast("Conta(s) cancelada(s).");
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao cancelar conta.");
+    }
+  };
+  const handleSalvarEdicaoPag = async (atualizada: ContaPagar, diff: { antes: Partial<ContaPagar>; depois: Partial<ContaPagar> }) => {
+    const campos = Object.keys(diff.depois);
+    if (campos.length === 0) {
+      setEditando(null);
+      showToast("Nenhuma alteração detectada.");
+      return;
+    }
+    try {
+      await updateContaPagar({ id: atualizada.id, ...diff.depois });
+      setEditando(null);
+      await carregarContas();
+      showToast(`Conta atualizada! Campos alterados: ${campos.join(", ")}`);
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao atualizar conta.");
+    }
+  };
+  const handleExcluir = async (id: string) => {
+    try {
+      await deleteContaPagar(id);
+      await carregarContas();
+      showToast("Conta excluída.");
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao excluir conta.");
+    }
+  };
 
   const TH = ({ col, label }: { col?: keyof ContaPagar; label: string }) => (
     <th onClick={col ? () => toggleSort(col) : undefined}
@@ -335,11 +485,12 @@ export function SecaoPagar() {
   return (
     <div className="space-y-6">
       {toast && <Toast msg={toast} />}
+      {modalAberto && <ModalNovaContaPagar onClose={() => setModalAberto(false)} onSave={handleNovaConta} />}
       {editando && <ModalEditarContaPagar conta={editando} onClose={() => setEditando(null)} onSave={handleSalvarEdicaoPag} />}
 
       {/* ── BARRA DE AÇÕES ── */}
       <div className="flex items-center gap-2">
-        <Button onClick={() => {}}
+        <Button onClick={() => setModalAberto(true)}
           className="rounded-xl gap-1.5 h-9 text-sm bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">
           <Plus className="w-4 h-4" />Nova Conta a Pagar
         </Button>
@@ -611,7 +762,7 @@ export function SecaoPagar() {
                             origem={c.origem}
                             onEfetivar={() => handleBaixa([c.id])}
                             onEditar={() => setEditando(c)}
-                            onExcluir={() => setContas(prev => prev.filter(x => x.id !== c.id))}
+                            onExcluir={() => handleExcluir(c.id)}
                           />
                         </td>
                       </tr>

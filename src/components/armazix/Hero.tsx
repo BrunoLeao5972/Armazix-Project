@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ArrowRight, Star, Zap, Bell } from "lucide-react";
+import { ArrowRight, Zap, Bell } from "lucide-react";
 
 export function Hero() {
   return (
@@ -34,17 +34,6 @@ export function Hero() {
               Comece agora, é grátis
               <ArrowRight className="w-4 h-4" />
             </a>
-          </div>
-          <div className="mt-8 flex items-center gap-3 text-sm text-muted-foreground">
-            <div className="flex">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star key={i} className="w-4 h-4 fill-primary text-primary" />
-              ))}
-            </div>
-            <span>
-              <strong className="text-foreground">4,8/5</strong> por mais de{" "}
-              <strong className="text-foreground">300 lojistas</strong>
-            </span>
           </div>
         </motion.div>
 

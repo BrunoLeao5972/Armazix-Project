@@ -7,6 +7,10 @@ const { storeUsers } = schema;
 export interface AuthContext {
   userId?: string;
   storeId?: string;
+  /** storeUsers.role do usuário na loja do storeId acima — populado por requireAuth() (src/lib/middleware/auth.ts). */
+  storeRole?: string;
+  /** true quando o plano da loja está vencido — populado por requireAuth(). A decisão de bloquear ou não mora em src/lib/api-handler.ts. */
+  planBlocked?: boolean;
 }
 
 export interface StoreAccessResult {

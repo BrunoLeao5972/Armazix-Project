@@ -32,6 +32,14 @@ import {
   getDashboardChartDataHandler,
 } from "./api/stock-handler";
 import {
+  listContasPagarHandler,
+  createContaPagarHandler,
+  updateContaPagarHandler,
+  efetivarContaPagarHandler,
+  cancelarContaPagarHandler,
+  deleteContaPagarHandler,
+} from "./api/financeiro-pagar-handler";
+import {
   getEstoqueBaixoHandler,
   getClientesTopHandler,
   getProdutosLucrativosHandler,
@@ -40,6 +48,31 @@ import {
   getLucroBrutoLiquidoHandler,
   getLogsCriticosHandler,
   getCategoriasFinanceiroHandler,
+  getEntradaMercadoriasHandler,
+  getSaidaProdutosHandler,
+  getExtratoInventarioHandler,
+  getBalancoEstoqueHandler,
+  getProdutosSemMovimentacaoHandler,
+  getHistoricoMovimentacoesHandler,
+  getClientesCadastradosHandler,
+  getHistoricoComprasClienteHandler,
+  getClientesInativosHandler,
+  getListaProdutosHandler,
+  getProdutosPorCategoriaHandler,
+  getProdutosBaixaMargemHandler,
+  getProdutosSemEstoqueHandler,
+  getProdutosMaiorGiroHandler,
+  getVendasPorProdutoHandler,
+  getVendasPorClienteHandler,
+  getVendasPorFormaPagamentoHandler,
+  getProdutosMaisVendidosHandler,
+  getTicketMedioHandler,
+  getCancelamentosDevolucoesHandler,
+  getContasReceberHandler,
+  getContasPagarHandler,
+  getInadimplenciaHandler,
+  getReceitasDespesasHistoricoHandler,
+  getFechamentoCaixaHandler,
 } from "./api/reports-handler";
 import {
   createProductHandler,
@@ -59,6 +92,7 @@ import {
   listCustomersHandler,
   listSuppliersHandler,
   searchCustomersHandler,
+  searchProductsHandler,
   createCustomerHandler,
   updateCustomerHandler,
   validatePublicCouponHandler,
@@ -263,6 +297,11 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/products/create": createProductHandler,
   "/api/products/update": updateProductHandler,
   "/api/products/delete": deleteProductHandler,
+  "/api/financeiro/contas-pagar/create":   createContaPagarHandler,
+  "/api/financeiro/contas-pagar/update":   updateContaPagarHandler,
+  "/api/financeiro/contas-pagar/efetivar": efetivarContaPagarHandler,
+  "/api/financeiro/contas-pagar/cancelar": cancelarContaPagarHandler,
+  "/api/financeiro/contas-pagar/delete":   deleteContaPagarHandler,
   "/api/products/backfill-pdv-codes": backfillPdvCodesHandler,
   "/api/categories/create": createCategoryHandler,
   "/api/categories/update": updateCategoryHandler,
@@ -340,6 +379,32 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/reports/lucro-bruto-liquido": getLucroBrutoLiquidoHandler,
   "/api/reports/logs-criticos": getLogsCriticosHandler,
   "/api/reports/categorias-financeiro": getCategoriasFinanceiroHandler,
+  "/api/reports/entrada-mercadorias": getEntradaMercadoriasHandler,
+  "/api/reports/saida-produtos": getSaidaProdutosHandler,
+  "/api/reports/extrato-inventario": getExtratoInventarioHandler,
+  "/api/reports/balanco-estoque": getBalancoEstoqueHandler,
+  "/api/reports/produtos-sem-movimentacao": getProdutosSemMovimentacaoHandler,
+  "/api/reports/historico-movimentacoes": getHistoricoMovimentacoesHandler,
+  "/api/reports/clientes-cadastrados": getClientesCadastradosHandler,
+  "/api/reports/historico-compras-cliente": getHistoricoComprasClienteHandler,
+  "/api/reports/clientes-inativos": getClientesInativosHandler,
+  "/api/reports/lista-produtos": getListaProdutosHandler,
+  "/api/reports/produtos-por-categoria": getProdutosPorCategoriaHandler,
+  "/api/reports/produtos-baixa-margem": getProdutosBaixaMargemHandler,
+  "/api/reports/produtos-sem-estoque": getProdutosSemEstoqueHandler,
+  "/api/reports/produtos-maior-giro": getProdutosMaiorGiroHandler,
+  "/api/reports/vendas-por-produto": getVendasPorProdutoHandler,
+  "/api/reports/vendas-por-cliente": getVendasPorClienteHandler,
+  "/api/reports/vendas-por-forma-pagamento": getVendasPorFormaPagamentoHandler,
+  "/api/reports/produtos-mais-vendidos": getProdutosMaisVendidosHandler,
+  "/api/reports/ticket-medio": getTicketMedioHandler,
+  "/api/reports/cancelamentos-devolucoes": getCancelamentosDevolucoesHandler,
+  "/api/reports/contas-receber": getContasReceberHandler,
+  "/api/reports/contas-pagar": getContasPagarHandler,
+  "/api/reports/inadimplencia": getInadimplenciaHandler,
+  "/api/reports/receitas-despesas-historico": getReceitasDespesasHistoricoHandler,
+  "/api/reports/fechamento-caixa": getFechamentoCaixaHandler,
+  "/api/financeiro/contas-pagar": listContasPagarHandler,
   "/api/store/business-hours": getBusinessHoursHandler,
   "/api/user/get": getUserDataHandler,
   "/api/financial/stats": getFinancialStatsHandler,
@@ -350,6 +415,7 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/customers/list": listCustomersHandler,
   "/api/customers/suppliers": listSuppliersHandler,
   "/api/customers/search":    searchCustomersHandler,
+  "/api/products/search":     searchProductsHandler,
   "/api/balances/list":     listBalancesHandler,
   "/api/stock/movements":   listStockMovementsHandler,
   "/api/stock/adjustments": listStockAdjustmentsHandler,
@@ -416,7 +482,39 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/payments/mp-webhook": "webhook",
   "/api/subscriptions/mp-webhook": "webhook",
   "/api/subscriptions/pix-webhook": "webhook",
+  // Abrem conexão TCP de saída pro "Caminho / IP" da impressora — tier
+  // restritivo dedicado (ver network-guard.ts, achado F1 da auditoria).
+  "/api/printers/test-raw": "printer-network",
+  "/api/printers/print-test": "printer-network",
+  "/api/printers/print-order": "printer-network",
+  // Escreve valor monetário direto no financeiro da loja — mesmo tier de
+  // operações sensíveis (configs, senha, tokens).
+  "/api/financeiro/contas-pagar/create":   "sensitive",
+  "/api/financeiro/contas-pagar/update":   "sensitive",
+  "/api/financeiro/contas-pagar/efetivar": "sensitive",
+  "/api/financeiro/contas-pagar/cancelar": "sensitive",
+  "/api/financeiro/contas-pagar/delete":   "sensitive",
 };
+
+// Rotas que continuam acessíveis mesmo com auth.planBlocked === true —
+// precisam continuar de pé pra a própria loja conseguir pagar e sair do
+// bloqueio (renovar via PIX/cartão), fazer logout, ou mexer na própria
+// conta (auto-serviço, nunca passou por requireStoreAccess mesmo antes
+// deste bloqueio existir). Ver src/lib/plans.ts (isStorePlanBlocked) e
+// src/routes/admin.tsx (tela de bloqueio).
+const PLAN_BLOCK_EXEMPT_ROUTES = new Set<string>([
+  "/api/auth/logout",
+  "/api/auth/change-pending-email",
+  "/api/subscriptions/status",
+  "/api/subscriptions/create",
+  "/api/subscriptions/create-pix",
+  "/api/store/user",
+  "/api/user/get",
+  "/api/user/update-password",
+  "/api/user/update-data",
+  "/api/user/send-email-code",
+  "/api/user/verify-email-change",
+]);
 
 async function getRequestBodyStoreId(_request: Request): Promise<string | null> {
   // SECURITY: storeId must never be read from the request body.
@@ -481,6 +579,18 @@ export async function handleApiRequest(request: Request): Promise<Response> {
       const auth = await requireAuth(request);
       if (auth instanceof Response) {
         return withSecurityHeaders(auth);
+      }
+
+      // Plano vencido bloqueia toda rota protegida, exceto a lista de
+      // exceções acima (pagar, sair, auto-serviço da própria conta) — sem
+      // isso a própria forma de pagar pra desbloquear ficaria bloqueada.
+      if (auth.planBlocked && !PLAN_BLOCK_EXEMPT_ROUTES.has(pathname)) {
+        return withSecurityHeaders(
+          new Response(JSON.stringify({ error: "Plano vencido", planBlocked: true }), {
+            status: 402,
+            headers: { "content-type": "application/json" },
+          })
+        );
       }
 
       // Pass auth directly; storeId is already embedded in the JWT token.

@@ -124,6 +124,30 @@ export async function getFinanceiroPagar() {
   return http<any[]>(`/financeiro/contas-pagar`);
 }
 
+function postJson<T>(path: string, body: unknown) {
+  return http<T>(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function createContaPagar(dados: Record<string, unknown>) {
+  return postJson<any>(`/financeiro/contas-pagar/create`, dados);
+}
+export async function updateContaPagar(dados: Record<string, unknown>) {
+  return postJson<any>(`/financeiro/contas-pagar/update`, dados);
+}
+export async function efetivarContaPagar(ids: string[]) {
+  return postJson<{ contas: any[]; efetivadas: number }>(`/financeiro/contas-pagar/efetivar`, { ids });
+}
+export async function cancelarContaPagar(ids: string[]) {
+  return postJson<{ contas: any[]; canceladas: number }>(`/financeiro/contas-pagar/cancelar`, { ids });
+}
+export async function deleteContaPagar(id: string) {
+  return postJson<{ success: boolean }>(`/financeiro/contas-pagar/delete`, { id });
+}
+
 export async function getFinanceiroMovimentacoes() {
   return http<any[]>(`/financeiro/movimentacoes`);
 }

@@ -25,6 +25,27 @@ const mockOrderItemsFind = vi.fn();
 const mockProductsFind = vi.fn();
 
 vi.mock("@/lib/db", () => {
+  // Stub encadeável para db.select(...): handlers reais (ex.
+  // getDashboardStatsHandler) montam cadeias com .leftJoin/.innerJoin/
+  // .orderBy/.groupBy/.limit em ordens variadas, e algumas resolvem via
+  // .then(cb) explícito enquanto outras entram cruas dentro de um
+  // Promise.all([...]) (que também só precisa de um .then thenable). Cada
+  // método devolve o próprio objeto, então qualquer combinação encadeia, e
+  // o objeto é sempre "thenable" resolvendo pra um array vazio.
+  function makeSelectChain(): any {
+    const chain: any = {
+      from: () => chain,
+      where: () => chain,
+      leftJoin: () => chain,
+      innerJoin: () => chain,
+      orderBy: () => chain,
+      groupBy: () => chain,
+      limit: () => chain,
+      then: (onFulfilled: any, onRejected: any) => Promise.resolve([]).then(onFulfilled, onRejected),
+    };
+    return chain;
+  }
+
   const mockDb = () => ({
     query: {
       storeUsers: { findFirst: mockStoreUsersFind },
@@ -36,7 +57,7 @@ vi.mock("@/lib/db", () => {
       products: { findMany: mockProductsFind },
     },
     $count: mockProductsCount,
-    select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
+    select: () => makeSelectChain(),
   });
   return {
     createDb: mockDb,

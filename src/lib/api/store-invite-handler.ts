@@ -18,6 +18,7 @@ import { hashPassword, verifyPassword, validatePasswordPolicy } from "@/lib/auth
 import { sendTeamInviteEmail } from "@/lib/auth/email";
 import { logAudit, AuditActions, ResourceTypes } from "@/lib/audit";
 import { waitUntil } from "@/lib/execution-context";
+import { sanitizeString } from "@/lib/validation/schemas";
 
 const { users, storeUsers, storeInvites, stores } = schema;
 
@@ -79,7 +80,7 @@ export async function inviteStoreUserHandler(
     storeRole?: string;
   };
 
-  const name  = body.name?.trim();
+  const name  = body.name?.trim() ? sanitizeString(body.name.trim()) : undefined;
   const email = body.email ? normalizeEmail(body.email) : "";
   const role  = body.storeRole as AssignableRole | undefined;
 

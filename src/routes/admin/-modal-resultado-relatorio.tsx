@@ -28,17 +28,32 @@ export interface ResultadoRelatorio {
 export interface FiltrosDrawer {
   dataDe: string; dataAte: string;
   clienteId: string; usuarioId: string;
+  /** Nome do usuário selecionado no filtro "Usuário Responsável" — alguns
+   *  relatórios (aud-001, vnd-002/003/006) comparam contra um nome gravado
+   *  como texto livre (caixa_sessoes.abertoPor/encerradoPor), não um id, já
+   *  que orders/caixa_sessoes não referenciam storeUsers diretamente. */
+  usuarioNome: string;
   formaPagamento: string; status: string; historico: string;
+  produtoId: string; fornecedorId: string;
 }
 
 export const DEFAULT_FILTROS: FiltrosDrawer = {
-  dataDe: "", dataAte: "", clienteId: "", usuarioId: "", formaPagamento: "", status: "", historico: "",
+  dataDe: "", dataAte: "", clienteId: "", usuarioId: "", usuarioNome: "", formaPagamento: "", status: "", historico: "",
+  produtoId: "", fornecedorId: "",
 };
 
-// IDs do catálogo (relatorios.tsx) que já têm backend real — os outros 21
-// continuam fora de escopo.
+// IDs do catálogo (relatorios.tsx) que já têm backend real — os 3 que
+// faltam (fis-001, fis-002, cli-005) ficam fora porque a informação que
+// pedem não existe em nenhuma tabela hoje (nota fiscal e data de
+// nascimento de cliente nunca foram coletadas pelo sistema).
 export const RELATORIOS_IMPLEMENTADOS = [
   "est-005", "cli-002", "prod-003", "vnd-001", "fin-001", "fin-005", "aud-002",
+  "est-001", "est-002", "est-003", "est-004", "est-006", "est-007",
+  "cli-001", "cli-003", "cli-004",
+  "prod-001", "prod-002", "prod-004", "prod-005", "prod-006",
+  "vnd-002", "vnd-003", "vnd-004", "vnd-005", "vnd-006", "vnd-007",
+  "fin-002", "fin-003", "fin-004", "fin-006",
+  "aud-001",
 ] as const;
 
 // ─── Helpers de formatação ───────────────────────────────────────
@@ -189,6 +204,336 @@ function normalizarLogsCriticos(data: {
   };
 }
 
+// ─── Normalizadores dos 25 relatórios adicionados depois dos 7 originais ───
+
+function normalizarEntradaMercadorias(data: {
+  movimentos: { data: string; produto: string; fornecedor: string; qtd: number; custoUnit: number | null; nf: string | null; lote: string | null; validade: string | null }[];
+  kpis: { totalMovimentos: number; totalQtd: number; valorTotal: number };
+}): ResultadoRelatorio {
+  return {
+    titulo: "Entrada de Mercadorias",
+    kpis: [
+      { label: "Movimentos", value: String(data.kpis.totalMovimentos) },
+      { label: "Qtd Total", value: String(data.kpis.totalQtd) },
+      { label: "Valor Total", value: fmtBRL(data.kpis.valorTotal) },
+    ],
+    colunas: [
+      { key: "data", label: "Data" }, { key: "produto", label: "Produto" }, { key: "fornecedor", label: "Fornecedor" },
+      { key: "qtd", label: "Qtd", align: "right" }, { key: "custoUnit", label: "Custo Unit.", align: "right" }, { key: "nf", label: "NF" },
+    ],
+    linhas: data.movimentos.map(m => ({
+      data: fmtDataHora(m.data), produto: m.produto, fornecedor: m.fornecedor, qtd: m.qtd,
+      custoUnit: m.custoUnit != null ? fmtBRL(m.custoUnit) : "—", nf: m.nf || "—",
+    })),
+  };
+}
+
+function normalizarSaidaProdutos(data: {
+  movimentos: { data: string; produto: string; tipo: string; qtd: number; responsavel: string; origem: string }[];
+  kpis: { totalMovimentos: number; totalQtd: number };
+}): ResultadoRelatorio {
+  return {
+    titulo: "Saída de Produtos",
+    kpis: [{ label: "Movimentos", value: String(data.kpis.totalMovimentos) }, { label: "Qtd Total", value: String(data.kpis.totalQtd) }],
+    colunas: [
+      { key: "data", label: "Data" }, { key: "produto", label: "Produto" }, { key: "tipo", label: "Tipo" },
+      { key: "qtd", label: "Qtd", align: "right" }, { key: "responsavel", label: "Responsável" }, { key: "origem", label: "Origem" },
+    ],
+    linhas: data.movimentos.map(m => ({ data: fmtDataHora(m.data), produto: m.produto, tipo: m.tipo, qtd: m.qtd, responsavel: m.responsavel, origem: m.origem })),
+  };
+}
+
+function normalizarExtratoInventario(data: {
+  produtos: { nome: string; sku: string | null; estoqueAtual: number; custoUnit: number | null; valorEstoque: number | null }[];
+  kpis: { totalItens: number; valorTotalEstoque: number };
+}): ResultadoRelatorio {
+  return {
+    titulo: "Extrato e Inventário",
+    kpis: [{ label: "Itens", value: String(data.kpis.totalItens) }, { label: "Valor Total em Estoque", value: fmtBRL(data.kpis.valorTotalEstoque) }],
+    colunas: [
+      { key: "nome", label: "Produto" }, { key: "sku", label: "SKU" }, { key: "estoqueAtual", label: "Estoque", align: "right" },
+      { key: "custoUnit", label: "Custo Unit.", align: "right" }, { key: "valorEstoque", label: "Valor em Estoque", align: "right" },
+    ],
+    linhas: data.produtos.map(p => ({
+      nome: p.nome, sku: p.sku || "—", estoqueAtual: p.estoqueAtual,
+      custoUnit: p.custoUnit != null ? fmtBRL(p.custoUnit) : "—", valorEstoque: p.valorEstoque != null ? fmtBRL(p.valorEstoque) : "—",
+    })),
+  };
+}
+
+function normalizarBalancoEstoque(data: {
+  balancos: { codigo: string; dataContagem: string; dataEncerramento: string | null; totalItens: number; totalDivergencias: number; valorDivergencia: number }[];
+  kpis: { totalBalancos: number };
+}): ResultadoRelatorio {
+  return {
+    titulo: "Balanço de Estoque",
+    kpis: [{ label: "Balanços Encerrados", value: String(data.kpis.totalBalancos) }],
+    colunas: [
+      { key: "codigo", label: "Código" }, { key: "dataContagem", label: "Contagem" }, { key: "dataEncerramento", label: "Encerramento" },
+      { key: "totalItens", label: "Itens", align: "right" }, { key: "totalDivergencias", label: "Divergências", align: "right" },
+      { key: "valorDivergencia", label: "Valor Divergência", align: "right" },
+    ],
+    linhas: data.balancos.map(b => ({
+      codigo: b.codigo, dataContagem: fmtDataHora(b.dataContagem), dataEncerramento: b.dataEncerramento ? fmtDataHora(b.dataEncerramento) : "—",
+      totalItens: b.totalItens, totalDivergencias: b.totalDivergencias, valorDivergencia: fmtBRL(b.valorDivergencia),
+    })),
+  };
+}
+
+function normalizarProdutosSemMovimentacao(data: { produtos: { nome: string; sku: string | null; estoqueAtual: number }[]; kpis: { totalSemMovimentacao: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Produtos sem Movimentação",
+    kpis: [{ label: "Produtos sem movimentação", value: String(data.kpis.totalSemMovimentacao) }],
+    colunas: [{ key: "nome", label: "Produto" }, { key: "sku", label: "SKU" }, { key: "estoqueAtual", label: "Estoque Atual", align: "right" }],
+    linhas: data.produtos.map(p => ({ nome: p.nome, sku: p.sku || "—", estoqueAtual: p.estoqueAtual })),
+  };
+}
+
+function normalizarHistoricoMovimentacoes(data: {
+  movimentos: { data: string; produto: string; tipo: string; qtd: number; balanceBefore: number; balanceAfter: number; responsavel: string }[];
+  kpis: { totalMovimentos: number };
+}): ResultadoRelatorio {
+  return {
+    titulo: "Histórico de Movimentações",
+    kpis: [{ label: "Movimentos", value: String(data.kpis.totalMovimentos) }],
+    colunas: [
+      { key: "data", label: "Data" }, { key: "produto", label: "Produto" }, { key: "tipo", label: "Tipo" }, { key: "qtd", label: "Qtd", align: "right" },
+      { key: "saldo", label: "Saldo Após", align: "right" }, { key: "responsavel", label: "Responsável" },
+    ],
+    linhas: data.movimentos.map(m => ({ data: fmtDataHora(m.data), produto: m.produto, tipo: m.tipo, qtd: m.qtd, saldo: m.balanceAfter, responsavel: m.responsavel })),
+  };
+}
+
+function normalizarClientesCadastrados(data: { clientes: { nome: string; telefone: string; status: string; cadastradoEm: string }[]; kpis: { total: number; ativos: number; inativos: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Clientes Cadastrados",
+    kpis: [{ label: "Total", value: String(data.kpis.total) }, { label: "Ativos", value: String(data.kpis.ativos) }, { label: "Inativos", value: String(data.kpis.inativos) }],
+    colunas: [{ key: "nome", label: "Nome" }, { key: "telefone", label: "Telefone" }, { key: "status", label: "Status" }, { key: "cadastradoEm", label: "Cadastrado em" }],
+    linhas: data.clientes.map(c => ({ nome: c.nome, telefone: c.telefone, status: c.status, cadastradoEm: fmtDataHora(c.cadastradoEm) })),
+  };
+}
+
+function normalizarHistoricoComprasCliente(data: {
+  cliente: { nome: string }; pedidos: { numero: number; data: string; status: string; total: string }[];
+  kpis: { totalPedidos: number; totalGasto: number; ticketMedio: number };
+}): ResultadoRelatorio {
+  return {
+    titulo: `Histórico de Compras — ${data.cliente.nome}`,
+    kpis: [
+      { label: "Pedidos", value: String(data.kpis.totalPedidos) }, { label: "Total Gasto", value: fmtBRL(data.kpis.totalGasto) },
+      { label: "Ticket Médio", value: fmtBRL(data.kpis.ticketMedio) },
+    ],
+    colunas: [{ key: "numero", label: "Pedido #" }, { key: "data", label: "Data" }, { key: "status", label: "Status" }, { key: "total", label: "Total", align: "right" }],
+    linhas: data.pedidos.map(p => ({ numero: p.numero, data: fmtDataHora(p.data), status: p.status, total: fmtBRL(parseFloat(p.total)) })),
+  };
+}
+
+function normalizarClientesInativos(data: { clientes: { nome: string; telefone: string }[]; kpis: { totalInativos: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Clientes Inativos",
+    kpis: [{ label: "Clientes inativos no período", value: String(data.kpis.totalInativos) }],
+    colunas: [{ key: "nome", label: "Nome" }, { key: "telefone", label: "Telefone" }],
+    linhas: data.clientes.map(c => ({ nome: c.nome, telefone: c.telefone })),
+  };
+}
+
+function normalizarListaProdutos(data: { produtos: { nome: string; sku: string | null; categoria: string; preco: number; estoqueAtual: number; status: string }[]; kpis: { total: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Lista de Produtos",
+    kpis: [{ label: "Total de Produtos", value: String(data.kpis.total) }],
+    colunas: [
+      { key: "nome", label: "Produto" }, { key: "sku", label: "SKU" }, { key: "categoria", label: "Categoria" },
+      { key: "preco", label: "Preço", align: "right" }, { key: "estoqueAtual", label: "Estoque", align: "right" }, { key: "status", label: "Status" },
+    ],
+    linhas: data.produtos.map(p => ({ nome: p.nome, sku: p.sku || "—", categoria: p.categoria, preco: fmtBRL(p.preco), estoqueAtual: p.estoqueAtual, status: p.status })),
+  };
+}
+
+function normalizarProdutosPorCategoria(data: { categorias: { categoria: string; totalProdutos: number; valorEstoque: number }[]; kpis: { totalCategorias: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Produtos por Categoria",
+    kpis: [{ label: "Categorias", value: String(data.kpis.totalCategorias) }],
+    colunas: [{ key: "categoria", label: "Categoria" }, { key: "totalProdutos", label: "Produtos", align: "right" }, { key: "valorEstoque", label: "Valor em Estoque", align: "right" }],
+    linhas: data.categorias.map(c => ({ categoria: c.categoria, totalProdutos: c.totalProdutos, valorEstoque: fmtBRL(c.valorEstoque) })),
+  };
+}
+
+function normalizarProdutosBaixaMargem(data: { produtos: { nome: string; preco: number; custo: number; margemPct: number }[]; kpis: { totalProdutos: number; limiteMargemPct: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Produtos com Baixa Margem",
+    kpis: [{ label: `Abaixo de ${data.kpis.limiteMargemPct}% de margem`, value: String(data.kpis.totalProdutos) }],
+    colunas: [{ key: "nome", label: "Produto" }, { key: "preco", label: "Preço", align: "right" }, { key: "custo", label: "Custo", align: "right" }, { key: "margemPct", label: "Margem %", align: "right" }],
+    linhas: data.produtos.map(p => ({ nome: p.nome, preco: fmtBRL(p.preco), custo: fmtBRL(p.custo), margemPct: `${p.margemPct.toFixed(1)}%` })),
+  };
+}
+
+function normalizarProdutosSemEstoque(data: { produtos: { nome: string; sku: string | null; estoqueAtual: number }[]; kpis: { total: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Produtos sem Estoque",
+    kpis: [{ label: "Produtos sem estoque", value: String(data.kpis.total) }],
+    colunas: [{ key: "nome", label: "Produto" }, { key: "sku", label: "SKU" }, { key: "estoqueAtual", label: "Estoque", align: "right" }],
+    linhas: data.produtos.map(p => ({ nome: p.nome, sku: p.sku || "—", estoqueAtual: p.estoqueAtual })),
+  };
+}
+
+function normalizarProdutosMaiorGiro(data: { produtos: { nome: string; qtdVendida: number; estoqueAtual: number | null; giro: number | null }[]; kpis: { totalProdutos: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Produtos com Maior Giro",
+    kpis: [{ label: "Produtos no ranking", value: String(data.kpis.totalProdutos) }],
+    colunas: [
+      { key: "nome", label: "Produto" }, { key: "qtdVendida", label: "Qtd Vendida", align: "right" },
+      { key: "estoqueAtual", label: "Estoque Atual", align: "right" }, { key: "giro", label: "Giro", align: "right" },
+    ],
+    linhas: data.produtos.map(p => ({ nome: p.nome, qtdVendida: p.qtdVendida, estoqueAtual: p.estoqueAtual ?? "—", giro: p.giro != null ? p.giro.toFixed(2) : "—" })),
+  };
+}
+
+function normalizarVendasPorProduto(data: { produtos: { nome: string; qtd: number; receita: number }[]; kpis: { totalProdutos: number; receitaTotal: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Vendas por Produto",
+    kpis: [{ label: "Produtos", value: String(data.kpis.totalProdutos) }, { label: "Receita Total", value: fmtBRL(data.kpis.receitaTotal) }],
+    colunas: [{ key: "nome", label: "Produto" }, { key: "qtd", label: "Qtd", align: "right" }, { key: "receita", label: "Receita", align: "right" }],
+    linhas: data.produtos.map(p => ({ nome: p.nome, qtd: p.qtd, receita: fmtBRL(p.receita) })),
+  };
+}
+
+function normalizarVendasPorCliente(data: { clientes: { nome: string; pedidos: number; totalGasto: number; ticketMedio: number }[]; kpis: { totalClientes: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Vendas por Cliente",
+    kpis: [{ label: "Clientes", value: String(data.kpis.totalClientes) }],
+    colunas: [
+      { key: "nome", label: "Cliente" }, { key: "pedidos", label: "Pedidos", align: "right" },
+      { key: "totalGasto", label: "Total Gasto", align: "right" }, { key: "ticketMedio", label: "Ticket Médio", align: "right" },
+    ],
+    linhas: data.clientes.map(c => ({ nome: c.nome, pedidos: c.pedidos, totalGasto: fmtBRL(c.totalGasto), ticketMedio: fmtBRL(c.ticketMedio) })),
+  };
+}
+
+function normalizarVendasPorFormaPagamento(data: { formas: { forma: string; pedidos: number; total: number }[]; kpis: { totalGeral: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Vendas por Forma de Pagamento",
+    kpis: [{ label: "Total Geral", value: fmtBRL(data.kpis.totalGeral) }],
+    colunas: [{ key: "forma", label: "Forma" }, { key: "pedidos", label: "Pedidos", align: "right" }, { key: "total", label: "Total", align: "right" }],
+    linhas: data.formas.map(f => ({ forma: f.forma, pedidos: f.pedidos, total: fmtBRL(f.total) })),
+  };
+}
+
+function normalizarProdutosMaisVendidos(data: { produtos: { nome: string; qtd: number; receita: number }[]; kpis: { totalProdutos: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Produtos Mais Vendidos",
+    kpis: [{ label: "Produtos no ranking", value: String(data.kpis.totalProdutos) }],
+    colunas: [{ key: "nome", label: "Produto" }, { key: "qtd", label: "Qtd Vendida", align: "right" }, { key: "receita", label: "Receita", align: "right" }],
+    linhas: data.produtos.map(p => ({ nome: p.nome, qtd: p.qtd, receita: fmtBRL(p.receita) })),
+  };
+}
+
+function normalizarTicketMedio(data: { kpis: { numPedidos: number; totalVendido: number; ticketMedio: number }; porVendedor: { vendedor: string; pedidos: number; ticketMedio: number }[] }): ResultadoRelatorio {
+  return {
+    titulo: "Ticket Médio",
+    kpis: [
+      { label: "Ticket Médio Geral", value: fmtBRL(data.kpis.ticketMedio) }, { label: "Pedidos", value: String(data.kpis.numPedidos) },
+      { label: "Total Vendido", value: fmtBRL(data.kpis.totalVendido) },
+    ],
+    colunas: [{ key: "vendedor", label: "Vendedor" }, { key: "pedidos", label: "Pedidos", align: "right" }, { key: "ticketMedio", label: "Ticket Médio", align: "right" }],
+    linhas: data.porVendedor.map(v => ({ vendedor: v.vendedor, pedidos: v.pedidos, ticketMedio: fmtBRL(v.ticketMedio) })),
+  };
+}
+
+function normalizarCancelamentosDevolucoes(data: {
+  pedidos: { numero: number; data: string; status: string; paymentStatus: string; total: string; motivo: string | null }[];
+  kpis: { totalOcorrencias: number; cancelados: number; devolvidos: number; valorTotal: number };
+}): ResultadoRelatorio {
+  return {
+    titulo: "Cancelamentos e Devoluções",
+    kpis: [
+      { label: "Ocorrências", value: String(data.kpis.totalOcorrencias) }, { label: "Cancelados", value: String(data.kpis.cancelados) },
+      { label: "Devolvidos", value: String(data.kpis.devolvidos) }, { label: "Valor Total", value: fmtBRL(data.kpis.valorTotal) },
+    ],
+    colunas: [
+      { key: "numero", label: "Pedido #" }, { key: "data", label: "Data" }, { key: "status", label: "Status" },
+      { key: "total", label: "Total", align: "right" }, { key: "motivo", label: "Motivo" },
+    ],
+    linhas: data.pedidos.map(p => ({
+      numero: p.numero, data: fmtDataHora(p.data),
+      status: p.status === "cancelled" ? "Cancelado" : p.paymentStatus === "refunded" ? "Devolvido" : p.status,
+      total: fmtBRL(parseFloat(p.total)), motivo: p.motivo || "—",
+    })),
+  };
+}
+
+function normalizarContasReceber(data: {
+  lancamentos: { descricao: string; valor: string; status: string; dataCompetencia: string; cliente: string }[];
+  kpis: { totalLiquidado: number; totalPendente: number; totalGeral: number };
+}): ResultadoRelatorio {
+  return {
+    titulo: "Contas a Receber",
+    kpis: [
+      { label: "Liquidado", value: fmtBRL(data.kpis.totalLiquidado) }, { label: "Pendente", value: fmtBRL(data.kpis.totalPendente) },
+      { label: "Total", value: fmtBRL(data.kpis.totalGeral) },
+    ],
+    colunas: [
+      { key: "descricao", label: "Descrição" }, { key: "cliente", label: "Cliente" }, { key: "valor", label: "Valor", align: "right" },
+      { key: "status", label: "Status" }, { key: "dataCompetencia", label: "Data" },
+    ],
+    linhas: data.lancamentos.map(l => ({ descricao: l.descricao, cliente: l.cliente, valor: fmtBRL(parseFloat(l.valor)), status: l.status, dataCompetencia: fmtData(l.dataCompetencia) })),
+  };
+}
+
+function normalizarContasPagar(data: { lancamentos: { descricao: string; valor: string; status: string; dataCompetencia: string }[]; kpis: { totalPagar: number }; aviso: string | null }): ResultadoRelatorio {
+  return {
+    titulo: "Contas a Pagar",
+    kpis: [{ label: "Total a Pagar", value: fmtBRL(data.kpis.totalPagar) }],
+    colunas: [{ key: "descricao", label: "Descrição" }, { key: "valor", label: "Valor", align: "right" }, { key: "status", label: "Status" }, { key: "dataCompetencia", label: "Data" }],
+    linhas: data.lancamentos.map(l => ({ descricao: l.descricao, valor: fmtBRL(parseFloat(l.valor)), status: l.status, dataCompetencia: fmtData(l.dataCompetencia) })),
+    avisos: data.aviso ? [data.aviso] : undefined,
+  };
+}
+
+function normalizarInadimplencia(data: { lancamentos: { descricao: string; valor: string; dataCompetencia: string; cliente: string }[]; kpis: { totalAtraso: number; qtd: number }; aviso: string | null }): ResultadoRelatorio {
+  return {
+    titulo: "Inadimplência",
+    kpis: [{ label: "Em Atraso", value: fmtBRL(data.kpis.totalAtraso) }, { label: "Títulos", value: String(data.kpis.qtd) }],
+    colunas: [{ key: "descricao", label: "Descrição" }, { key: "cliente", label: "Cliente" }, { key: "valor", label: "Valor", align: "right" }, { key: "dataCompetencia", label: "Vencimento" }],
+    linhas: data.lancamentos.map(l => ({ descricao: l.descricao, cliente: l.cliente, valor: fmtBRL(parseFloat(l.valor)), dataCompetencia: fmtData(l.dataCompetencia) })),
+    avisos: data.aviso ? [data.aviso] : undefined,
+  };
+}
+
+function normalizarReceitasDespesasHistorico(data: { categorias: { categoria: string; tipo: string; total: number }[]; kpis: { totalEntradas: number; totalSaidas: number; saldo: number } }): ResultadoRelatorio {
+  return {
+    titulo: "Receitas e Despesas por Histórico",
+    kpis: [
+      { label: "Entradas", value: fmtBRL(data.kpis.totalEntradas) }, { label: "Saídas", value: fmtBRL(data.kpis.totalSaidas) },
+      { label: "Saldo", value: fmtBRL(data.kpis.saldo) },
+    ],
+    colunas: [{ key: "categoria", label: "Categoria" }, { key: "tipo", label: "Tipo" }, { key: "total", label: "Total", align: "right" }],
+    linhas: data.categorias.map(c => ({ categoria: c.categoria, tipo: c.tipo === "entrada" ? "Entrada" : "Saída", total: fmtBRL(c.total) })),
+  };
+}
+
+function normalizarFechamentoCaixa(data: {
+  sessoes: { abertoPor: string; encerradoPor: string; openedAt: string; closedAt: string; totalDinheiro: number; totalPix: number; totalCartao: number; totalDebito: number; totalOutros: number; totalVendas: number; saldoInicial: number; saldoFinal: number | null }[];
+  kpis: { totalSessoes: number; totalVendas: number; totalGeral: number };
+}): ResultadoRelatorio {
+  return {
+    titulo: "Fechamento Diário de Caixa",
+    kpis: [
+      { label: "Sessões Encerradas", value: String(data.kpis.totalSessoes) }, { label: "Total de Vendas", value: String(data.kpis.totalVendas) },
+      { label: "Total Movimentado", value: fmtBRL(data.kpis.totalGeral) },
+    ],
+    colunas: [
+      { key: "abertoPor", label: "Aberto por" }, { key: "encerradoPor", label: "Encerrado por" }, { key: "closedAt", label: "Fechamento" },
+      { key: "totalDinheiro", label: "Dinheiro", align: "right" }, { key: "totalPix", label: "PIX", align: "right" },
+      { key: "totalCartao", label: "Cartão", align: "right" }, { key: "saldoFinal", label: "Saldo Final", align: "right" },
+    ],
+    linhas: data.sessoes.map(s => ({
+      abertoPor: s.abertoPor, encerradoPor: s.encerradoPor, closedAt: fmtDataHora(s.closedAt),
+      totalDinheiro: fmtBRL(s.totalDinheiro), totalPix: fmtBRL(s.totalPix), totalCartao: fmtBRL(s.totalCartao),
+      saldoFinal: s.saldoFinal != null ? fmtBRL(s.saldoFinal) : "—",
+    })),
+  };
+}
+
 // ─── Busca + normaliza o resultado de um relatório real ────────────
 export async function fetchReportData(reportId: string, filtros: FiltrosDrawer): Promise<ResultadoRelatorio> {
   const qs = new URLSearchParams();
@@ -235,6 +580,135 @@ export async function fetchReportData(reportId: string, filtros: FiltrosDrawer):
       if (filtros.status) qs2.set("status", filtros.status);
       return normalizarLogsCriticos(await getJson(`/api/reports/logs-criticos?${qs2.toString()}`));
     }
+
+    // ── 25 relatórios adicionados depois dos 7 originais ──────────────
+    case "est-001": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.fornecedorId) qs2.set("fornecedorId", filtros.fornecedorId);
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      return normalizarEntradaMercadorias(await getJson(`/api/reports/entrada-mercadorias?${qs2.toString()}`));
+    }
+    case "est-002": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      if (filtros.usuarioId) qs2.set("responsavelId", filtros.usuarioId);
+      return normalizarSaidaProdutos(await getJson(`/api/reports/saida-produtos?${qs2.toString()}`));
+    }
+    case "est-003": {
+      const qs2 = new URLSearchParams();
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      return normalizarExtratoInventario(await getJson(`/api/reports/extrato-inventario?${qs2.toString()}`));
+    }
+    case "est-004":
+      return normalizarBalancoEstoque(await getJson(`/api/reports/balanco-estoque?${periodoQs}`));
+    case "est-006": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      return normalizarProdutosSemMovimentacao(await getJson(`/api/reports/produtos-sem-movimentacao?${qs2.toString()}`));
+    }
+    case "est-007": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      if (filtros.usuarioId) qs2.set("responsavelId", filtros.usuarioId);
+      return normalizarHistoricoMovimentacoes(await getJson(`/api/reports/historico-movimentacoes?${qs2.toString()}`));
+    }
+    case "cli-001": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.status) qs2.set("status", filtros.status);
+      return normalizarClientesCadastrados(await getJson(`/api/reports/clientes-cadastrados?${qs2.toString()}`));
+    }
+    case "cli-003": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.clienteId) qs2.set("clienteId", filtros.clienteId);
+      return normalizarHistoricoComprasCliente(await getJson(`/api/reports/historico-compras-cliente?${qs2.toString()}`));
+    }
+    case "cli-004":
+      return normalizarClientesInativos(await getJson(`/api/reports/clientes-inativos?${periodoQs}`));
+    case "prod-001": {
+      const qs2 = new URLSearchParams();
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      if (filtros.status) qs2.set("status", filtros.status);
+      return normalizarListaProdutos(await getJson(`/api/reports/lista-produtos?${qs2.toString()}`));
+    }
+    case "prod-002":
+      return normalizarProdutosPorCategoria(await getJson("/api/reports/produtos-por-categoria"));
+    case "prod-004": {
+      const qs2 = new URLSearchParams();
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      return normalizarProdutosBaixaMargem(await getJson(`/api/reports/produtos-baixa-margem?${qs2.toString()}`));
+    }
+    case "prod-005": {
+      const qs2 = new URLSearchParams();
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      return normalizarProdutosSemEstoque(await getJson(`/api/reports/produtos-sem-estoque?${qs2.toString()}`));
+    }
+    case "prod-006": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      return normalizarProdutosMaiorGiro(await getJson(`/api/reports/produtos-maior-giro?${qs2.toString()}`));
+    }
+    case "vnd-002": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      if (filtros.formaPagamento) qs2.set("formaPagamento", filtros.formaPagamento);
+      if (filtros.usuarioNome) qs2.set("vendedor", filtros.usuarioNome);
+      return normalizarVendasPorProduto(await getJson(`/api/reports/vendas-por-produto?${qs2.toString()}`));
+    }
+    case "vnd-003": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.clienteId) qs2.set("clienteId", filtros.clienteId);
+      if (filtros.usuarioNome) qs2.set("vendedor", filtros.usuarioNome);
+      return normalizarVendasPorCliente(await getJson(`/api/reports/vendas-por-cliente?${qs2.toString()}`));
+    }
+    case "vnd-004": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.formaPagamento) qs2.set("formaPagamento", filtros.formaPagamento);
+      return normalizarVendasPorFormaPagamento(await getJson(`/api/reports/vendas-por-forma-pagamento?${qs2.toString()}`));
+    }
+    case "vnd-005": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.produtoId) qs2.set("produtoId", filtros.produtoId);
+      return normalizarProdutosMaisVendidos(await getJson(`/api/reports/produtos-mais-vendidos?${qs2.toString()}`));
+    }
+    case "vnd-006": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.clienteId) qs2.set("clienteId", filtros.clienteId);
+      if (filtros.usuarioNome) qs2.set("vendedor", filtros.usuarioNome);
+      return normalizarTicketMedio(await getJson(`/api/reports/ticket-medio?${qs2.toString()}`));
+    }
+    case "vnd-007": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.status) qs2.set("status", filtros.status);
+      return normalizarCancelamentosDevolucoes(await getJson(`/api/reports/cancelamentos-devolucoes?${qs2.toString()}`));
+    }
+    case "fin-002": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.clienteId) qs2.set("clienteId", filtros.clienteId);
+      if (filtros.status) qs2.set("status", filtros.status);
+      if (filtros.historico) qs2.set("categoria", filtros.historico);
+      return normalizarContasReceber(await getJson(`/api/reports/contas-receber?${qs2.toString()}`));
+    }
+    case "fin-003": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.historico) qs2.set("categoria", filtros.historico);
+      return normalizarContasPagar(await getJson(`/api/reports/contas-pagar?${qs2.toString()}`));
+    }
+    case "fin-004": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.clienteId) qs2.set("clienteId", filtros.clienteId);
+      return normalizarInadimplencia(await getJson(`/api/reports/inadimplencia?${qs2.toString()}`));
+    }
+    case "fin-006": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.historico) qs2.set("categoria", filtros.historico);
+      return normalizarReceitasDespesasHistorico(await getJson(`/api/reports/receitas-despesas-historico?${qs2.toString()}`));
+    }
+    case "aud-001": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.usuarioNome) qs2.set("responsavel", filtros.usuarioNome);
+      return normalizarFechamentoCaixa(await getJson(`/api/reports/fechamento-caixa?${qs2.toString()}`));
+    }
+
     default:
       throw new Error("Este relatório ainda não está disponível.");
   }

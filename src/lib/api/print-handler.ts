@@ -2,6 +2,7 @@ import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-a
 import { createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
+import { resolveSafeTarget } from "@/lib/security/network-guard";
 import {
   buildProductionTicket, buildCaixaCoupon, buildDeliveryTicket, buildFichaEntrega,
   linesToText, linesToEscPos,
@@ -43,20 +44,6 @@ async function sendViaTcp(host: string, port: number, data: string): Promise<voi
     socket.setTimeout(5000, () => { socket.destroy(); reject(new Error("Timeout de conexão")); });
     socket.on("error", (err) => reject(err));
   });
-}
-
-// Returns { host, port } only for real network addresses:
-//   - IPv4: 192.168.1.10  or  192.168.1.10:9100
-//   - Hostname with at least one dot: printer.local  or  server.empresa.com:9100
-// Windows printer names like "IMP-TERMICA" or "HP LaserJet Pro" return null.
-function parseNetworkPath(path: string): { host: string; port: number } | null {
-  const t = path.trim();
-  if (t.startsWith("\\\\")) return null;
-  const ip   = t.match(/^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d+))?$/);
-  if (ip)   return { host: ip[1],   port: parseInt(ip[2]   ?? "9100", 10) };
-  const host = t.match(/^([\w-]+(?:\.[\w-]+)+)(?::(\d+))?$/);
-  if (host) return { host: host[1], port: parseInt(host[2] ?? "9100", 10) };
-  return null;
 }
 
 // ─── POST /api/printers/test-raw ─────────────────────────────────
@@ -101,7 +88,7 @@ export async function printRawTestHandler(request: Request, auth?: AuthContext):
   let sent      = false;
   let sendError: string | undefined;
 
-  const net = parseNetworkPath(body.path.trim());
+  const net = await resolveSafeTarget(body.path.trim());
   if (net) {
     try {
       await sendViaTcp(net.host, net.port, escpos);
@@ -109,9 +96,13 @@ export async function printRawTestHandler(request: Request, auth?: AuthContext):
     } catch (err) {
       sendError = (err as Error).message;
     }
-  } else {
+  } else if (body.path.trim().startsWith("\\\\")) {
     // UNC / Windows share — preview-only, o front faz fallback para iframe print
     sendError = "unc";
+  } else {
+    // Formato de rede não reconhecido OU alvo bloqueado por segurança
+    // (loopback, link-local, etc.) — ver src/lib/security/network-guard.ts.
+    sendError = "Caminho / IP inválido ou não permitido.";
   }
 
   return new Response(JSON.stringify({ preview, escposB64: b64, sent, error: sendError }), {
@@ -175,7 +166,7 @@ export async function printTestHandler(request: Request, auth?: AuthContext): Pr
   let sendError: string | undefined;
 
   if (body.send && printer.path) {
-    const net = parseNetworkPath(printer.path);
+    const net = await resolveSafeTarget(printer.path);
     if (net) {
       try {
         await sendViaTcp(net.host, net.port, escpos);
@@ -184,7 +175,7 @@ export async function printTestHandler(request: Request, auth?: AuthContext): Pr
         sendError = (err as Error).message;
       }
     } else {
-      sendError = "Caminho não é um endereço de rede (IP). Impressão via compartilhamento Windows requer agente local.";
+      sendError = "Caminho não é um endereço de rede válido, ou o alvo não é permitido. Impressão via compartilhamento Windows requer agente local.";
     }
   }
 
@@ -253,7 +244,7 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
   let sendError: string | undefined;
 
   if (body.send && printer.path) {
-    const net = parseNetworkPath(printer.path);
+    const net = await resolveSafeTarget(printer.path);
     if (net) {
       try {
         await sendViaTcp(net.host, net.port, escpos);
@@ -262,7 +253,7 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
         sendError = (err as Error).message;
       }
     } else {
-      sendError = "Caminho não é IP/hostname. Use agente local para impressoras Windows.";
+      sendError = "Caminho não é IP/hostname válido, ou o alvo não é permitido. Use agente local para impressoras Windows.";
     }
   }
 

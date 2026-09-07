@@ -563,7 +563,7 @@ export function ProductCard({
 
   if (layoutType === 'list') {
     return (
-      <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group touch-pan-y">
+      <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group">
         <div className="relative bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all group-hover:shadow-md flex items-center gap-3">
           {/* Image */}
           <div className="relative w-24 h-24 shrink-0 bg-slate-100 flex items-center justify-center overflow-hidden rounded-l-2xl">
@@ -634,7 +634,7 @@ export function ProductCard({
   }
 
   return (
-    <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group h-full touch-pan-y">
+    <Link to="/store/product/$productId" params={{ productId: product.id }} className="block group h-full">
       <div className="relative bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm transition-all group-hover:shadow-md h-full flex flex-col">
         {/* Image — caixa quadrada via padding-top (não aspect-ratio): o
             Safari/iOS tem um bug conhecido de recalcular aspect-ratio pro

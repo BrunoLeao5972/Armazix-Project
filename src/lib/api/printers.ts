@@ -2,7 +2,19 @@ import { createUnscopedDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, desc, and } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
+import { looksLikeNetworkTarget, resolveSafeTarget } from "@/lib/security/network-guard";
 const { printers } = schema;
+
+// Recusa gravar um path que tem cara de alvo de rede (IP/hostname) mas
+// resolve para um endereço bloqueado (loopback, link-local, etc.) — fecha o
+// desvio em 2 passos do SSRF do print-handler.ts (cadastrar a impressora com
+// esse path e só depois mandar imprimir com send:true). Um nome de
+// impressora local ou caminho UNC passa direto, sem checagem nenhuma.
+async function rejectUnsafePrinterPath(path: string | null | undefined): Promise<string | null> {
+  if (!path || !looksLikeNetworkTarget(path)) return null;
+  const target = await resolveSafeTarget(path);
+  return target ? null : "Este endereço de impressora não é permitido.";
+}
 
 // ─── List ────────────────────────────────────────────────────────
 export async function listPrintersHandler(request: Request, auth?: AuthContext): Promise<Response> {
@@ -69,6 +81,13 @@ export async function createPrinterHandler(request: Request, auth?: AuthContext)
     });
   }
 
+  const pathError = await rejectUnsafePrinterPath(body.path);
+  if (pathError) {
+    return new Response(JSON.stringify({ error: pathError }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  }
+
   const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
 
   try {
@@ -131,6 +150,15 @@ export async function updatePrinterHandler(request: Request, auth?: AuthContext)
     return new Response(JSON.stringify({ error: "printerId obrigatório" }), {
       status: 400, headers: { "content-type": "application/json" },
     });
+  }
+
+  if (body.path !== undefined) {
+    const pathError = await rejectUnsafePrinterPath(body.path);
+    if (pathError) {
+      return new Response(JSON.stringify({ error: pathError }), {
+        status: 400, headers: { "content-type": "application/json" },
+      });
+    }
   }
 
   const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);

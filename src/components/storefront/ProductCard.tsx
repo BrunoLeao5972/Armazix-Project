@@ -53,11 +53,11 @@ export function ProductCard({
   if (layoutType === 'list') {
     return (
       <div
-        className="flex items-center gap-3 rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer touch-pan-y"
+        className="flex items-center gap-3 rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
         onClick={onOpenDetail}
       >
         {/* Image */}
-        <div className="relative w-24 h-24 shrink-0 bg-slate-50 overflow-hidden touch-pan-y">
+        <div className="relative w-24 h-24 shrink-0 bg-slate-50 overflow-hidden">
           {product.imageUrl ? (
             <img
               src={product.imageUrl}
@@ -160,7 +160,7 @@ export function ProductCard({
 
   return (
     <div
-      className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer touch-pan-y"
+      className="rounded-2xl bg-white border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
       onClick={onOpenDetail}
     >
       {/* Image Section — caixa quadrada via padding-top (não aspect-ratio):
@@ -169,7 +169,7 @@ export function ProductCard({
           reflow o layout), fazendo a foto "estourar" pro tamanho natural por
           um instante. padding-top é resolvido pelo box model clássico, sem
           essa recomputação. */}
-      <div className="relative w-full touch-pan-y" style={{ paddingTop: "100%" }}>
+      <div className="relative w-full" style={{ paddingTop: "100%" }}>
         <div className="absolute inset-0 bg-slate-50 overflow-hidden group">
           {product.imageUrl ? (
             <img

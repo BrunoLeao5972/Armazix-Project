@@ -9,84 +9,116 @@ import {
   ResultadoRelatorioModal, RELATORIOS_IMPLEMENTADOS, DEFAULT_FILTROS,
   type FiltrosDrawer,
 } from "./-modal-resultado-relatorio";
+import { REPORT_REQUIRED_ROLES, temPermissao, type Permissao, type StoreRole } from "@/lib/reports-permissions";
 
 export const Route = createFileRoute("/admin/relatorios")({ component: ReportsPage, head: () => ({ meta: [{ title: "Central de Relatórios — ARMAZIX" }] }) });
 
 type ModuloReport = "estoque" | "clientes" | "produtos" | "vendas" | "financeiro" | "fiscal" | "auditoria";
 type UsoReport = "operacional" | "gerencial" | "fiscal" | "auditoria";
-type Permissao = "admin" | "gerente" | "financeiro" | "vendedor" | "operador";
 type TipoFiltro = "periodo" | "vendedor" | "cliente" | "fornecedor" | "produto" | "formaPagamento" | "status" | "canal" | "conta" | "historico";
 
-interface ReportConfig { id: string; nome: string; descricao: string; modulo: ModuloReport; uso: UsoReport; permissao: Permissao[]; icone: React.ElementType; destaque?: boolean; filtrosDisponiveis?: TipoFiltro[]; }
+interface ReportConfig { id: string; nome: string; descricao: string; modulo: ModuloReport; uso: UsoReport; permissao: readonly Permissao[]; icone: React.ElementType; destaque?: boolean; filtrosDisponiveis?: TipoFiltro[]; }
 
 // ============================================
 // CATALOGO EXPANSÍVEL DE RELATÓRIOS ARMAZIX
 // ============================================
 const CATALOGO_RELATORIOS: ReportConfig[] = [
   // 📦 ESTOQUE & MOVIMENTAÇÃO
-  { id: "est-001", nome: "Entrada de Mercadorias", descricao: "Relatório completo de todas as entradas no estoque com notas fiscais", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: Package, filtrosDisponiveis: ["periodo", "fornecedor", "produto"] },
-  { id: "est-002", nome: "Saída de Produtos", descricao: "Histórico detalhado de todas as saídas de estoque", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "vendedor", "produto", "status"] },
-  { id: "est-003", nome: "Extrato e Inventário", descricao: "Posição atual do estoque com valorização", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: FileText, filtrosDisponiveis: ["periodo", "produto"] },
-  { id: "est-004", nome: "Balanço de Estoque", descricao: "Comparativo teórico vs físico com ajustes", modulo: "estoque", uso: "gerencial", permissao: ["admin", "gerente"], icone: BarChart3, filtrosDisponiveis: ["periodo", "produto"] },
-  { id: "est-005", nome: "Produtos com Estoque Baixo", descricao: "Alerta de produtos abaixo do ponto de reposição", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: AlertCircle, destaque: true },
-  { id: "est-006", nome: "Produtos sem Movimentação", descricao: "Itens sem entrada ou saída no período analisado", modulo: "estoque", uso: "gerencial", permissao: ["admin", "gerente"], icone: Clock, filtrosDisponiveis: ["periodo", "produto"] },
-  { id: "est-007", nome: "Histórico de Movimentações", descricao: "Rastreabilidade completa de todas as movimentações", modulo: "estoque", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: History, filtrosDisponiveis: ["periodo", "produto", "vendedor"] },
+  { id: "est-001", nome: "Entrada de Mercadorias", descricao: "Relatório completo de todas as entradas no estoque com notas fiscais", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-001"], icone: Package, filtrosDisponiveis: ["periodo", "fornecedor", "produto"] },
+  { id: "est-002", nome: "Saída de Produtos", descricao: "Histórico detalhado de todas as saídas de estoque", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-002"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "vendedor", "produto"] },
+  { id: "est-003", nome: "Extrato e Inventário", descricao: "Posição atual do estoque com valorização", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-003"], icone: FileText, filtrosDisponiveis: ["produto"] },
+  { id: "est-004", nome: "Balanço de Estoque", descricao: "Comparativo teórico vs físico com ajustes", modulo: "estoque", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["est-004"], icone: BarChart3, filtrosDisponiveis: ["periodo"] },
+  { id: "est-005", nome: "Produtos com Estoque Baixo", descricao: "Alerta de produtos abaixo do ponto de reposição", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-005"], icone: AlertCircle, destaque: true },
+  { id: "est-006", nome: "Produtos sem Movimentação", descricao: "Itens sem entrada ou saída no período analisado", modulo: "estoque", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["est-006"], icone: Clock, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "est-007", nome: "Histórico de Movimentações", descricao: "Rastreabilidade completa de todas as movimentações", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-007"], icone: History, filtrosDisponiveis: ["periodo", "produto", "vendedor"] },
 
   // 👥 CLIENTES & COMPORTAMENTO
-  { id: "cli-001", nome: "Clientes Cadastrados", descricao: "Base completa de clientes ativos e inativos", modulo: "clientes", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Users, filtrosDisponiveis: ["periodo", "status"] },
-  { id: "cli-002", nome: "Clientes que Mais Compram", descricao: "Ranking de clientes por volume de compras", modulo: "clientes", uso: "gerencial", permissao: ["admin", "gerente"], icone: TrendingUp, destaque: true, filtrosDisponiveis: ["periodo"] },
-  { id: "cli-003", nome: "Histórico de Compras por Cliente", descricao: "Detalhamento completo de compras individualizadas", modulo: "clientes", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Receipt, filtrosDisponiveis: ["periodo", "cliente"] },
-  { id: "cli-004", nome: "Clientes Inativos", descricao: "Clientes sem compras no período analisado", modulo: "clientes", uso: "gerencial", permissao: ["admin", "gerente"], icone: User, filtrosDisponiveis: ["periodo"] },
-  { id: "cli-005", nome: "Aniversariantes do Período", descricao: "Lista de clientes fazendo aniversário para ações de marketing", modulo: "clientes", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Calendar, filtrosDisponiveis: ["periodo"] },
+  { id: "cli-001", nome: "Clientes Cadastrados", descricao: "Base completa de clientes ativos e inativos", modulo: "clientes", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["cli-001"], icone: Users, filtrosDisponiveis: ["periodo", "status"] },
+  { id: "cli-002", nome: "Clientes que Mais Compram", descricao: "Ranking de clientes por volume de compras", modulo: "clientes", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["cli-002"], icone: TrendingUp, destaque: true, filtrosDisponiveis: ["periodo"] },
+  { id: "cli-003", nome: "Histórico de Compras por Cliente", descricao: "Detalhamento completo de compras individualizadas", modulo: "clientes", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["cli-003"], icone: Receipt, filtrosDisponiveis: ["periodo", "cliente"] },
+  { id: "cli-004", nome: "Clientes Inativos", descricao: "Clientes sem compras no período analisado", modulo: "clientes", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["cli-004"], icone: User, filtrosDisponiveis: ["periodo"] },
+  // cli-005 (Aniversariantes) fica fora do catálogo visível — customers não
+  // tem campo de data de nascimento, e não existe formulário nenhum (loja
+  // pública ou admin) que colete isso hoje. Adicionar seria feature nova
+  // (migração de schema + UI de captura), não "fazer o relatório funcionar".
 
   // 🏷️ CADASTRO DE PRODUTOS
-  { id: "prod-001", nome: "Lista de Produtos", descricao: "Catálogo completo com preços e estoques", modulo: "produtos", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Package, filtrosDisponiveis: ["produto", "status"] },
-  { id: "prod-002", nome: "Produtos por Categoria", descricao: "Organização hierárquica por departamentos", modulo: "produtos", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Tag, filtrosDisponiveis: ["periodo", "produto"] },
-  { id: "prod-003", nome: "Produtos Mais Lucrativos", descricao: "Ranking por margem de contribuição real", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo"] },
-  { id: "prod-004", nome: "Produtos com Baixa Margem", descricao: "Itens com margem abaixo do esperado", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: Percent, filtrosDisponiveis: ["periodo", "produto"] },
-  { id: "prod-005", nome: "Produtos sem Estoque", descricao: "Itens esgotados ou descontinuados", modulo: "produtos", uso: "operacional", permissao: ["admin", "gerente", "operador"], icone: AlertCircle, filtrosDisponiveis: ["produto"] },
-  { id: "prod-006", nome: "Produtos com Maior Giro", descricao: "Itens mais vendidos por velocidade de rotatividade", modulo: "produtos", uso: "gerencial", permissao: ["admin", "gerente"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "prod-001", nome: "Lista de Produtos", descricao: "Catálogo completo com preços e estoques", modulo: "produtos", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["prod-001"], icone: Package, filtrosDisponiveis: ["produto", "status"] },
+  { id: "prod-002", nome: "Produtos por Categoria", descricao: "Organização hierárquica por departamentos", modulo: "produtos", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["prod-002"], icone: Tag },
+  { id: "prod-003", nome: "Produtos Mais Lucrativos", descricao: "Ranking por margem de contribuição real", modulo: "produtos", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["prod-003"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo"] },
+  { id: "prod-004", nome: "Produtos com Baixa Margem", descricao: "Itens com margem abaixo do esperado", modulo: "produtos", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["prod-004"], icone: Percent, filtrosDisponiveis: ["produto"] },
+  { id: "prod-005", nome: "Produtos sem Estoque", descricao: "Itens esgotados ou descontinuados", modulo: "produtos", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["prod-005"], icone: AlertCircle, filtrosDisponiveis: ["produto"] },
+  { id: "prod-006", nome: "Produtos com Maior Giro", descricao: "Itens mais vendidos por velocidade de rotatividade", modulo: "produtos", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["prod-006"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "produto"] },
 
   // 📊 VENDAS & PDV
-  { id: "vnd-001", nome: "Vendas por Período", descricao: "Consolidado completo de vendas diárias, semanais ou mensais", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente"], icone: ShoppingCart, destaque: true, filtrosDisponiveis: ["periodo", "cliente", "formaPagamento", "status"] },
-  { id: "vnd-002", nome: "Vendas por Produto", descricao: "Detalhamento de vendas por item com quantidades e valores", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente", "vendedor"], icone: Package, filtrosDisponiveis: ["periodo", "vendedor", "produto", "formaPagamento"] },
-  { id: "vnd-003", nome: "Vendas por Cliente", descricao: "Análise de compras por cliente com ticket médio", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente", "vendedor"], icone: User, filtrosDisponiveis: ["periodo", "cliente", "vendedor"] },
-  { id: "vnd-004", nome: "Vendas por Forma de Pagamento", descricao: "Distribuição de vendas por meio de pagamento", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: CreditCard, filtrosDisponiveis: ["periodo", "formaPagamento"] },
-  { id: "vnd-005", nome: "Produtos Mais Vendidos", descricao: "Ranking de produtos por quantidade vendida", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente", "vendedor"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "produto"] },
-  { id: "vnd-006", nome: "Ticket Médio", descricao: "Análise do valor médio por venda e cliente", modulo: "vendas", uso: "gerencial", permissao: ["admin", "gerente"], icone: DollarSign, filtrosDisponiveis: ["periodo", "vendedor", "cliente"] },
-  { id: "vnd-007", nome: "Cancelamentos e Devoluções", descricao: "Relatório de cancelamentos no PDV com motivos", modulo: "vendas", uso: "operacional", permissao: ["admin", "gerente"], icone: X, filtrosDisponiveis: ["periodo", "vendedor", "status"] },
+  { id: "vnd-001", nome: "Vendas por Período", descricao: "Consolidado completo de vendas diárias, semanais ou mensais", modulo: "vendas", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["vnd-001"], icone: ShoppingCart, destaque: true, filtrosDisponiveis: ["periodo", "cliente", "formaPagamento", "status"] },
+  { id: "vnd-002", nome: "Vendas por Produto", descricao: "Detalhamento de vendas por item com quantidades e valores", modulo: "vendas", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["vnd-002"], icone: Package, filtrosDisponiveis: ["periodo", "vendedor", "produto", "formaPagamento"] },
+  { id: "vnd-003", nome: "Vendas por Cliente", descricao: "Análise de compras por cliente com ticket médio", modulo: "vendas", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["vnd-003"], icone: User, filtrosDisponiveis: ["periodo", "cliente", "vendedor"] },
+  { id: "vnd-004", nome: "Vendas por Forma de Pagamento", descricao: "Distribuição de vendas por meio de pagamento", modulo: "vendas", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["vnd-004"], icone: CreditCard, filtrosDisponiveis: ["periodo", "formaPagamento"] },
+  { id: "vnd-005", nome: "Produtos Mais Vendidos", descricao: "Ranking de produtos por quantidade vendida", modulo: "vendas", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["vnd-005"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "produto"] },
+  { id: "vnd-006", nome: "Ticket Médio", descricao: "Análise do valor médio por venda e cliente", modulo: "vendas", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["vnd-006"], icone: DollarSign, filtrosDisponiveis: ["periodo", "vendedor", "cliente"] },
+  { id: "vnd-007", nome: "Cancelamentos e Devoluções", descricao: "Relatório de cancelamentos no PDV com motivos", modulo: "vendas", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["vnd-007"], icone: X, filtrosDisponiveis: ["periodo", "status"] },
 
   // 💰 FINANCEIRO INTEGRADO
-  { id: "fin-001", nome: "Fluxo de Caixa", descricao: "Entradas e saídas com projeção de saldo", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo", "historico"] },
-  { id: "fin-002", nome: "Contas a Receber", descricao: "Títulos em aberto e recebidos por período", modulo: "financeiro", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "cliente", "status", "historico"] },
-  { id: "fin-003", nome: "Contas a Pagar", descricao: "Obrigações financeiras e vencimentos", modulo: "financeiro", uso: "operacional", permissao: ["admin", "gerente", "financeiro"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "fornecedor", "status", "historico"] },
-  { id: "fin-004", nome: "Inadimplência", descricao: "Clientes com pagamentos atrasados e valores", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: AlertCircle, filtrosDisponiveis: ["periodo", "cliente", "status"] },
-  { id: "fin-005", nome: "Lucro Bruto e Líquido", descricao: "Demonstrativo de resultados com margens", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente"], icone: BarChart3, destaque: true, filtrosDisponiveis: ["periodo", "historico"] },
-  { id: "fin-006", nome: "Receitas e Despesas por Histórico", descricao: "Consolidado por árvore hierárquica de históricos contábeis", modulo: "financeiro", uso: "gerencial", permissao: ["admin", "gerente", "financeiro"], icone: Landmark, filtrosDisponiveis: ["periodo", "historico", "conta"] },
+  { id: "fin-001", nome: "Fluxo de Caixa", descricao: "Entradas e saídas com projeção de saldo", modulo: "financeiro", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["fin-001"], icone: DollarSign, destaque: true, filtrosDisponiveis: ["periodo", "historico"] },
+  { id: "fin-002", nome: "Contas a Receber", descricao: "Títulos em aberto e recebidos por período", modulo: "financeiro", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["fin-002"], icone: TrendingUp, filtrosDisponiveis: ["periodo", "cliente", "status", "historico"] },
+  { id: "fin-003", nome: "Contas a Pagar", descricao: "Obrigações financeiras e vencimentos", modulo: "financeiro", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["fin-003"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "status", "historico"] },
+  { id: "fin-004", nome: "Inadimplência", descricao: "Clientes com pagamentos atrasados e valores", modulo: "financeiro", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["fin-004"], icone: AlertCircle, filtrosDisponiveis: ["periodo", "cliente"] },
+  { id: "fin-005", nome: "Lucro Bruto e Líquido", descricao: "Demonstrativo de resultados com margens", modulo: "financeiro", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["fin-005"], icone: BarChart3, destaque: true, filtrosDisponiveis: ["periodo", "historico"] },
+  { id: "fin-006", nome: "Receitas e Despesas por Histórico", descricao: "Consolidado por árvore hierárquica de históricos contábeis", modulo: "financeiro", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["fin-006"], icone: Landmark, filtrosDisponiveis: ["periodo", "historico"] },
 
-  // 🔐 FISCAL & OPERACIONAL
-  { id: "fis-001", nome: "Notas Fiscais Emitidas", descricao: "NFe e NFCe com status de autorização", modulo: "fiscal", uso: "fiscal", permissao: ["admin", "gerente"], icone: Receipt, filtrosDisponiveis: ["periodo", "status", "cliente"] },
-  { id: "fis-002", nome: "Operações por Usuário", descricao: "Atividades fiscais realizadas por cada operador", modulo: "fiscal", uso: "fiscal", permissao: ["admin", "gerente"], icone: Users, filtrosDisponiveis: ["periodo", "vendedor"] },
+  // 🔐 FISCAL & OPERACIONAL — fora do catálogo visível: não existe NENHUMA
+  // tabela de nota fiscal/NFe/NFCe no schema hoje. Exigiria integração com
+  // SEFAZ (emissão, autorização, XML/DANFE) — projeto à parte, não uma
+  // query faltando. fis-001/fis-002 removidos daqui até essa integração existir.
 
   // 🔍 AUDITORIA & SEGURANÇA
-  { id: "aud-001", nome: "Fechamento Diário de Caixa", descricao: "Resumo de fechamentos de caixa por operador", modulo: "auditoria", uso: "auditoria", permissao: ["admin", "gerente"], icone: Lock, filtrosDisponiveis: ["periodo", "vendedor"] },
-  { id: "aud-002", nome: "Logs de Alterações Críticas", descricao: "Rastreamento de alterações em valores, exclusões e estornos", modulo: "auditoria", uso: "auditoria", permissao: ["admin"], icone: Shield, destaque: true, filtrosDisponiveis: ["periodo", "vendedor", "status"] },
+  { id: "aud-001", nome: "Fechamento Diário de Caixa", descricao: "Resumo de fechamentos de caixa por operador", modulo: "auditoria", uso: "auditoria", permissao: REPORT_REQUIRED_ROLES["aud-001"], icone: Lock, filtrosDisponiveis: ["periodo", "vendedor"] },
+  { id: "aud-002", nome: "Logs de Alterações Críticas", descricao: "Rastreamento de alterações em valores, exclusões e estornos", modulo: "auditoria", uso: "auditoria", permissao: REPORT_REQUIRED_ROLES["aud-002"], icone: Shield, destaque: true, filtrosDisponiveis: ["periodo", "vendedor", "status"] },
 ];
 
-// Fornecedor/Conta Bancária continuam mock — nenhum dos 7 relatórios reais
-// usa esses dois filtros (não existe tabela de fornecedor vinculável nem de
-// conta bancária no schema), então ficam como estavam pros outros 21
-// relatórios do catálogo que ainda são fora de escopo.
-const MOCK_FORNECEDORES: { id: string; nome: string; cnpj: string }[] = [];
+// "Conta Bancária" continua mock — não existe tabela de conta bancária no
+// schema, então nenhum relatório real consegue filtrar por isso (fin-006
+// abandonou esse filtro por causa disso). "Fornecedor" e "Produto" agora
+// buscam dado real (ver mostrarFornecedor/mostrarProduto no drawer abaixo).
 const MOCK_CONTAS: { id: string; nome: string; tipo: string }[] = [];
 // Valores reais aceitos pelo backend — não são só rótulos de exibição.
 const PAYMENT_METHOD_OPTIONS = [{ key: "pix", label: "PIX" }, { key: "card", label: "Cartão" }, { key: "cash", label: "Dinheiro" }];
 const ORDER_STATUS_OPTIONS = [{ key: "received", label: "Recebido" }, { key: "preparing", label: "Preparando" }, { key: "ready", label: "Pronto" }, { key: "delivering", label: "Em entrega" }, { key: "delivered", label: "Entregue" }, { key: "cancelled", label: "Cancelado" }];
 const AUDIT_STATUS_OPTIONS = [{ key: "success", label: "Sucesso" }, { key: "failure", label: "Falha" }, { key: "denied", label: "Negado" }];
+const ATIVO_INATIVO_OPTIONS = [{ key: "ativo", label: "Ativo" }, { key: "inativo", label: "Inativo" }];
+const CANCELAMENTO_DEVOLUCAO_OPTIONS = [{ key: "cancelled", label: "Cancelado" }, { key: "refunded", label: "Devolvido" }];
+const LANCAMENTO_STATUS_OPTIONS = [{ key: "liquidado", label: "Liquidado" }, { key: "pendente", label: "Pendente" }];
+// "status" significa coisas diferentes por relatório — chave por id em vez
+// de inferir pelo módulo (ex: dentro do mesmo módulo "vendas", vnd-001 é
+// status de pedido e vnd-007 é cancelado/devolvido).
+const STATUS_OPTIONS_POR_RELATORIO: Record<string, { key: string; label: string }[]> = {
+  "aud-002": AUDIT_STATUS_OPTIONS,
+  "cli-001": ATIVO_INATIVO_OPTIONS,
+  "prod-001": ATIVO_INATIVO_OPTIONS,
+  "vnd-001": ORDER_STATUS_OPTIONS,
+  "vnd-007": CANCELAMENTO_DEVOLUCAO_OPTIONS,
+  "fin-002": LANCAMENTO_STATUS_OPTIONS,
+  "fin-003": LANCAMENTO_STATUS_OPTIONS,
+};
 const MODULOS_LABEL: Record<ModuloReport, { label: string; cor: string }> = { estoque: { label: "Estoque", cor: "text-emerald-600 bg-emerald-500/10" }, clientes: { label: "Clientes", cor: "text-blue-600 bg-blue-500/10" }, produtos: { label: "Produtos", cor: "text-violet-600 bg-violet-500/10" }, vendas: { label: "Vendas", cor: "text-amber-600 bg-amber-500/10" }, financeiro: { label: "Financeiro", cor: "text-rose-600 bg-rose-500/10" }, fiscal: { label: "Fiscal", cor: "text-muted-foreground bg-slate-500/10" }, auditoria: { label: "Auditoria", cor: "text-red-600 bg-red-500/10" } };
 
-function usePermissaoUsuario(): Permissao { return "admin"; }
-function temPermissao(p: Permissao, req: Permissao[]): boolean { return req.includes(p); }
+// Busca o papel real do usuário logado nesta loja (storeUsers.role) — antes
+// disso era um stub que sempre devolvia "admin", então o filtro de UI nunca
+// escondia nada (auditoria de segurança, achado F2). null enquanto carrega
+// OU se a request falhar: trata como sem permissão, nunca como "admin" por
+// default.
+function useStoreRole(): StoreRole | null {
+  const [storeRole, setStoreRole] = useState<StoreRole | null>(null);
+  useEffect(() => {
+    let cancelado = false;
+    fetch("/api/store/user").then(r => r.json())
+      .then((d: { storeRole?: StoreRole }) => { if (!cancelado) setStoreRole(d.storeRole ?? null); })
+      .catch(() => {});
+    return () => { cancelado = true; };
+  }, []);
+  return storeRole;
+}
 
 function hojeISO(offsetDias = 0): string {
   const d = new Date();
@@ -105,6 +137,7 @@ function ReportFilterDrawer({
   const [usuarioId, setUsuarioId] = useState("");
   const [cliente, setCliente] = useState("");
   const [fornecedor, setFornecedor] = useState("");
+  const [produto, setProduto] = useState("");
   const [conta, setConta] = useState("");
   const [historico, setHistorico] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("");
@@ -112,21 +145,28 @@ function ReportFilterDrawer({
   const [buscaUser, setBuscaUser] = useState("");
   const [buscaCli, setBuscaCli] = useState("");
   const [buscaForn, setBuscaForn] = useState("");
+  const [buscaProd, setBuscaProd] = useState("");
 
   // Dados reais dos combos — buscados sob demanda, só quando o bloco
   // correspondente é realmente exibido pra esse relatório.
   const [usuarios, setUsuarios] = useState<{ userId: string; name: string }[]>([]);
   const [clientesEncontrados, setClientesEncontrados] = useState<{ id: string; name: string; phone: string | null }[]>([]);
+  const [fornecedoresEncontrados, setFornecedoresEncontrados] = useState<{ id: string; name: string; phone: string | null }[]>([]);
+  const [produtosEncontrados, setProdutosEncontrados] = useState<{ id: string; name: string; sku: string | null }[]>([]);
   const [categorias, setCategorias] = useState<string[]>([]);
 
   const mostrarUsuario = report?.filtrosDisponiveis?.includes("vendedor") ?? false;
   const mostrarCliente = report?.filtrosDisponiveis?.includes("cliente") ?? false;
   const mostrarFornecedor = report?.filtrosDisponiveis?.includes("fornecedor") ?? false;
+  const mostrarProduto = report?.filtrosDisponiveis?.includes("produto") ?? false;
   const mostrarConta = report?.filtrosDisponiveis?.includes("conta") ?? false;
   const mostrarFormaPagamento = report?.filtrosDisponiveis?.includes("formaPagamento") ?? false;
   const mostrarHistorico = report?.filtrosDisponiveis?.includes("historico") ?? false;
   const mostrarStatus = report?.filtrosDisponiveis?.includes("status") ?? false;
-  const statusOptions = report?.modulo === "auditoria" ? AUDIT_STATUS_OPTIONS : ORDER_STATUS_OPTIONS;
+  // "status" significa coisas diferentes conforme o relatório — não dá pra
+  // inferir só pelo módulo (ex: "produtos" e "clientes" usam ativo/inativo,
+  // "vendas" às vezes é pedido e às vezes é cancelado/devolvido).
+  const statusOptions = STATUS_OPTIONS_POR_RELATORIO[report?.id ?? ""] ?? ORDER_STATUS_OPTIONS;
 
   useEffect(() => {
     if (!isOpen || !mostrarUsuario) return;
@@ -152,18 +192,36 @@ function ReportFilterDrawer({
     return () => clearTimeout(t);
   }, [buscaCli, mostrarCliente]);
 
+  useEffect(() => {
+    if (!isOpen || !mostrarFornecedor) return;
+    fetch(`/api/customers/suppliers?q=${encodeURIComponent(buscaForn.trim())}`).then(r => r.json())
+      .then((d: { suppliers?: { id: string; name: string; phone: string | null }[] }) => setFornecedoresEncontrados(d.suppliers ?? []))
+      .catch(() => {});
+  }, [isOpen, mostrarFornecedor, buscaForn]);
+
+  useEffect(() => {
+    if (!mostrarProduto || !buscaProd.trim()) { setProdutosEncontrados([]); return; }
+    const t = setTimeout(() => {
+      fetch(`/api/products/search?q=${encodeURIComponent(buscaProd.trim())}`).then(r => r.json())
+        .then((d: { products?: { id: string; name: string; sku: string | null }[] }) => setProdutosEncontrados(d.products ?? []))
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(t);
+  }, [buscaProd, mostrarProduto]);
+
   if (!isOpen || !report) return null;
 
   const usuariosFiltrados = usuarios.filter(u => u.name.toLowerCase().includes(buscaUser.toLowerCase()));
-  const fornFiltered = MOCK_FORNECEDORES.filter(f => f.nome.toLowerCase().includes(buscaForn.toLowerCase()));
   const clienteSelecionado = clientesEncontrados.find(c => c.id === cliente);
   const usuarioSelecionado = usuarios.find(u => u.userId === usuarioId);
+  const fornecedorSelecionado = fornecedoresEncontrados.find(f => f.id === fornecedor);
+  const produtoSelecionado = produtosEncontrados.find(p => p.id === produto);
 
   const limpar = () => {
     setDataDe(hojeISO(-30)); setDataAte(hojeISO());
-    setUsuarioId(""); setCliente(""); setFornecedor(""); setConta("");
+    setUsuarioId(""); setCliente(""); setFornecedor(""); setProduto(""); setConta("");
     setHistorico(""); setFormaPagamento(""); setStatus("");
-    setBuscaUser(""); setBuscaCli(""); setBuscaForn("");
+    setBuscaUser(""); setBuscaCli(""); setBuscaForn(""); setBuscaProd("");
   };
 
   return (
@@ -200,10 +258,18 @@ function ReportFilterDrawer({
             )}
             {mostrarFornecedor && (
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Truck className="w-3 h-3" /> Fornecedor/Favorecido</label>
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Truck className="w-3 h-3" /> Fornecedor</label>
                 <div className="relative"><input type="text" placeholder="Buscar fornecedor..." value={buscaForn} onChange={e => setBuscaForn(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
-                {buscaForn && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{fornFiltered.map(f => <div key={f.id} onClick={() => { setFornecedor(f.id); setBuscaForn(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm"><p className="font-medium">{f.nome}</p><p className="text-xs text-muted-foreground">{f.cnpj}</p></div>)}</div>}
-                {fornecedor && <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg"><span className="text-sm font-medium">{MOCK_FORNECEDORES.find(f => f.id === fornecedor)?.nome}</span><button onClick={() => setFornecedor("")} className="text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button></div>}
+                {buscaForn && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{fornecedoresEncontrados.map(f => <div key={f.id} onClick={() => { setFornecedor(f.id); setBuscaForn(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm"><p className="font-medium">{f.name}</p>{f.phone && <p className="text-xs text-muted-foreground">{f.phone}</p>}</div>)}</div>}
+                {fornecedorSelecionado && <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg"><span className="text-sm font-medium">{fornecedorSelecionado.name}</span><button onClick={() => setFornecedor("")} className="text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button></div>}
+              </div>
+            )}
+            {mostrarProduto && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Package className="w-3 h-3" /> Produto</label>
+                <div className="relative"><input type="text" placeholder="Buscar por nome ou SKU..." value={buscaProd} onChange={e => setBuscaProd(e.target.value)} className="w-full h-10 px-3 pl-9 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" /><Search className="w-4 h-4 absolute left-3 top-3 text-muted-foreground" /></div>
+                {buscaProd && produtosEncontrados.length > 0 && <div className="max-h-32 overflow-y-auto border rounded-lg bg-card">{produtosEncontrados.map(p => <div key={p.id} onClick={() => { setProduto(p.id); setBuscaProd(""); }} className="p-2 hover:bg-secondary cursor-pointer text-sm"><p className="font-medium">{p.name}</p>{p.sku && <p className="text-xs text-muted-foreground">{p.sku}</p>}</div>)}</div>}
+                {produtoSelecionado && <div className="flex items-center justify-between p-2 bg-primary/10 rounded-lg"><span className="text-sm font-medium">{produtoSelecionado.name}</span><button onClick={() => setProduto("")} className="text-red-500 hover:text-red-700"><X className="w-4 h-4" /></button></div>}
               </div>
             )}
             {mostrarConta && (
@@ -246,7 +312,10 @@ function ReportFilterDrawer({
         </div>
         <div className="p-6 border-t bg-card">
           <Button
-            onClick={() => onGerar({ dataDe, dataAte, clienteId: cliente, usuarioId, formaPagamento, status, historico })}
+            onClick={() => onGerar({
+              dataDe, dataAte, clienteId: cliente, usuarioId, usuarioNome: usuarioSelecionado?.name || "",
+              formaPagamento, status, historico, produtoId: produto, fornecedorId: fornecedor,
+            })}
             className="w-full h-12 rounded-2xl text-base font-semibold bg-gradient-primary text-primary-foreground"
           >
             <Search className="w-4 h-4 mr-2" /> Gerar Relatório
@@ -270,7 +339,7 @@ function ReportCard({ report, isFavorito, onToggleFavorito, onVisualizar, isLock
 const EMISSOES_24H = 12;
 
 function ReportsPage() {
-  const permissaoUsuario = usePermissaoUsuario();
+  const storeRole = useStoreRole();
   const [busca, setBusca] = useState("");
   const [filtroModulo, setFiltroModulo] = useState<ModuloReport | "todos">("todos");
   const [filtroUso, setFiltroUso] = useState<UsoReport | "todos">("todos");
@@ -325,8 +394,8 @@ function ReportsPage() {
 
   // Filtrar relatórios disponíveis para o usuário
   const relatoriosPermitidos = useMemo(() =>
-    CATALOGO_RELATORIOS.filter(r => temPermissao(permissaoUsuario, r.permissao)),
-    [permissaoUsuario]
+    CATALOGO_RELATORIOS.filter(r => temPermissao(storeRole, r.permissao)),
+    [storeRole]
   );
 
   const relatoriosFiltrados = useMemo(() => {
@@ -339,13 +408,13 @@ function ReportsPage() {
   }, [busca, filtroModulo, filtroUso, relatoriosPermitidos]);
 
   const favoritosList = useMemo(() =>
-    CATALOGO_RELATORIOS.filter(r => favoritos.includes(r.id) && temPermissao(permissaoUsuario, r.permissao)),
-    [favoritos, permissaoUsuario]
+    CATALOGO_RELATORIOS.filter(r => favoritos.includes(r.id) && temPermissao(storeRole, r.permissao)),
+    [favoritos, storeRole]
   );
 
   const destaques = useMemo(() =>
-    CATALOGO_RELATORIOS.filter(r => r.destaque && temPermissao(permissaoUsuario, r.permissao)),
-    [permissaoUsuario]
+    CATALOGO_RELATORIOS.filter(r => r.destaque && temPermissao(storeRole, r.permissao)),
+    [storeRole]
   );
 
   // Agrupar relatórios por módulo

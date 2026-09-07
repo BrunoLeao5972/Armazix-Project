@@ -73,6 +73,13 @@ export const stores = pgTable("stores", {
    *  partir do endereço cadastrado. */
   latitude:  numeric("latitude", { precision: 10, scale: 7 }),
   longitude: numeric("longitude", { precision: 10, scale: 7 }),
+  /** Coordenadas geocodificadas a partir do endereço de CADASTRO (`address`
+   *  acima), recalculadas automaticamente sempre que ele muda (ver
+   *  updateStoreHandler em store-handler.ts) — independentes de
+   *  latitude/longitude, que são o pino de entrega arrastável manualmente.
+   *  O Mapa de Clientes do GerenciadorArmazix usa estas aqui, nunca o pino. */
+  addressLatitude:  numeric("address_latitude", { precision: 10, scale: 7 }),
+  addressLongitude: numeric("address_longitude", { precision: 10, scale: 7 }),
   /** Modelo v2 de configuração de pagamento — substitui paymentMethodsConfig + deliveryPaymentEnabled */
   paymentConfig: jsonb("payment_config").$type<import("@/lib/store-context").PaymentConfig>(),
   wppConfig: jsonb("wpp_config").$type<import("@/lib/whatsapp-sender").WppConfig>(),
@@ -948,6 +955,49 @@ export const financeiroLancamentosRelations = relations(financeiroLancamentos, (
   store:  one(stores,       { fields: [financeiroLancamentos.storeId],  references: [stores.id] }),
   order:  one(orders,       { fields: [financeiroLancamentos.orderId],  references: [orders.id] }),
   sessao: one(caixaSessoes, { fields: [financeiroLancamentos.sessaoId], references: [caixaSessoes.id] }),
+}));
+
+// ─── FINANCEIRO CONTAS A PAGAR ───────────────────────────────────
+// Diferente de financeiro_lancamentos (livro-razão de valores já
+// liquidados): aqui é a obrigação em si, com vencimento/parcela/edição
+// antes de liquidar. Ao "Efetivar", o handler cria uma linha em
+// financeiro_lancamentos (tipo="saida") e grava o id em lancamentoId —
+// ver financeiro-pagar-handler.ts.
+export const financeiroContasPagar = pgTable("financeiro_contas_pagar", {
+  id:              uuid("id").defaultRandom().primaryKey(),
+  storeId:         uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  fornecedor:      varchar("fornecedor", { length: 120 }).notNull(),
+  descricao:       varchar("descricao", { length: 250 }).notNull(),
+  documento:       varchar("documento", { length: 50 }),
+  categoria:       varchar("categoria", { length: 120 }),
+  centroCusto:     varchar("centro_custo", { length: 60 }),
+  formaPgto:       varchar("forma_pgto", { length: 50 }),
+  contaFinanceira: varchar("conta_financeira", { length: 60 }),
+  valor:           numeric("valor", { precision: 10, scale: 2 }).notNull(),
+  juros:           numeric("juros", { precision: 10, scale: 2 }).notNull().default("0"),
+  desconto:        numeric("desconto", { precision: 10, scale: 2 }).notNull().default("0"),
+  valorPago:       numeric("valor_pago", { precision: 10, scale: 2 }).notNull().default("0"),
+  emissao:         varchar("emissao", { length: 10 }),    // YYYY-MM-DD
+  vencimento:      varchar("vencimento", { length: 10 }).notNull(), // YYYY-MM-DD
+  pagamento:       varchar("pagamento", { length: 10 }),  // YYYY-MM-DD
+  status:          varchar("status", { length: 20 }).notNull().default("pendente"), // pendente | pago | parcial | cancelado
+  origem:          varchar("origem", { length: 30 }).notNull().default("Manual"),
+  responsavel:     varchar("responsavel", { length: 120 }),
+  obs:             text("obs"),
+  parcelas:        integer("parcelas").notNull().default(1),
+  parcelaAtual:    integer("parcela_atual").notNull().default(1),
+  lancamentoId:    uuid("lancamento_id").references(() => financeiroLancamentos.id, { onDelete: "set null" }),
+  createdAt:       timestamp("created_at").defaultNow().notNull(),
+  updatedAt:       timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("fin_contas_pagar_store_idx").on(t.storeId),
+  index("fin_contas_pagar_status_idx").on(t.status),
+  index("fin_contas_pagar_vencimento_idx").on(t.vencimento),
+]);
+
+export const financeiroContasPagarRelations = relations(financeiroContasPagar, ({ one }) => ({
+  store:      one(stores,               { fields: [financeiroContasPagar.storeId],      references: [stores.id] }),
+  lancamento: one(financeiroLancamentos, { fields: [financeiroContasPagar.lancamentoId], references: [financeiroLancamentos.id] }),
 }));
 
 // ─── PRINTERS (Impressoras) ─────────────────────────────────────
