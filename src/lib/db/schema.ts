@@ -1000,6 +1000,46 @@ export const financeiroContasPagarRelations = relations(financeiroContasPagar, (
   lancamento: one(financeiroLancamentos, { fields: [financeiroContasPagar.lancamentoId], references: [financeiroLancamentos.id] }),
 }));
 
+// ─── FINANCEIRO CONTAS A RECEBER ─────────────────────────────────
+// Espelha financeiro_contas_pagar — mesma lógica, tipo="entrada" em vez de
+// "saida" ao Receber. Ver financeiro-receber-handler.ts.
+export const financeiroContasReceber = pgTable("financeiro_contas_receber", {
+  id:              uuid("id").defaultRandom().primaryKey(),
+  storeId:         uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  cliente:         varchar("cliente", { length: 120 }).notNull(),
+  descricao:       varchar("descricao", { length: 250 }).notNull(),
+  documento:       varchar("documento", { length: 50 }),
+  categoria:       varchar("categoria", { length: 120 }),
+  centroCusto:     varchar("centro_custo", { length: 60 }),
+  formaPgto:       varchar("forma_pgto", { length: 50 }),
+  contaFinanceira: varchar("conta_financeira", { length: 60 }),
+  valor:           numeric("valor", { precision: 10, scale: 2 }).notNull(),
+  juros:           numeric("juros", { precision: 10, scale: 2 }).notNull().default("0"),
+  desconto:        numeric("desconto", { precision: 10, scale: 2 }).notNull().default("0"),
+  valorRecebido:   numeric("valor_recebido", { precision: 10, scale: 2 }).notNull().default("0"),
+  emissao:         varchar("emissao", { length: 10 }),
+  vencimento:      varchar("vencimento", { length: 10 }).notNull(),
+  recebimento:     varchar("recebimento", { length: 10 }),
+  status:          varchar("status", { length: 20 }).notNull().default("pendente"), // pendente | pago | parcial | cancelado
+  origem:          varchar("origem", { length: 30 }).notNull().default("Manual"),
+  responsavel:     varchar("responsavel", { length: 120 }),
+  obs:             text("obs"),
+  parcelas:        integer("parcelas").notNull().default(1),
+  parcelaAtual:    integer("parcela_atual").notNull().default(1),
+  lancamentoId:    uuid("lancamento_id").references(() => financeiroLancamentos.id, { onDelete: "set null" }),
+  createdAt:       timestamp("created_at").defaultNow().notNull(),
+  updatedAt:       timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("fin_contas_receber_store_idx").on(t.storeId),
+  index("fin_contas_receber_status_idx").on(t.status),
+  index("fin_contas_receber_vencimento_idx").on(t.vencimento),
+]);
+
+export const financeiroContasReceberRelations = relations(financeiroContasReceber, ({ one }) => ({
+  store:      one(stores,               { fields: [financeiroContasReceber.storeId],      references: [stores.id] }),
+  lancamento: one(financeiroLancamentos, { fields: [financeiroContasReceber.lancamentoId], references: [financeiroLancamentos.id] }),
+}));
+
 // ─── PRINTERS (Impressoras) ─────────────────────────────────────
 export const printers = pgTable("printers", {
   id:        uuid("id").defaultRandom().primaryKey(),

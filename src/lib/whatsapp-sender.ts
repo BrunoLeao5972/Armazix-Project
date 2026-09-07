@@ -16,6 +16,17 @@ export type WppConfig = {
     delivered: string;
     cancelled: string;
   };
+  /** Resposta automática quando o CLIENTE manda mensagem pro WhatsApp da
+   *  loja (não confundir com os templates acima, que são disparados pelo
+   *  próprio sistema em mudança de status de pedido). Ver
+   *  src/lib/api/whatsapp-webhook-handler.ts. */
+  autoReply: {
+    enabled: boolean;
+    message: string;
+    /** Não responde de novo pro mesmo número dentro dessa janela — evita
+     *  virar spam se o cliente mandar várias mensagens seguidas. */
+    cooldownMinutes: number;
+  };
 };
 
 export const DEFAULT_OWNER_TEMPLATE =
@@ -36,6 +47,9 @@ export const DEFAULT_CUSTOMER_TEMPLATES: WppConfig["customerTemplates"] = {
     "❌ *Pedido cancelado*\n\nOlá, *{{nome}}*.\n\nInformamos que o seu pedido foi cancelado.\n\n📄 *Pedido:* #{{numero}}\n\n📌 *Status:* *Cancelado*\n\nSe o cancelamento foi realizado por engano ou se você tiver qualquer dúvida, entre em contato com nossa equipe. Teremos prazer em ajudar.\n\nAgradecemos pela compreensão. 💚",
 };
 
+export const DEFAULT_AUTO_REPLY_MESSAGE =
+  "Olá! 👋 Seja muito bem-vindo(a) à *{{loja}}* 😊\n\nFicamos felizes em ter você por aqui! 😊\n\nPara conferir nossos produtos, preços e novidades, acesse:\n🔗 {{link}}";
+
 export const DEFAULT_WPP_CONFIG: WppConfig = {
   notifyOwner: true,
   ownerPhone: "",
@@ -43,6 +57,11 @@ export const DEFAULT_WPP_CONFIG: WppConfig = {
   notifyCustomer: true,
   notifyStatuses: ["received", "preparing", "delivering", "delivered", "cancelled"],
   customerTemplates: DEFAULT_CUSTOMER_TEMPLATES,
+  autoReply: {
+    enabled: false,
+    message: DEFAULT_AUTO_REPLY_MESSAGE,
+    cooldownMinutes: 60,
+  },
 };
 
 // Templates legados — substituídos automaticamente ao usar o config para envio
@@ -77,6 +96,10 @@ export function migrateWppConfig(cfg: WppConfig): WppConfig {
     ownerTemplate:
       cfg.ownerTemplate === LEGACY_OWNER_TEMPLATE ? DEFAULT_OWNER_TEMPLATE : cfg.ownerTemplate,
     customerTemplates,
+    // Configs salvas antes da resposta automática existir não têm esse
+    // campo — sem isso, cfg.autoReply.enabled quebraria (undefined) em vez
+    // de simplesmente vir desligado.
+    autoReply: cfg.autoReply ?? DEFAULT_WPP_CONFIG.autoReply,
   };
 }
 
@@ -95,7 +118,7 @@ export function fillTemplate(template: string, vars: Record<string, string>): st
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
 }
 
-function instanceName(storeId: string) {
+export function instanceName(storeId: string) {
   return `armazix_${storeId.replace(/-/g, "").slice(0, 16)}`;
 }
 

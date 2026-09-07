@@ -6,6 +6,7 @@ import {
   DEFAULT_WPP_CONFIG,
   DEFAULT_OWNER_TEMPLATE,
   DEFAULT_CUSTOMER_TEMPLATES,
+  DEFAULT_AUTO_REPLY_MESSAGE,
   type WppConfig,
 } from "@/lib/whatsapp-sender";
 import {
@@ -60,6 +61,12 @@ const CUSTOMER_VARIABLES = [
   { key: "itens",     label: "Itens"       },
   { key: "endereco",  label: "End. loja"   },
   { key: "loja",      label: "Nome da loja"},
+];
+
+const AUTO_REPLY_VARIABLES = [
+  { key: "loja", label: "Nome da loja" },
+  { key: "nome", label: "Nome do cliente" },
+  { key: "link", label: "Link da loja" },
 ];
 
 // Preview substitution helper
@@ -635,12 +642,15 @@ export function WhatsAppConfigTab() {
 
   const getTemplate = (key: string): string => {
     if (key === "owner") return config.ownerTemplate;
+    if (key === "autoReply") return config.autoReply.message;
     return config.customerTemplates[key as keyof WppConfig["customerTemplates"]] ?? "";
   };
 
   const updateTemplate = (key: string, value: string) => {
     if (key === "owner") {
       setConfig(prev => ({ ...prev, ownerTemplate: value }));
+    } else if (key === "autoReply") {
+      setConfig(prev => ({ ...prev, autoReply: { ...prev.autoReply, message: value } }));
     } else {
       setConfig(prev => ({
         ...prev,
@@ -652,6 +662,8 @@ export function WhatsAppConfigTab() {
   const restoreDefault = (key: string) => {
     if (key === "owner") {
       setConfig(prev => ({ ...prev, ownerTemplate: DEFAULT_OWNER_TEMPLATE }));
+    } else if (key === "autoReply") {
+      setConfig(prev => ({ ...prev, autoReply: { ...prev.autoReply, message: DEFAULT_AUTO_REPLY_MESSAGE } }));
     } else {
       const k = key as keyof typeof DEFAULT_CUSTOMER_TEMPLATES;
       setConfig(prev => ({
@@ -768,6 +780,41 @@ export function WhatsAppConfigTab() {
               </div>
             )}
           </div>
+
+          <Separator />
+
+          {/* Auto Reply */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">Responder automaticamente ao cliente</div>
+                <div className="text-xs text-muted-foreground">Manda uma mensagem quando o cliente fala com o WhatsApp da loja</div>
+              </div>
+              <Switch
+                checked={config.autoReply.enabled}
+                onCheckedChange={v => setConfig(prev => ({ ...prev, autoReply: { ...prev.autoReply, enabled: v } }))}
+              />
+            </div>
+
+            {config.autoReply.enabled && (
+              <div className="space-y-2 animate-in fade-in duration-200">
+                <Label className="text-xs text-muted-foreground">Intervalo mínimo entre respostas ao mesmo número</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    value={config.autoReply.cooldownMinutes}
+                    onChange={e => setConfig(prev => ({ ...prev, autoReply: { ...prev.autoReply, cooldownMinutes: Math.max(1, parseInt(e.target.value) || 1) } }))}
+                    className="w-24 h-9 px-3 rounded-xl border border-input bg-background text-sm"
+                  />
+                  <span className="text-xs text-muted-foreground">minutos</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Só responde a primeira mensagem do cliente dentro dessa janela — evita mandar a mesma resposta várias vezes se ele escrever seguido. Edite o texto da resposta na seção "Templates de Mensagem" abaixo.
+                </p>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -816,6 +863,21 @@ export function WhatsAppConfigTab() {
               taRef={getRef(key)}
             />
           ))}
+
+          {/* Auto reply template */}
+          <TemplateAccordion
+            emoji="🤖"
+            label="Resposta automática ao cliente"
+            description="Enviado quando o cliente manda mensagem pro WhatsApp da loja. Disponível apenas quando 'Responder automaticamente' está ativo."
+            variables={AUTO_REPLY_VARIABLES}
+            value={getTemplate("autoReply")}
+            disabled={!config.autoReply.enabled}
+            isOpen={openKey === "autoReply"}
+            onToggle={() => setOpenKey(openKey === "autoReply" ? null : "autoReply")}
+            onChange={v => updateTemplate("autoReply", v)}
+            onRestore={() => restoreDefault("autoReply")}
+            taRef={getRef("autoReply")}
+          />
         </CardContent>
       </Card>
 

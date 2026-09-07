@@ -40,6 +40,14 @@ import {
   deleteContaPagarHandler,
 } from "./api/financeiro-pagar-handler";
 import {
+  listContasReceberHandler,
+  createContaReceberHandler,
+  updateContaReceberHandler,
+  efetivarContaReceberHandler,
+  cancelarContaReceberHandler,
+  deleteContaReceberHandler,
+} from "./api/financeiro-receber-handler";
+import {
   getEstoqueBaixoHandler,
   getClientesTopHandler,
   getProdutosLucrativosHandler,
@@ -153,6 +161,7 @@ import {
   saveWppConfigHandler,
 } from "./api/whatsapp-handler";
 import { createMpCheckoutHandler, mpWebhookHandler, saveMpTokenHandler } from "./api/payment-handler";
+import { whatsappWebhookHandler } from "./api/whatsapp-webhook-handler";
 import {
   getCaixaAtualHandler,
   abrirCaixaHandler,
@@ -257,6 +266,7 @@ const publicPostRoutes: Record<string, ApiHandler> = {
   "/api/subscriptions/mp-webhook": subscriptionWebhookHandler, // Webhook de assinaturas
   "/api/subscriptions/pix-webhook": pixWebhookHandler, // Webhook PIX avulso
   "/api/store-users/accept-invite": acceptInviteHandler, // Aceite de convite (auth é a posse do token no e-mail)
+  "/api/whatsapp/webhook": whatsappWebhookHandler, // Webhook da Evolution API (mensagem recebida) — auth por secret na query string
 };
 
 const publicGetRoutes: Record<string, ApiHandler> = {
@@ -302,6 +312,11 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/financeiro/contas-pagar/efetivar": efetivarContaPagarHandler,
   "/api/financeiro/contas-pagar/cancelar": cancelarContaPagarHandler,
   "/api/financeiro/contas-pagar/delete":   deleteContaPagarHandler,
+  "/api/financeiro/contas-receber/create":   createContaReceberHandler,
+  "/api/financeiro/contas-receber/update":   updateContaReceberHandler,
+  "/api/financeiro/contas-receber/efetivar": efetivarContaReceberHandler,
+  "/api/financeiro/contas-receber/cancelar": cancelarContaReceberHandler,
+  "/api/financeiro/contas-receber/delete":   deleteContaReceberHandler,
   "/api/products/backfill-pdv-codes": backfillPdvCodesHandler,
   "/api/categories/create": createCategoryHandler,
   "/api/categories/update": updateCategoryHandler,
@@ -405,6 +420,7 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/reports/receitas-despesas-historico": getReceitasDespesasHistoricoHandler,
   "/api/reports/fechamento-caixa": getFechamentoCaixaHandler,
   "/api/financeiro/contas-pagar": listContasPagarHandler,
+  "/api/financeiro/contas-receber": listContasReceberHandler,
   "/api/store/business-hours": getBusinessHoursHandler,
   "/api/user/get": getUserDataHandler,
   "/api/financial/stats": getFinancialStatsHandler,
@@ -482,6 +498,7 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/payments/mp-webhook": "webhook",
   "/api/subscriptions/mp-webhook": "webhook",
   "/api/subscriptions/pix-webhook": "webhook",
+  "/api/whatsapp/webhook": "webhook",
   // Abrem conexão TCP de saída pro "Caminho / IP" da impressora — tier
   // restritivo dedicado (ver network-guard.ts, achado F1 da auditoria).
   "/api/printers/test-raw": "printer-network",
@@ -494,6 +511,11 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/financeiro/contas-pagar/efetivar": "sensitive",
   "/api/financeiro/contas-pagar/cancelar": "sensitive",
   "/api/financeiro/contas-pagar/delete":   "sensitive",
+  "/api/financeiro/contas-receber/create":   "sensitive",
+  "/api/financeiro/contas-receber/update":   "sensitive",
+  "/api/financeiro/contas-receber/efetivar": "sensitive",
+  "/api/financeiro/contas-receber/cancelar": "sensitive",
+  "/api/financeiro/contas-receber/delete":   "sensitive",
 };
 
 // Rotas que continuam acessíveis mesmo com auth.planBlocked === true —

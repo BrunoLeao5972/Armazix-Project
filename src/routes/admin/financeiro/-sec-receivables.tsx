@@ -3,7 +3,10 @@ import { ChevronDown, Check, X, AlertTriangle, Plus, Search, RefreshCw, DollarSi
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getFinanceiroReceber } from "@/services/api";
+import {
+  getFinanceiroReceber, createContaReceber, updateContaReceber,
+  efetivarContaReceber, cancelarContaReceber, deleteContaReceber,
+} from "@/services/api";
 import {
   type StatusRec, type ContaReceber, type DateTimeRange, type NaturezaHist,
   DTR_DEFAULT, HISTORICOS, historicoLabel, historicoIndent,
@@ -354,6 +357,15 @@ export function SecaoReceber() {
   const [filtrosAbertosRec, setFiltrosAbertosRec] = useState(true);
   const [sortCol, setSortCol] = useState<keyof ContaReceber>("vencimento");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const carregarContas = async () => {
+    try {
+      const data = await getFinanceiroReceber();
+      setContas(Array.isArray(data) ? (data as unknown as ContaReceber[]) : []);
+    } catch {
+      setContas([]);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -413,27 +425,59 @@ export function SecaoReceber() {
     inadimplencia: contas.length ? Math.round((contas.filter(c => c.status === "vencido").length / contas.length) * 100) : 0,
   }), [contas, hoje]);
 
-  const handleBaixa = (ids: string[]) => {
-    setContas(prev => prev.map(c => ids.includes(c.id) && c.status !== "pago" && c.status !== "cancelado"
-      ? { ...c, status: "pago" as StatusRec, valorRecebido: c.valor, recebimento: hoje } : c));
-    setSelectedIds(new Set());
-    showToast(`${ids.length} conta(s) recebida(s) com sucesso!`);
+  const handleBaixa = async (ids: string[]) => {
+    try {
+      const { efetivadas } = await efetivarContaReceber(ids);
+      setSelectedIds(new Set());
+      await carregarContas();
+      showToast(`${efetivadas} conta(s) recebida(s) com sucesso!`);
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao registrar recebimento.");
+    }
   };
-  const handleCancelar = (ids: string[]) => {
-    setContas(prev => prev.map(c => ids.includes(c.id) ? { ...c, status: "cancelado" as StatusRec } : c));
-    setSelectedIds(new Set());
-    showToast(`${ids.length} conta(s) cancelada(s).`);
+  const handleCancelar = async (ids: string[]) => {
+    try {
+      await cancelarContaReceber(ids);
+      setSelectedIds(new Set());
+      await carregarContas();
+      showToast("Conta(s) cancelada(s).");
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao cancelar conta.");
+    }
   };
-  const handleNovaConta = (c: ContaReceber) => { setContas(prev => [...prev, c]); setModalAberto(false); showToast("Conta criada com sucesso!"); };
-  const handleSalvarEdicaoRec = (atualizada: ContaReceber, diff: { antes: Partial<ContaReceber>; depois: Partial<ContaReceber> }) => {
-    setContas(prev => prev.map(c => c.id === atualizada.id ? atualizada : c));
-    setEditando(null);
+  const handleNovaConta = async (c: ContaReceber) => {
+    try {
+      await createContaReceber(c as unknown as Record<string, unknown>);
+      setModalAberto(false);
+      await carregarContas();
+      showToast("Conta criada com sucesso!");
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao criar conta a receber.");
+    }
+  };
+  const handleSalvarEdicaoRec = async (atualizada: ContaReceber, diff: { antes: Partial<ContaReceber>; depois: Partial<ContaReceber> }) => {
     const campos = Object.keys(diff.depois);
-    if (campos.length > 0) {
-      console.log("[AUDITORIA] RECEBER_ATUALIZAR", { id: atualizada.id, antes: diff.antes, depois: diff.depois });
-      showToast(`Conta atualizada! Campos alterados: ${campos.join(", ")}`);
-    } else {
+    if (campos.length === 0) {
+      setEditando(null);
       showToast("Nenhuma alteração detectada.");
+      return;
+    }
+    try {
+      await updateContaReceber({ id: atualizada.id, ...diff.depois });
+      setEditando(null);
+      await carregarContas();
+      showToast(`Conta atualizada! Campos alterados: ${campos.join(", ")}`);
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao atualizar conta.");
+    }
+  };
+  const handleExcluir = async (id: string) => {
+    try {
+      await deleteContaReceber(id);
+      await carregarContas();
+      showToast("Conta excluída.");
+    } catch (e) {
+      showToast((e as Error).message || "Erro ao excluir conta.");
     }
   };
 
@@ -735,7 +779,7 @@ export function SecaoReceber() {
                               origem={c.origem}
                               onEfetivar={() => handleBaixa([c.id])}
                               onEditar={() => setEditando(c)}
-                              onExcluir={() => setContas(prev => prev.filter(x => x.id !== c.id))}
+                              onExcluir={() => handleExcluir(c.id)}
                             />
                           </td>
                         </tr>

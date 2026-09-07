@@ -148,6 +148,22 @@ export async function deleteContaPagar(id: string) {
   return postJson<{ success: boolean }>(`/financeiro/contas-pagar/delete`, { id });
 }
 
+export async function createContaReceber(dados: Record<string, unknown>) {
+  return postJson<any>(`/financeiro/contas-receber/create`, dados);
+}
+export async function updateContaReceber(dados: Record<string, unknown>) {
+  return postJson<any>(`/financeiro/contas-receber/update`, dados);
+}
+export async function efetivarContaReceber(ids: string[]) {
+  return postJson<{ contas: any[]; efetivadas: number }>(`/financeiro/contas-receber/efetivar`, { ids });
+}
+export async function cancelarContaReceber(ids: string[]) {
+  return postJson<{ contas: any[]; canceladas: number }>(`/financeiro/contas-receber/cancelar`, { ids });
+}
+export async function deleteContaReceber(id: string) {
+  return postJson<{ success: boolean }>(`/financeiro/contas-receber/delete`, { id });
+}
+
 export async function getFinanceiroMovimentacoes() {
   return http<any[]>(`/financeiro/movimentacoes`);
 }

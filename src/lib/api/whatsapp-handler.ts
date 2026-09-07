@@ -25,6 +25,41 @@ function instanceName(storeId: string) {
   return `armazix_${storeId.replace(/-/g, "").slice(0, 16)}`;
 }
 
+// Registra o webhook de recepção de mensagem (resposta automática) —
+// best-effort: nunca derruba o fluxo de conexão do QR code se falhar.
+// Segredo compartilhado próprio (não é o mesmo da Evolution API) embutido
+// na própria URL, já que a Evolution API não manda nenhuma sessão de loja.
+async function registrarWebhook(request: Request, storeId: string, instance: string): Promise<void> {
+  const secret = process.env.WHATSAPP_WEBHOOK_SECRET;
+  if (!secret) return;
+  const origin = new URL(request.url).origin;
+  const webhookUrl = `${origin}/api/whatsapp/webhook?storeId=${storeId}&secret=${secret}`;
+  try {
+    // Corpo confirmado direto contra o servidor de produção (v2.3.7): tem
+    // que vir dentro de um objeto "webhook" com chaves em camelCase — a
+    // documentação oficial descreve um formato flat/snake_case que devolve
+    // 400 ("instance requires property \"webhook\"") nessa versão.
+    const res = await fetch(`${EVO_URL}/webhook/set/${instance}`, {
+      method: "POST",
+      headers: evoHeaders(),
+      body: JSON.stringify({
+        webhook: {
+          enabled: true,
+          url: webhookUrl,
+          webhookByEvents: false,
+          webhookBase64: false,
+          events: ["MESSAGES_UPSERT"],
+        },
+      }),
+    });
+    if (!res.ok) {
+      console.error("[whatsapp] registro de webhook recusado pela Evolution API:", res.status, await res.text().catch(() => ""));
+    }
+  } catch (e) {
+    console.error("[whatsapp] falha ao registrar webhook (não bloqueia a conexão):", e);
+  }
+}
+
 function notConfigured() {
   return new Response(
     JSON.stringify({
@@ -117,7 +152,7 @@ export async function getWhatsAppStatusHandler(
 
 // ─── POST /api/whatsapp/connect ──────────────────────────────────────────────
 export async function connectWhatsAppHandler(
-  _request: Request,
+  request: Request,
   auth?: AuthContext
 ): Promise<Response> {
   let storeId: string;
@@ -143,6 +178,7 @@ export async function connectWhatsAppHandler(
       };
       // Já conectado
       if (stateData?.instance?.state === "open") {
+        await registrarWebhook(request, storeId, instance);
         return jsonRes({ connected: true, configured: true });
       }
       // Instância existe mas não está conectada → retornar QR
@@ -151,6 +187,7 @@ export async function connectWhatsAppHandler(
       });
       if (qrRes.ok) {
         const qrData = (await qrRes.json()) as { base64?: string; code?: string };
+        await registrarWebhook(request, storeId, instance);
         return jsonRes({ connected: false, qrCode: qrData.base64 ?? qrData.code, configured: true });
       }
     }
@@ -175,6 +212,7 @@ export async function connectWhatsAppHandler(
       qrcode?: { base64?: string; code?: string };
     };
 
+    await registrarWebhook(request, storeId, instance);
     return jsonRes({
       connected: false,
       configured: true,
