@@ -11,6 +11,7 @@ import { waitUntil } from "@/lib/execution-context";
 import { canCreateProduct } from "@/lib/api/plan-limits";
 import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
 import { reserveStock, releaseReservation, concretizeReservation, StockReservationError } from "@/lib/inventory/stock-reservation";
+import { MAX_ADDRESSES } from "@/lib/api/customer-handler";
 
 const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements, addresses, financeiroLancamentos, orderTimeline } = schema;
 
@@ -1022,6 +1023,59 @@ export async function createOrderHandler(request: Request): Promise<Response> {
       } catch (custErr) {
         console.error("[createOrder] customer upsert failed (non-fatal):", custErr);
       }
+    }
+
+    // ── 5b. Salva o endereço de entrega no cadastro do cliente ───────────────
+    // Antes disso o endereço só ficava gravado como snapshot no PRÓPRIO
+    // pedido (orders.addressSnapshot) — nunca era refletido em `addresses`,
+    // então não aparecia no cadastro do cliente nem ficava disponível pra
+    // reuso em "Meus Endereços". Background (não bloqueia a resposta) e
+    // best-effort — nunca deve derrubar a confirmação do pedido.
+    if (resolvedCustomerId && body.addressSnapshot) {
+      const custId = resolvedCustomerId;
+      const addr = body.addressSnapshot;
+      waitUntil(request, (async () => {
+        try {
+          if (!addr.street?.trim() || !addr.number?.trim() || !addr.city?.trim() || !addr.state?.trim()) return;
+
+          const cepDigits = (addr.zip ?? "").replace(/\D/g, "");
+          const zip = cepDigits.length === 8
+            ? `${cepDigits.slice(0, 5)}-${cepDigits.slice(5)}`
+            : (addr.zip || "00000-000").slice(0, 9);
+          const street = addr.street.trim().slice(0, 200);
+          const number = addr.number.trim().slice(0, 20);
+
+          // Já existe um endereço igual salvo? Sem isso, todo pedido repetido
+          // pro mesmo endereço acumularia uma entrada nova no cadastro.
+          const [jaExiste] = await db.select({ id: addresses.id }).from(addresses)
+            .where(and(
+              eq(addresses.customerId, custId),
+              eq(addresses.street, street),
+              eq(addresses.number, number),
+              eq(addresses.zip, zip),
+            )).limit(1);
+          if (jaExiste) return;
+
+          const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(addresses)
+            .where(eq(addresses.customerId, custId));
+          if (Number(count) >= MAX_ADDRESSES) return; // não falha o pedido, só não salva mais um
+
+          await db.insert(addresses).values({
+            customerId:   custId,
+            label:        "Endereço",
+            street,
+            number,
+            neighborhood: (addr.neighborhood?.trim() || "-").slice(0, 80),
+            city:         addr.city.trim().slice(0, 80),
+            state:        addr.state.trim().toUpperCase().slice(0, 2),
+            zip,
+            complement:   addr.complement?.trim() ? addr.complement.trim().slice(0, 80) : null,
+            isDefault:    Number(count) === 0,
+          });
+        } catch (err) {
+          console.error("[createOrder] salvar endereço no cadastro do cliente falhou (não-fatal):", err);
+        }
+      })());
     }
 
     // ── 6. Cupom — background, nunca bloqueia a resposta ─────────────────────

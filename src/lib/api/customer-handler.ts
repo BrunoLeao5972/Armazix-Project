@@ -8,7 +8,7 @@ import { requireJwtSecret } from "@/lib/env";
 
 const { customers, orders, orderItems, customerOtps, addresses, favorites, products, coupons } = schema;
 
-const MAX_ADDRESSES = 5;
+export const MAX_ADDRESSES = 5;
 // Mesmo teto usado pelos códigos de e-mail (verificação/reset) em src/lib/auth/index.ts.
 const OTP_MAX_ATTEMPTS = 5;
 
