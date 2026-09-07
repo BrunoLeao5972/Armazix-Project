@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "@/lib/api-client";
 import {
   Search, Plus, Minus, Trash2, CreditCard,
   X, ShoppingCart, Percent, Loader2, ArrowDownCircle, ArrowUpCircle,
   Tag, CheckCircle2, Package, LayoutGrid, Clock, ReceiptText,
   ClipboardCheck, LayoutDashboard, Users, Wallet, ChevronRight,
-  AlertCircle, LockKeyhole, Unlock, Settings,
+  AlertCircle, LockKeyhole, Unlock, Settings, Grid3x3, HelpCircle, UserCircle, Store,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { type PromoConfig, getEffectivePrice } from "@/lib/promo-engine";
@@ -58,6 +58,7 @@ interface Product {
 interface Category {
   id: string; name: string; parentId: string | null;
   position: number | null; active: boolean | null;
+  emoji: string | null;
 }
 interface CartItem {
   productId: string; name: string; price: number; qty: number;
@@ -500,7 +501,7 @@ function CartPanel({
   cart, activePonto, discount, discountType, total, subtotal, discountValue, totalQty,
   sessao, lancandoPedido, lancadoOk,
   onUpdateQty, onRemove, onClear, onSetDiscount, onSetDiscountType,
-  onOpenPayment, onLancarPedido, onOpenMovimentar, onFecharCaixa, onClose,
+  onOpenPayment, onLancarPedido, onOpenMovimentar, onFecharCaixa, onOpenFuncoes, onClose,
 }: {
   cart: CartItem[]; activePonto: Ponto | null; discount: number; discountType: "pct" | "brl";
   total: number; subtotal: number; discountValue: number; totalQty: number;
@@ -508,10 +509,34 @@ function CartPanel({
   onUpdateQty: (id: string, d: number) => void; onRemove: (id: string) => void; onClear: () => void;
   onSetDiscount: (v: number) => void; onSetDiscountType: (t: "pct" | "brl") => void;
   onOpenPayment: () => void; onLancarPedido: () => void; onOpenMovimentar: (t: "sangria" | "suprimento") => void;
-  onFecharCaixa: () => void; onClose?: () => void;
+  onFecharCaixa: () => void; onOpenFuncoes: () => void; onClose?: () => void;
 }) {
   return (
     <div className="flex flex-col h-full bg-card">
+      {/* Ações rápidas + Fechar Caixa em destaque */}
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border shrink-0 bg-secondary/40">
+        <div className="flex items-center gap-1">
+          <button type="button" title="Central de ajuda (em breve)" disabled
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground/40 cursor-not-allowed">
+            <HelpCircle className="w-4 h-4" />
+          </button>
+          <Link to="/admin/configuracoes" search={{ tab: "perfil" }} title="Perfil"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+            <UserCircle className="w-4 h-4" />
+          </Link>
+          <button type="button" onClick={onOpenFuncoes} title="Configurações (Menu de Funções)"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+        {sessao && (
+          <button onClick={onFecharCaixa}
+            className="ml-auto flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-bold text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors">
+            <LockKeyhole className="w-3.5 h-3.5" />FECHAR CAIXA
+          </button>
+        )}
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
@@ -550,7 +575,7 @@ function CartPanel({
         {cart.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground">
             <ShoppingCart className="w-10 h-10 opacity-20" />
-            <p className="text-xs text-center">Carrinho vazio<br /><span className="text-muted-foreground">Toque nos produtos</span></p>
+            <p className="text-xs text-center font-semibold tracking-wide">CARRINHO VAZIA<br /><span className="text-muted-foreground font-normal tracking-normal">Toque nos produtos</span></p>
           </div>
         ) : cart.map(item => (
           <div key={item.productId}
@@ -657,17 +682,17 @@ function CartPanel({
             </button>
             <button onClick={onOpenPayment} disabled={cart.length === 0 || !sessao}
               className="h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
-              <CreditCard className="w-4 h-4" />Pagamento [F2]
+              <CreditCard className="w-4 h-4" />FINALIZAR VENDA (F2)
             </button>
           </div>
         ) : (
           <button onClick={onOpenPayment} disabled={cart.length === 0 || !sessao}
             className="w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
-            <CreditCard className="w-4 h-4" />Pagamento [F2]
+            <CreditCard className="w-4 h-4" />FINALIZAR VENDA (F2)
           </button>
         )}
 
-        {/* Caixa actions */}
+        {/* Caixa actions — "Fechar" saiu daqui: agora vive em destaque no topo do painel */}
         <div className="flex items-center gap-2">
           <button onClick={() => onOpenMovimentar("sangria")}
             className="flex-1 h-8 flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-200">
@@ -677,11 +702,6 @@ function CartPanel({
           <button onClick={() => onOpenMovimentar("suprimento")}
             className="flex-1 h-8 flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-200">
             <ArrowUpCircle className="w-3.5 h-3.5" />Suprimento
-          </button>
-          <span className="text-muted-foreground select-none">|</span>
-          <button onClick={onFecharCaixa}
-            className="flex-1 h-8 flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg transition-colors border border-transparent hover:border-border">
-            <LockKeyhole className="w-3.5 h-3.5" />Fechar
           </button>
         </div>
 
@@ -722,6 +742,8 @@ function PDVPage() {
   const [lancadoOk, setLancadoOk]        = useState(false);
   const [paymentConfig, setPaymentConfig] = useState<PdvPaymentMethod[]>(DEFAULT_PDV_METHODS);
   const [storeId, setStoreId]             = useState("");
+  const [storeName, setStoreName]         = useState("");
+  const [denseGrid, setDenseGrid]         = useState(false); // false = compacto (mais colunas), true = confortável (cards maiores)
   const [encomendas, setEncomendas]       = useState<Encomenda[]>([]);
   const [selectedEncomenda, setSelectedEncomenda] = useState<Encomenda | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -758,12 +780,14 @@ function PDVPage() {
       fetch(`/api/payment-methods/for-pdv`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/service-points/list`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/pdv/caixa`).then(r => r.json()).catch(() => ({})),
-    ]).then(([pd, cd, pmd, spd, cx]) => {
+      fetch(`/api/store/user`).then(r => r.json()).catch(() => ({})),
+    ]).then(([pd, cd, pmd, spd, cx, sud]) => {
       if (pd.products)  setProducts(pd.products);
       if (cd.categories) setCategories(cd.categories);
       if (pmd.methods?.length) setPaymentConfig(pmd.methods);
       if (spd.servicePoints) setPoints(spd.servicePoints);
       if (cx.sessao)    { setSessao(cx.sessao); setMovimentos(cx.movimentos || []); }
+      if (sud.store?.name) setStoreName(sud.store.name);
       if (sid) fetchEncomendas(sid);
     }).catch(() => {});
   }, [fetchEncomendas]);
@@ -925,6 +949,7 @@ function PDVPage() {
     onLancarPedido: handleLancarPedido,
     onOpenMovimentar: (t: "sangria" | "suprimento") => { if (!sessao) return; setMovTipo(t); setModal("movimentar"); },
     onFecharCaixa: () => sessao && setModal("fechar-caixa"),
+    onOpenFuncoes: () => setModal("funcoes"),
   };
 
   // ─────────────────────────────────────────────────────────────────
@@ -939,6 +964,12 @@ function PDVPage() {
 
           {/* ── Topbar: modo + mesa ── */}
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
+            {storeName && (
+              <div className="hidden md:flex items-center gap-1.5 pr-2 mr-1 border-r border-border shrink-0">
+                <Store className="w-3.5 h-3.5 text-emerald-500" />
+                <span className="text-xs font-bold text-foreground uppercase tracking-wide truncate max-w-[160px]">{storeName}</span>
+              </div>
+            )}
             <div className="flex items-center gap-1 bg-secondary rounded-xl p-1">
               <button onClick={() => setPdvMode("catalog")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${pdvMode === "catalog" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
@@ -1037,7 +1068,9 @@ function PDVPage() {
                               ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
                               : "bg-card text-muted-foreground border-border hover:border-border"
                           }`}>
-                          <Tag className={`w-3 h-3 ${isActive ? "text-white" : "text-muted-foreground"}`} />
+                          {cat.emoji
+                            ? <span className="text-sm leading-none">{cat.emoji}</span>
+                            : <Tag className={`w-3 h-3 ${isActive ? "text-white" : "text-muted-foreground"}`} />}
                           {cat.name}
                         </button>
                       );
@@ -1068,13 +1101,23 @@ function PDVPage() {
               )}
 
               {/* Busca */}
-              <div className="px-3 pt-2.5 pb-2 shrink-0 bg-secondary">
-                <div className="relative">
+              <div className="px-3 pt-2.5 pb-2 shrink-0 bg-secondary flex items-center gap-2">
+                <div className="relative flex-1">
                   <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
                     placeholder="Buscar produto, código de barras ou SKU..." autoFocus
                     className="w-full h-11 bg-card border border-border focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 text-sm rounded-xl pl-10 pr-16 outline-none transition-all text-foreground placeholder:text-muted-foreground shadow-sm" />
                   <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground bg-secondary border border-border px-1.5 py-0.5 rounded font-mono">F1</kbd>
+                </div>
+                <div className="hidden sm:flex items-center gap-0.5 bg-card border border-border rounded-xl p-1 shrink-0">
+                  <button onClick={() => setDenseGrid(false)} title="Cards compactos"
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${!denseGrid ? "bg-emerald-500 text-white" : "text-muted-foreground hover:text-foreground"}`}>
+                    <Grid3x3 className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => setDenseGrid(true)} title="Cards grandes"
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${denseGrid ? "bg-emerald-500 text-white" : "text-muted-foreground hover:text-foreground"}`}>
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
 
@@ -1086,7 +1129,9 @@ function PDVPage() {
                     <p className="text-sm">{q ? "Nenhum produto encontrado" : "Nenhum produto disponível"}</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5">
+                  <div className={`grid gap-2.5 ${denseGrid
+                    ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+                    : "grid-cols-3 sm:grid-cols-4 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"}`}>
                     {filtered.map(product => {
                       const isSuspended = product.active === null;
                       const promoP      = getEffectivePrice(product.price, product.promoConfig, "pdv");
@@ -1127,34 +1172,25 @@ function PDVPage() {
                             )}
                           </div>
 
-                          {/* Info */}
+                          {/* Info — nome no canto inferior-esquerdo, preço no inferior-direito */}
                           <div className="flex flex-col gap-1 p-2.5 flex-1">
-                            <p className="text-[12px] font-semibold text-foreground leading-tight line-clamp-2 min-h-[2rem]">
-                              {product.name}
-                            </p>
                             {product.stock !== null && (
                               <p className="text-[10px] text-muted-foreground">Estq: {product.stock}</p>
                             )}
-                            <div className="flex items-end justify-between mt-auto pt-1">
-                              <div>
-                                {promoP.promoActive ? (
-                                  <>
-                                    <p className="text-[11px] font-bold text-emerald-600 tabular-nums leading-tight">{fmtBRL(promoP.effectivePrice)}</p>
-                                    <p className="text-[10px] text-muted-foreground line-through tabular-nums leading-tight">{fmtBRL(promoP.originalPrice!)}</p>
-                                  </>
-                                ) : (
-                                  <p className={`text-[13px] font-bold tabular-nums ${isSuspended ? "text-muted-foreground" : "text-emerald-600"}`}>
-                                    {fmtBRL(parseFloat(product.price))}
-                                  </p>
-                                )}
-                              </div>
-                              <span className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
-                                isSuspended
-                                  ? "border border-border text-muted-foreground"
-                                  : "border border-border text-muted-foreground group-hover:bg-emerald-500 group-hover:border-emerald-500 group-hover:text-white"
-                              }`}>
-                                <Plus className="w-3 h-3" />
-                              </span>
+                            <div className="flex items-end justify-between gap-2 mt-auto pt-1">
+                              <p className="text-[12px] font-semibold text-foreground truncate flex-1 min-w-0" title={product.name}>
+                                {product.name}
+                              </p>
+                              {promoP.promoActive ? (
+                                <div className="text-right shrink-0">
+                                  <p className="text-[11px] font-bold text-emerald-600 tabular-nums leading-tight">{fmtBRL(promoP.effectivePrice)}</p>
+                                  <p className="text-[9px] text-muted-foreground line-through tabular-nums leading-tight">{fmtBRL(promoP.originalPrice!)}</p>
+                                </div>
+                              ) : (
+                                <p className={`text-[13px] font-bold tabular-nums shrink-0 ${isSuspended ? "text-muted-foreground" : "text-emerald-600"}`}>
+                                  {fmtBRL(parseFloat(product.price))}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </button>

@@ -142,7 +142,7 @@ export default function ModalPagamento({
             onClick={() => method && onFinalize(method, installments)}
             disabled={!method || submitting || precisaEscolherPlano || (method === "cash" && !!troco && parseFloat(troco.replace(",", ".")) < total)}
             className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-base flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-100">
-            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CreditCard className="w-5 h-5" />CONFIRMAR PAGAMENTO [F2]</>}
+            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CreditCard className="w-5 h-5" />FINALIZAR VENDA (F2)</>}
           </button>
         </div>
       </div>
