@@ -739,11 +739,13 @@ export default function PrinterFormModal({
                 <SelectField value={form.fontSize} onChange={v => set("fontSize", v)}
                   options={FONT_SIZES} />
                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                  {form.fontSize.toLowerCase() === "grande"
-                    ? resolvePrintStrategy(form.driver).mode === "raw"
-                      ? "Letra em dobro (limite do hardware ESC/POS) — cabe metade do texto por linha."
-                      : "Letra ~30% maior — cabe menos texto por linha."
-                    : "Pensado pra clientes com dificuldade de leitura."}
+                  {(() => {
+                    if (form.fontSize.toLowerCase() !== "grande") return "Pensado pra clientes com dificuldade de leitura.";
+                    const mode = resolvePrintStrategy(form.driver).mode;
+                    if (mode === "raw") return "Letra em dobro (limite do hardware ESC/POS) — cabe metade do texto por linha.";
+                    if (mode === "gdi" || mode === "auto") return "Sem efeito nesse driver — testado ao vivo travando a impressão (instabilidade conhecida do driver Daruma com fonte maior via GDI).";
+                    return "Sem efeito nesse driver.";
+                  })()}
                 </p>
               </Field>
             </div>

@@ -277,43 +277,42 @@ export const SAMPLE_ORDER: SampleOrder = {
   },
 };
 
-// ─── PRODUÇÃO — Kitchen / Bar ticket ─────────────────────────��───────────────
+// ─── PRODUÇÃO — Kitchen / Bar ticket ──────────────────────────────────────────
+// Mesmo "esqueleto" do Cupom (buildCaixaCoupon)/Ficha (buildFichaEntrega) —
+// cabeçalho do pedido com data/hora separadas por espaço (não hífen), prefixo
+// de observação de 4 espaços, cliente sempre em caixa alta — só o conteúdo
+// muda (aqui: tipo + itens sem preço, pro pessoal da cozinha).
 export function buildProductionTicket(store: SampleStore, order: SampleOrder, cols: number): ThermalLine[] {
   const tipoLabel = order.type === "pickup" ? "RETIRADA" : "DELIVERY";
 
   const lines: ThermalLine[] = [
-    // ── Header ──────────��──────────────────────��──────────────────────────��──
+    // ── Header ─────────────────────────────────────────────────────────────────
     { text: "COZINHA / PRODUCAO", center: true, bold: true },
     { text: "" },
     { text: "", separator: "=" },
 
-    // ── Identificação do pedido ──────────────��───────────────────────���────────
+    // ── Identificação do pedido ───────────────────────────────────────────────
     { text: "" },
-    { text: twoCol(`PEDIDO #${order.number}`, `${order.date}  -${order.time}`, cols), bold: true },
+    { text: twoCol(`PEDIDO #${order.number}`, `${order.date} ${order.time}`, cols), bold: true },
     { text: `TIPO: ${tipoLabel}` },
-    { text: `CLIENTE: ${order.customerName}` },
+    { text: `CLIENTE: ${order.customerName.toUpperCase()}` },
     { text: "" },
     { text: "", separator: "=" },
   ];
 
-  // ── Itens ─────────────────────────────────────���───────────────────────────
-  for (let i = 0; i < order.items.length; i++) {
-    const item = order.items[i];
+  // ── Itens ────────────────────────────────────────────────────────────────
+  for (const item of order.items) {
     lines.push({ text: "" });
     lines.push({ text: `${item.qty}x ${item.name.toUpperCase()}`, bold: true });
-    lines.push({ text: "" });
     if (item.notes) {
       for (const note of item.notes.split("/").map(n => n.trim()).filter(Boolean)) {
-        lines.push({ text: ` -${note}` });
+        lines.push({ text: `    -${note}` });
       }
     }
     lines.push({ text: "" });
-    if (i < order.items.length - 1) {
-      lines.push({ text: "", separator: "-" });
-    }
   }
 
-  // ── Rodapé ─────────────────────��──────────────────────────────────────────
+  // ── Rodapé ───────────────────────────────────────────────────────────────
   lines.push({ text: "", separator: "=" });
   lines.push({ text: store.url ?? store.name, center: true });
   lines.push({ text: "", separator: "=" });
@@ -452,7 +451,13 @@ export function buildConferenciaTicket(store: SampleStore, data: ConferenciaData
 }
 
 // ─── DELIVERY — Resumo do pedido para o cliente ───────────────────────────────
+// Mesmo "esqueleto" do Cupom (buildCaixaCoupon)/Ficha (buildFichaEntrega) —
+// cabeçalho do pedido com data/hora separadas por espaço (não hífen), cliente
+// sempre em caixa alta, e a MESMA coluna fixa de quantidade (qtyW) pros
+// itens que o Cupom já usa — só o conteúdo muda.
 export function buildDeliveryTicket(store: SampleStore, order: SampleOrder, cols: number): ThermalLine[] {
+  const qtyW = 5; // "2x   " — mesma largura da coluna QTD do Cupom (buildCaixaCoupon)
+
   const lines: ThermalLine[] = [
     // ── Header ───────────────────────────────────────────────────────────────
     { text: "RESUMO DO PEDIDO", center: true, bold: true },
@@ -461,20 +466,26 @@ export function buildDeliveryTicket(store: SampleStore, order: SampleOrder, cols
 
     // ── Identificação do pedido ───────────────────────────────────────────────
     { text: "" },
-    { text: twoCol(`PEDIDO #${order.number}`, `${order.time}  -${order.date}`, cols), bold: true },
+    { text: twoCol(`PEDIDO #${order.number}`, `${order.date} ${order.time}`, cols), bold: true },
     { text: "" },
-    { text: `CLIENTE: ${order.customerName}` },
+    { text: `CLIENTE: ${order.customerName.toUpperCase()}` },
     { text: `TELEFONE: ${order.customerPhone}` },
     { text: "" },
     { text: "", separator: "=" },
 
     // ── Itens ─────────────────────────────────────────────────────────────────
-    { text: "ITENS DO PEDIDO", bold: true },
-    { text: "" },
+    {
+      text: `${formatLine("QTD", "left", qtyW)}${twoCol("DESCRICAO", "TOTAL", cols - qtyW)}`,
+      bold: true,
+    },
+    { text: "", separator: "-" },
   ];
 
   for (const item of order.items) {
-    lines.push({ text: twoCol(`${item.qty}x ${item.name}`, fmtMoney(item.total), cols), bold: true });
+    lines.push({
+      text: `${formatLine(item.qty + "x", "left", qtyW)}${twoCol(item.name, fmtMoney(item.total), cols - qtyW)}`,
+      bold: true,
+    });
     if (item.notes) {
       for (const note of item.notes.split("/").map(n => n.trim()).filter(Boolean)) {
         lines.push({ text: `    -${note}` });

@@ -138,10 +138,10 @@ describe("resolveFontSizePlan", () => {
     }
   });
 
-  it("Grande + gdi/auto: encolhe ~30% a régua de colunas, sem dobrar ESC/POS", () => {
-    expect(resolveFontSizePlan("gdi", "Grande", 48)).toEqual({ layoutColumns: 37, doubleRaw: false });
-    expect(resolveFontSizePlan("auto", "Grande", 48)).toEqual({ layoutColumns: 37, doubleRaw: false });
-    expect(resolveFontSizePlan("gdi", "Grande", 32)).toEqual({ layoutColumns: 25, doubleRaw: false });
+  it("Grande + gdi/auto: sem efeito (desabilitado — testado ao vivo travando a Daruma DR700)", () => {
+    expect(resolveFontSizePlan("gdi", "Grande", 48)).toEqual({ layoutColumns: 48, doubleRaw: false });
+    expect(resolveFontSizePlan("auto", "Grande", 48)).toEqual({ layoutColumns: 48, doubleRaw: false });
+    expect(resolveFontSizePlan("gdi", "Grande", 32)).toEqual({ layoutColumns: 32, doubleRaw: false });
   });
 
   it("Grande + raw: cai à metade e marca doubleRaw", () => {

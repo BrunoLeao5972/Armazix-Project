@@ -87,8 +87,15 @@ export function resolveFontSizePlan(
   const cols = Math.max(1, physicalColumns);
   if ((fontSize ?? "").trim().toLowerCase() !== "grande") return { layoutColumns: cols, doubleRaw: false };
 
+  // GDI/auto (Daruma): testado ao vivo — fonte "Grande" (a régua de colunas
+  // encolhida, forçando o agente a calcular um ponto maior) trava a
+  // impressora e sai lixo, de forma reprodutível; "Normal" no MESMO
+  // hardware sempre saiu limpo. É a MESMA fila/driver problemático de todo
+  // o resto do arquivo (server.js, Daruma DR700 Spooler) — o aumento de
+  // fonte contínuo do GDI não é seguro nesse driver especificamente.
+  // Desabilitado até haver uma forma confirmada de fazer isso sem travar.
   if (mode === "gdi" || mode === "auto") {
-    return { layoutColumns: Math.max(20, Math.round(cols / 1.3)), doubleRaw: false };
+    return { layoutColumns: cols, doubleRaw: false };
   }
   if (mode === "raw") {
     return { layoutColumns: Math.max(16, Math.round(cols / 2)), doubleRaw: true };
