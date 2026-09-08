@@ -51,12 +51,20 @@ export async function updateOrderItemsHandler(request: Request, auth?: AuthConte
     orderId?: string;
     items?: EditItemInput[];
     payments?: EditPaymentInput[];
+    /** Correção manual da taxa de entrega — sobrepõe o valor que priceOrder()
+     *  calcularia (distância/bairro/etc). Pedido de retirada ignora isso
+     *  (frete sempre 0). Undefined = mantém o cálculo automático de sempre. */
+    deliveryFee?: string;
   };
   if (!body.orderId || !body.items?.length) return err("orderId e items obrigatórios");
 
   for (const p of body.payments ?? []) {
     if (!VALID_PAYMENT_METHODS.includes(p.formaPagamento)) return err("Forma de pagamento inválida");
     if (!p.valor || parseFloat(p.valor.replace(",", ".")) <= 0) return err("Valor de pagamento inválido");
+  }
+  if (body.deliveryFee !== undefined) {
+    const v = parseFloat(body.deliveryFee.replace(",", "."));
+    if (!Number.isFinite(v) || v < 0) return err("Taxa de entrega inválida");
   }
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -111,6 +119,18 @@ export async function updateOrderItemsHandler(request: Request, auth?: AuthConte
   });
   if (isPricingFailure(priced)) return err(priced.error, priced.status);
 
+  // ── Correção manual da taxa de entrega (achado real: o cálculo automático
+  // por distância/bairro nem sempre bate com o custo de verdade — o
+  // operador precisa poder corrigir na hora de editar o pedido). Pedido de
+  // retirada nunca cobra frete, mesmo se um valor vier no body.
+  const money = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
+  const deliveryFeeFinal = body.deliveryFee !== undefined && existingOrder.type !== "pickup"
+    ? money(parseFloat(body.deliveryFee.replace(",", ".")))
+    : priced.deliveryFee;
+  const totalFinal = body.deliveryFee !== undefined && existingOrder.type !== "pickup"
+    ? money(Math.max(0, parseFloat(priced.subtotal) + parseFloat(deliveryFeeFinal) - parseFloat(priced.discount)))
+    : priced.total;
+
   // ── Delta de reserva de estoque por produto (soma quantidades repetidas
   // do mesmo produto em cada lado antes de comparar). ──
   const oldQtyByProduct = new Map<string, number>();
@@ -156,9 +176,9 @@ export async function updateOrderItemsHandler(request: Request, auth?: AuthConte
       await tx.update(orders)
         .set({
           subtotal:    priced.subtotal,
-          deliveryFee: priced.deliveryFee,
+          deliveryFee: deliveryFeeFinal,
           discount:    priced.discount,
-          total:       priced.total,
+          total:       totalFinal,
           updatedAt:   new Date(),
         })
         .where(eq(orders.id, body.orderId!));

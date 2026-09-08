@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { api } from "@/lib/api-client";
 import {
   Loader2, Pencil, Plus, Minus, Trash2, Search,
-  Banknote, QrCode, CreditCard, AlertCircle,
+  Banknote, QrCode, CreditCard, AlertCircle, Truck, ArrowUpCircle, ArrowDownCircle,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,15 @@ export default function EditOrderDialog({
     key: p.id, formaPagamento: p.formaPagamento, valor: p.valor,
   })));
   const [paymentsDirty, setPaymentsDirty] = useState(false);
+
+  // Taxa de entrega — editável manualmente (o cálculo automático por
+  // distância/bairro nem sempre bate com o custo real; uma vez em rota,
+  // o valor combinado com o entregador deve ficar estável, não recalcular
+  // sozinho a cada edição de item). Só existe pra pedido de entrega.
+  const isDelivery = order.type !== "pickup";
+  const [deliveryFee, setDeliveryFee] = useState(() => (parseFloat(order.deliveryFee ?? "0") || 0).toFixed(2).replace(".", ","));
+  const discountValue = parseFloat(order.discount ?? "0") || 0;
+  const originalTotal = parseFloat(order.total) || 0;
 
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<ProductSearchResult[]>([]);
@@ -122,11 +131,20 @@ export default function EditOrderDialog({
     setPayments(prev => prev.filter(p => p.key !== key));
   };
 
-  const subtotalPreview = items.reduce((s, i) => s + (parseFloat(i.unitPrice) || 0) * i.quantity, 0);
-  const somaPagamentos  = payments.reduce((s, p) => s + (parseFloat(p.valor.replace(",", ".")) || 0), 0);
+  const subtotalPreview  = items.reduce((s, i) => s + (parseFloat(i.unitPrice) || 0) * i.quantity, 0);
+  const deliveryFeeValue = isDelivery ? (parseFloat(deliveryFee.replace(",", ".")) || 0) : 0;
+  const totalPreview     = Math.max(0, subtotalPreview + deliveryFeeValue - discountValue);
+  const somaPagamentos   = payments.reduce((s, p) => s + (parseFloat(p.valor.replace(",", ".")) || 0), 0);
+  // Diferença entre o total depois da edição e o total que o pedido já
+  // tinha antes de abrir esse modal — destaca se vai precisar cobrar mais
+  // do cliente ou se sobra troco (pedido ficou mais barato).
+  const diferenca = totalPreview - originalTotal;
 
   const handleSalvar = async () => {
     if (items.length === 0) { setError("O pedido precisa ter ao menos um item."); return; }
+    if (isDelivery && (parseFloat(deliveryFee.replace(",", ".")) || -1) < 0) {
+      setError("Informe uma taxa de entrega válida."); return;
+    }
     for (const p of payments) {
       if (!p.formaPagamento) { setError("Escolha a forma de pagamento em todas as linhas."); return; }
       if (!p.valor || (parseFloat(p.valor.replace(",", ".")) || 0) <= 0) { setError("Informe um valor válido em todas as formas de pagamento."); return; }
@@ -139,6 +157,7 @@ export default function EditOrderDialog({
           productId: i.productId, quantity: i.quantity,
           additionsSnapshot: i.additionsSnapshot, notes: i.notes,
         })),
+        ...(isDelivery ? { deliveryFee: deliveryFee.replace(",", ".") } : {}),
         ...(paymentsDirty ? {
           payments: payments.map(p => ({ formaPagamento: p.formaPagamento, valor: p.valor.replace(",", ".") })),
         } : {}),
@@ -225,13 +244,58 @@ export default function EditOrderDialog({
               )}
             </div>
 
-            <div className="flex justify-between items-center pt-1 text-sm">
-              <span className="text-muted-foreground">Subtotal (estimado)</span>
-              <span className="font-bold tabular-nums">{fmtBRL(subtotalPreview)}</span>
+          </div>
+
+          {/* Taxa de entrega + totais */}
+          <div className="space-y-2 pt-2 border-t border-border/50">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-muted-foreground">Subtotal dos itens</span>
+              <span className="font-semibold tabular-nums">{fmtBRL(subtotalPreview)}</span>
             </div>
-            <p className="text-[10px] text-muted-foreground leading-relaxed">
-              Frete e desconto são recalculados automaticamente ao salvar — o total final aparece depois de confirmar.
-            </p>
+
+            {isDelivery && (
+              <div className="flex justify-between items-center gap-2 text-sm">
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <Truck className="w-3.5 h-3.5" />Taxa de entrega
+                </span>
+                <Input
+                  value={deliveryFee}
+                  onChange={e => setDeliveryFee(e.target.value)}
+                  placeholder="0,00"
+                  inputMode="decimal"
+                  className="h-8 w-24 text-sm rounded-lg text-right tabular-nums"
+                />
+              </div>
+            )}
+
+            {discountValue > 0 && (
+              <div className="flex justify-between items-center text-sm text-amber-600">
+                <span>Desconto (cupom)</span>
+                <span className="font-semibold tabular-nums">−{fmtBRL(discountValue)}</span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-1 border-t border-border/40">
+              <span className="font-bold text-foreground">Total</span>
+              <span className="text-lg font-extrabold tabular-nums">{fmtBRL(totalPreview)}</span>
+            </div>
+
+            {/* Diferença em relação ao total que o pedido já tinha — sempre
+                destacada quando o valor muda, com ênfase maior se sobra
+                troco (pedido ficou mais barato do que já estava). */}
+            {Math.abs(diferenca) > 0.004 && (
+              diferenca > 0 ? (
+                <div className="flex items-center gap-2 text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                  <ArrowUpCircle className="w-4 h-4 shrink-0" />
+                  <span>+ {fmtBRL(diferenca)} a mais — cobrar a diferença do cliente</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm font-bold text-blue-700 bg-blue-50 border border-blue-300 rounded-xl px-3 py-2">
+                  <ArrowDownCircle className="w-4 h-4 shrink-0" />
+                  <span>TROCO: {fmtBRL(Math.abs(diferenca))} a menos — devolver pro cliente</span>
+                </div>
+              )
+            )}
           </div>
 
           {/* Pagamento dividido */}
@@ -271,8 +335,8 @@ export default function EditOrderDialog({
                   </div>
                 ))}
                 <div className="flex justify-between items-center text-xs pt-1">
-                  <span className="text-muted-foreground">Soma das formas</span>
-                  <span className={`font-bold tabular-nums ${Math.abs(somaPagamentos - subtotalPreview) > 0.01 ? "text-amber-600" : "text-emerald-600"}`}>
+                  <span className="text-muted-foreground">Soma das formas (total: {fmtBRL(totalPreview)})</span>
+                  <span className={`font-bold tabular-nums ${Math.abs(somaPagamentos - totalPreview) > 0.01 ? "text-amber-600" : "text-emerald-600"}`}>
                     {fmtBRL(somaPagamentos)}
                   </span>
                 </div>
