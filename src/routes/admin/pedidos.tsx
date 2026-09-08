@@ -4,8 +4,8 @@ import { api } from "@/lib/api-client";
 import {
   Search, Filter, Clock, ChefHat, Truck, CheckCircle2, XCircle,
   Loader2, Package, ShoppingBag, QrCode, Banknote, CreditCard,
-  MapPin, User, Printer, Check, X, Zap, Settings, RotateCcw, ChevronDown,
-  ArrowRight, Bike, Pencil, Layers,
+  MapPin, User, Printer, Check, X, Zap, Settings, RotateCcw,
+  ArrowRight, Bike, Pencil, Layers, Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,7 +41,10 @@ export interface RawOrder {
   subtotal?: string; deliveryFee?: string; discount?: string;
   couponId?: string | null; concretizedAt?: string | null;
   customer: OrderCustomer | null; items: OrderItem[]; payments?: OrderPayment[];
-  addressSnapshot: { street?: string; number?: string; neighborhood?: string } | null;
+  addressSnapshot: {
+    street?: string; number?: string; neighborhood?: string;
+    city?: string; state?: string; zip?: string; complement?: string;
+  } | null;
 }
 interface Order {
   orderId: string; number: number; customer: string;
@@ -156,6 +159,17 @@ const NEXT_ACTION: Record<string, { label: string; next: string; icon: React.Ele
   delivering: { label: "Confirmar Entrega", next: "delivered",  icon: CheckCircle2 },
 };
 
+// ── Status anterior (botão "Retroceder", pra corrigir clique errado) ──────────
+// updateOrderStatusHandler não impõe máquina de estados (aceita qualquer
+// status válido) — retroceder é só chamar a mesma rota com o status de trás.
+const PREV_STATUS: Record<string, string> = {
+  received:   "pending",
+  preparing:  "received",
+  ready:      "preparing",
+  delivering: "ready",
+  delivered:  "delivering",
+};
+
 // ── Filter state ──────────────────────────────────────────────────────────────
 interface FilterState {
   showDelivered: boolean;
@@ -208,12 +222,6 @@ function Toast({ msg, type }: { msg: string; type: "success" | "error" }) {
 }
 
 // ── OrderCard ─────────────────────────────────────────────────────────────────
-const PAY_OPTIONS = [
-  { value: "pix",   label: "PIX" },
-  { value: "card",  label: "Cartão Crédito" },
-  { value: "debit", label: "Cartão Débito" },
-  { value: "cash",  label: "Dinheiro" },
-] as const;
 
 function OrderCard({
   order, onAdvance, onCancel, onPrint, onPrintFallback, onEdit, isAdvancing,
@@ -228,7 +236,6 @@ function OrderCard({
 }) {
   const [reprintOpen, setReprintOpen] = useState(false);
   const reprintRef = useRef<HTMLDivElement>(null);
-  const [paymentOverride, setPaymentOverride] = useState(order.payment || "pix");
 
   useEffect(() => {
     if (!reprintOpen) return;
@@ -252,10 +259,12 @@ function OrderCard({
   const sCfg = STATUS_CFG[order.status];
   const PayIcon = PAY_ICON[order.payment] ?? Banknote;
   const canCancel = !["delivered", "cancelled"].includes(order.status);
-  // Editar (itens/pagamento) só faz sentido enquanto o pedido ainda não foi
-  // concretizado — depois disso, mexer em estoque/financeiro já lançado é
-  // estorno, uma operação diferente (fora de escopo aqui).
-  const canEdit = !order.raw.concretizedAt && order.status !== "cancelled";
+  // Editar fica disponível em qualquer etapa do fluxo — inclusive pedido já
+  // concretizado (acontece antes de "Entregue" quando o PDV expede a
+  // encomenda, ver order-edit-handler.ts). Só trava mesmo em concluído/
+  // cancelado, onde mexer é estorno (fora de escopo).
+  const canEdit = !["delivered", "cancelled"].includes(order.status);
+  const prevStatus = PREV_STATUS[order.status];
 
   return (
     <div className="bg-card border border-border/60 rounded-2xl p-3.5 shadow-sm hover:shadow-md transition-all duration-150 space-y-2.5">
@@ -317,25 +326,6 @@ function OrderCard({
         <div className="flex items-start gap-1.5">
           <MapPin className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
           <span className="text-[11px] text-muted-foreground truncate leading-tight">{order.address}</span>
-        </div>
-      )}
-
-      {/* Seletor de pagamento — pedidos ainda não finalizados */}
-      {!["delivered", "cancelled"].includes(order.status) && (
-        <div className="flex items-center gap-2 pt-1 border-t border-dashed border-border/40">
-          <span className="text-[10px] font-medium text-muted-foreground shrink-0">Recebimento:</span>
-          <div className="relative flex-1">
-            <select
-              value={paymentOverride}
-              onChange={e => setPaymentOverride(e.target.value)}
-              className="w-full h-6 rounded-lg border border-border/50 bg-secondary/20 text-[11px] font-medium pl-2 pr-6 appearance-none cursor-pointer focus:outline-none focus:border-primary/50 text-foreground"
-            >
-              {PAY_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-2.5 h-2.5 pointer-events-none text-muted-foreground" />
-          </div>
         </div>
       )}
 
@@ -402,14 +392,29 @@ function OrderCard({
               <XCircle className="w-3 h-3" />
             </button>
           )}
+          {prevStatus && (
+            <button
+              title="Retroceder — corrige um clique errado"
+              onClick={() => {
+                // Pedido já concretizado (baixa de estoque + financeiro já
+                // feitos — pode acontecer antes de "Entregue", ex: PDV
+                // expediu a encomenda): retroceder só corrige o status, não
+                // desfaz o que já foi lançado. Avisa antes de agir.
+                if (order.raw.concretizedAt && !confirm(
+                  "Esse pedido já teve baixa de estoque e lançamento financeiro feitos. Retroceder só corrige o status no quadro — estoque e financeiro continuam como estão. Confirma?"
+                )) return;
+                onAdvance(order.orderId, prevStatus);
+              }}
+              disabled={isAdvancing}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-secondary/60 disabled:opacity-40"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+            </button>
+          )}
           {action && (
             <button
               disabled={isAdvancing}
-              onClick={() => onAdvance(
-                order.orderId,
-                action.next,
-                isFinalAction ? paymentOverride : undefined,
-              )}
+              onClick={() => onAdvance(order.orderId, action.next)}
               className={[
                 "flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl hover:opacity-90 active:scale-95 transition-all disabled:opacity-50",
                 isFinalAction

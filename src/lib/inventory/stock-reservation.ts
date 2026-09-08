@@ -151,6 +151,54 @@ export async function adjustReservation(
   }
 }
 
+// ─── Ajustar estoque REAL de um pedido JÁ CONCRETIZADO ────────────
+// Editar itens de um pedido que já teve baixa de verdade (concretizedAt
+// setado — pode acontecer antes de "Entregue", ex: PDV expediu a
+// encomenda) não mexe em `reserved` (não há reserva ativa pra concretizar
+// de novo) — ajusta `stock` diretamente pela diferença e registra um
+// stockMovements tipo "AJUSTE" (mesmo valor usado em
+// stockAdjustmentHandler, stock-movement-handler.ts) pra manter o
+// histórico rastreável, em vez de silenciosamente sobrescrever o saldo.
+export async function adjustConcretizedStock(
+  tx: Tx,
+  storeId: string,
+  deltas: ReservationDelta[],
+  orderId: string,
+  orderNumber: number,
+): Promise<void> {
+  for (const item of deltas) {
+    if (!item.productId || item.deltaQty === 0) continue;
+
+    const [prod] = await tx
+      .select({ stock: products.stock, trackStock: products.trackStock })
+      .from(products)
+      .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)))
+      .limit(1);
+    if (!prod?.trackStock) continue;
+
+    const balanceBefore = prod.stock ?? 0;
+    // deltaQty > 0 (mais itens no pedido) → baixa mais estoque (stock cai);
+    // deltaQty < 0 (menos itens) → devolve estoque (stock sobe).
+    const balanceAfter = balanceBefore - item.deltaQty;
+
+    await tx.update(products)
+      .set({ stock: balanceAfter, updatedAt: new Date() })
+      .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)));
+
+    await tx.insert(stockMovements).values({
+      storeId,
+      productId:   item.productId,
+      productName: item.productName,
+      type:        "AJUSTE",
+      quantity:    Math.abs(item.deltaQty),
+      balanceBefore,
+      balanceAfter,
+      origem: `Ajuste — Edição do Pedido #${orderNumber} (pedido já concretizado)`,
+      orderId,
+    });
+  }
+}
+
 // ─── Concretizar — venda fechada de verdade ───────────────────────
 // Converte a reserva em baixa real: desconta de `stock`, zera a fatia
 // correspondente de `reserved`, e registra o movimento de estoque tipo

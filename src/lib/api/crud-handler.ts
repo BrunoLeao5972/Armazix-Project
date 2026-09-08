@@ -1310,11 +1310,21 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     const finalPaymentMethod = body.paymentMethod || existingOrder.paymentMethod;
 
     // Concretizar "delivered" por aqui (sem passar pelo PDV) já não é mais
-    // bloqueado pra loja com PDV — o kanban tem seu próprio seletor de forma
-    // de pagamento (paymentOverride, pedidos.tsx) e, agora, edição completa
-    // do pedido com pagamento dividido de verdade (order_payments) antes de
-    // concluir. O PDV continua sendo um caminho válido (aba Delivery), só
-    // deixou de ser o único.
+    // bloqueado pra loja com PDV — a forma de pagamento passa a ser sempre
+    // definida antes, pelo botão Editar (itens/pagamento centralizados lá,
+    // pedidos.tsx não tem mais o seletor solto no card). O PDV continua
+    // sendo um caminho válido (aba Delivery), só deixou de ser o único.
+    //
+    // Sem forma de pagamento nenhuma (nem no pedido, nem vindo no body),
+    // bloqueia em vez de deixar "delivered" acontecer sem concretizar —
+    // antes disso, um pedido sem finalPaymentMethod virava "Entregue" sem
+    // nunca dar baixa de estoque nem gerar lançamento financeiro (o bloco
+    // de concretização abaixo só roda com finalPaymentMethod truthy).
+    if (body.status === "delivered" && !finalPaymentMethod) {
+      return new Response(JSON.stringify({
+        error: "Defina a forma de pagamento antes de concluir — use o botão Editar no card do pedido.",
+      }), { status: 409, headers: { "content-type": "application/json" } });
+    }
 
     const statusPatch: Record<string, unknown> = {
       status:    body.status,

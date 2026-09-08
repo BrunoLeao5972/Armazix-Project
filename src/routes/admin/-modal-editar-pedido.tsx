@@ -3,6 +3,7 @@ import { api } from "@/lib/api-client";
 import {
   Loader2, Pencil, Plus, Minus, Trash2, Search,
   Banknote, QrCode, CreditCard, AlertCircle, Truck, ArrowUpCircle, ArrowDownCircle,
+  MapPin, Info,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,10 @@ interface EditItem {
   notes?: string | null;
 }
 interface EditPayment { key: string; formaPagamento: string; valor: string }
+interface EditAddress {
+  street: string; number: string; neighborhood: string;
+  city: string; state: string; zip: string; complement: string;
+}
 
 interface ProductSearchResult { id: string; name: string; sku: string | null; price: string; emoji: string | null; active: boolean | null }
 
@@ -34,11 +39,13 @@ let tempIdSeq = 0;
 const newTempKey = () => `novo-${Date.now()}-${tempIdSeq++}`;
 
 // ─── Modal: Editar Pedido ──────────────────────────────────────────
-// Itens (quantidade, adicionar/remover) + pagamento dividido de verdade
-// (uma ou mais formas, cada uma com seu valor). Só disponível pra pedidos
-// ainda não concretizados (ver canEdit em pedidos.tsx). O preço de
-// verdade é sempre recalculado no servidor (priceOrder) — os valores
-// mostrados aqui são só pré-visualização.
+// Itens (quantidade, adicionar/remover), endereço de entrega (com taxa
+// recalculada automaticamente) e pagamento dividido de verdade. Disponível
+// em qualquer etapa do fluxo (ver canEdit em pedidos.tsx) — inclusive
+// pedido já concretizado, onde a diferença de valor vira um lançamento de
+// ajuste em vez de reescrever o pagamento inteiro. O preço de verdade é
+// sempre recalculado no servidor (priceOrder) — os valores mostrados aqui
+// são pré-visualização.
 export default function EditOrderDialog({
   order, onClose, onSaved,
 }: {
@@ -46,24 +53,46 @@ export default function EditOrderDialog({
   onClose: () => void;
   onSaved: (updated: RawOrder) => void;
 }) {
+  const isConcretized = !!order.concretizedAt;
+  const isDelivery = order.type !== "pickup";
+
   const [items, setItems] = useState<EditItem[]>(() => order.items.map(i => ({
     key: i.id, productId: i.productId ?? "", productName: i.productName,
     quantity: i.quantity, unitPrice: i.unitPrice,
     additionsSnapshot: i.additionsSnapshot, notes: i.notes,
   })));
+
+  // Endereço — só mexe se o operador de fato editar algum campo (evita
+  // reenviar/re-geocodificar toda edição de item à toa).
+  const [address, setAddress] = useState<EditAddress>(() => ({
+    street: order.addressSnapshot?.street || "", number: order.addressSnapshot?.number || "",
+    neighborhood: order.addressSnapshot?.neighborhood || "", city: order.addressSnapshot?.city || "",
+    state: order.addressSnapshot?.state || "", zip: order.addressSnapshot?.zip || "",
+    complement: order.addressSnapshot?.complement || "",
+  }));
+  const [addressDirty, setAddressDirty] = useState(false);
+  const updateAddress = (patch: Partial<EditAddress>) => {
+    setAddressDirty(true);
+    setAddress(prev => ({ ...prev, ...patch }));
+  };
+
+  // Taxa de entrega — editável manualmente (correção do operador sempre
+  // vence). Sem mexer aqui, o endereço novo (se editado) recalcula a taxa
+  // automaticamente no servidor.
+  const [deliveryFee, setDeliveryFee] = useState(() => (parseFloat(order.deliveryFee ?? "0") || 0).toFixed(2).replace(".", ","));
+  const [deliveryFeeDirty, setDeliveryFeeDirty] = useState(false);
+  const discountValue = parseFloat(order.discount ?? "0") || 0;
+  const originalTotal = parseFloat(order.total) || 0;
+
+  // Pagamento — pedido ainda não concretizado: lista completa (substitui o
+  // pagamento do pedido inteiro). Já concretizado: só escolhe a forma pra
+  // rotular o lançamento de AJUSTE da diferença (o pagamento original já
+  // aconteceu de verdade, não é reescrito).
   const [payments, setPayments] = useState<EditPayment[]>(() => (order.payments ?? []).map(p => ({
     key: p.id, formaPagamento: p.formaPagamento, valor: p.valor,
   })));
   const [paymentsDirty, setPaymentsDirty] = useState(false);
-
-  // Taxa de entrega — editável manualmente (o cálculo automático por
-  // distância/bairro nem sempre bate com o custo real; uma vez em rota,
-  // o valor combinado com o entregador deve ficar estável, não recalcular
-  // sozinho a cada edição de item). Só existe pra pedido de entrega.
-  const isDelivery = order.type !== "pickup";
-  const [deliveryFee, setDeliveryFee] = useState(() => (parseFloat(order.deliveryFee ?? "0") || 0).toFixed(2).replace(".", ","));
-  const discountValue = parseFloat(order.discount ?? "0") || 0;
-  const originalTotal = parseFloat(order.total) || 0;
+  const [formaAjuste, setFormaAjuste] = useState(order.paymentMethod || "pix");
 
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<ProductSearchResult[]>([]);
@@ -137,17 +166,24 @@ export default function EditOrderDialog({
   const somaPagamentos   = payments.reduce((s, p) => s + (parseFloat(p.valor.replace(",", ".")) || 0), 0);
   // Diferença entre o total depois da edição e o total que o pedido já
   // tinha antes de abrir esse modal — destaca se vai precisar cobrar mais
-  // do cliente ou se sobra troco (pedido ficou mais barato).
+  // do cliente ou se sobra troco (pedido ficou mais barato). Pra pedido já
+  // concretizado, essa diferença também vira um lançamento financeiro de
+  // ajuste de verdade ao salvar (não é só um aviso visual).
   const diferenca = totalPreview - originalTotal;
 
   const handleSalvar = async () => {
     if (items.length === 0) { setError("O pedido precisa ter ao menos um item."); return; }
-    if (isDelivery && (parseFloat(deliveryFee.replace(",", ".")) || -1) < 0) {
+    if (isDelivery && deliveryFeeDirty && (parseFloat(deliveryFee.replace(",", ".")) || -1) < 0) {
       setError("Informe uma taxa de entrega válida."); return;
     }
-    for (const p of payments) {
-      if (!p.formaPagamento) { setError("Escolha a forma de pagamento em todas as linhas."); return; }
-      if (!p.valor || (parseFloat(p.valor.replace(",", ".")) || 0) <= 0) { setError("Informe um valor válido em todas as formas de pagamento."); return; }
+    if (addressDirty && (!address.street.trim() || !address.number.trim() || !address.city.trim() || !address.state.trim())) {
+      setError("Endereço incompleto — rua, número, cidade e UF são obrigatórios."); return;
+    }
+    if (!isConcretized) {
+      for (const p of payments) {
+        if (!p.formaPagamento) { setError("Escolha a forma de pagamento em todas as linhas."); return; }
+        if (!p.valor || (parseFloat(p.valor.replace(",", ".")) || 0) <= 0) { setError("Informe um valor válido em todas as formas de pagamento."); return; }
+      }
     }
     setSaving(true); setError("");
     try {
@@ -157,10 +193,11 @@ export default function EditOrderDialog({
           productId: i.productId, quantity: i.quantity,
           additionsSnapshot: i.additionsSnapshot, notes: i.notes,
         })),
-        ...(isDelivery ? { deliveryFee: deliveryFee.replace(",", ".") } : {}),
-        ...(paymentsDirty ? {
-          payments: payments.map(p => ({ formaPagamento: p.formaPagamento, valor: p.valor.replace(",", ".") })),
-        } : {}),
+        ...(addressDirty ? { addressSnapshot: address } : {}),
+        ...(isDelivery && deliveryFeeDirty ? { deliveryFee: deliveryFee.replace(",", ".") } : {}),
+        ...(isConcretized
+          ? (Math.abs(diferenca) > 0.004 ? { payments: [{ formaPagamento: formaAjuste, valor: Math.abs(diferenca).toFixed(2) }] } : {})
+          : (paymentsDirty ? { payments: payments.map(p => ({ formaPagamento: p.formaPagamento, valor: p.valor.replace(",", ".") })) } : {})),
       });
       const data = await res.json() as { success?: boolean; order?: RawOrder; error?: string };
       if (res.ok && data.success && data.order) {
@@ -186,6 +223,17 @@ export default function EditOrderDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {isConcretized && (
+            <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5">
+              <Info className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                Esse pedido já teve baixa de estoque e lançamento financeiro feitos. Mudanças aqui ajustam o
+                estoque real e, se o total mudar, geram um lançamento de <strong>ajuste</strong> à parte
+                (cobrança extra ou troco) — o lançamento original não é reescrito.
+              </span>
+            </div>
+          )}
+
           {/* Itens */}
           <div className="space-y-2">
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Itens</p>
@@ -243,8 +291,37 @@ export default function EditOrderDialog({
                 </div>
               )}
             </div>
-
           </div>
+
+          {/* Endereço de entrega */}
+          {isDelivery && (
+            <div className="space-y-2 pt-2 border-t border-border/50">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5" />Endereço de Entrega
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <Input value={address.street} onChange={e => updateAddress({ street: e.target.value })}
+                  placeholder="Rua" className="col-span-2 h-9 text-sm rounded-xl" />
+                <Input value={address.number} onChange={e => updateAddress({ number: e.target.value })}
+                  placeholder="Número" className="h-9 text-sm rounded-xl" />
+                <Input value={address.neighborhood} onChange={e => updateAddress({ neighborhood: e.target.value })}
+                  placeholder="Bairro" className="col-span-2 h-9 text-sm rounded-xl" />
+                <Input value={address.complement} onChange={e => updateAddress({ complement: e.target.value })}
+                  placeholder="Complemento" className="h-9 text-sm rounded-xl" />
+                <Input value={address.city} onChange={e => updateAddress({ city: e.target.value })}
+                  placeholder="Cidade" className="col-span-2 h-9 text-sm rounded-xl" />
+                <Input value={address.state} onChange={e => updateAddress({ state: e.target.value.toUpperCase().slice(0, 2) })}
+                  placeholder="UF" maxLength={2} className="h-9 text-sm rounded-xl uppercase" />
+                <Input value={address.zip} onChange={e => updateAddress({ zip: e.target.value })}
+                  placeholder="CEP" className="col-span-3 h-9 text-sm rounded-xl" />
+              </div>
+              {addressDirty && !deliveryFeeDirty && (
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  A taxa de entrega vai recalcular automaticamente pro endereço novo ao salvar.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Taxa de entrega + totais */}
           <div className="space-y-2 pt-2 border-t border-border/50">
@@ -260,7 +337,7 @@ export default function EditOrderDialog({
                 </span>
                 <Input
                   value={deliveryFee}
-                  onChange={e => setDeliveryFee(e.target.value)}
+                  onChange={e => { setDeliveryFeeDirty(true); setDeliveryFee(e.target.value); }}
                   placeholder="0,00"
                   inputMode="decimal"
                   className="h-8 w-24 text-sm rounded-lg text-right tabular-nums"
@@ -298,51 +375,72 @@ export default function EditOrderDialog({
             )}
           </div>
 
-          {/* Pagamento dividido */}
-          <div className="space-y-2 pt-2 border-t border-border/50">
-            <div className="flex items-center justify-between">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Forma de Pagamento</p>
-              <button type="button" onClick={addPayment}
-                className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:opacity-80 transition-opacity">
-                <Plus className="w-3 h-3" />Adicionar forma
-              </button>
-            </div>
-
-            {payments.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Nenhuma forma definida ainda — o pedido mantém a forma atual até você adicionar uma aqui.</p>
-            ) : (
-              <div className="space-y-2">
-                {payments.map(p => (
-                  <div key={p.key} className="flex items-center gap-2">
-                    <select
-                      value={p.formaPagamento}
-                      onChange={e => updatePayment(p.key, { formaPagamento: e.target.value })}
-                      className="h-9 rounded-xl border border-border bg-card text-sm px-2 flex-1"
-                    >
-                      {METODOS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
-                    </select>
-                    <Input
-                      value={p.valor}
-                      onChange={e => updatePayment(p.key, { valor: e.target.value })}
-                      placeholder="0,00"
-                      inputMode="decimal"
-                      className="h-9 w-28 text-sm rounded-xl text-right tabular-nums"
-                    />
-                    <button type="button" onClick={() => removePayment(p.key)}
-                      className="w-8 h-8 rounded-md flex items-center justify-center text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors shrink-0">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-                <div className="flex justify-between items-center text-xs pt-1">
-                  <span className="text-muted-foreground">Soma das formas (total: {fmtBRL(totalPreview)})</span>
-                  <span className={`font-bold tabular-nums ${Math.abs(somaPagamentos - totalPreview) > 0.01 ? "text-amber-600" : "text-emerald-600"}`}>
-                    {fmtBRL(somaPagamentos)}
-                  </span>
-                </div>
+          {/* Pagamento */}
+          {isConcretized ? (
+            Math.abs(diferenca) > 0.004 && (
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
+                  Forma de pagamento do ajuste
+                </p>
+                <select
+                  value={formaAjuste}
+                  onChange={e => setFormaAjuste(e.target.value)}
+                  className="h-9 w-full rounded-xl border border-border bg-card text-sm px-2"
+                >
+                  {METODOS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                </select>
+                <p className="text-[11px] text-muted-foreground">
+                  O pagamento original do pedido não é reescrito — isso só rotula o lançamento da diferença
+                  ({diferenca > 0 ? "cobrança extra" : "troco"}).
+                </p>
               </div>
-            )}
-          </div>
+            )
+          ) : (
+            <div className="space-y-2 pt-2 border-t border-border/50">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Forma de Pagamento</p>
+                <button type="button" onClick={addPayment}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-primary hover:opacity-80 transition-opacity">
+                  <Plus className="w-3 h-3" />Adicionar forma
+                </button>
+              </div>
+
+              {payments.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nenhuma forma definida ainda — o pedido mantém a forma atual até você adicionar uma aqui.</p>
+              ) : (
+                <div className="space-y-2">
+                  {payments.map(p => (
+                    <div key={p.key} className="flex items-center gap-2">
+                      <select
+                        value={p.formaPagamento}
+                        onChange={e => updatePayment(p.key, { formaPagamento: e.target.value })}
+                        className="h-9 rounded-xl border border-border bg-card text-sm px-2 flex-1"
+                      >
+                        {METODOS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                      </select>
+                      <Input
+                        value={p.valor}
+                        onChange={e => updatePayment(p.key, { valor: e.target.value })}
+                        placeholder="0,00"
+                        inputMode="decimal"
+                        className="h-9 w-28 text-sm rounded-xl text-right tabular-nums"
+                      />
+                      <button type="button" onClick={() => removePayment(p.key)}
+                        className="w-8 h-8 rounded-md flex items-center justify-center text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors shrink-0">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex justify-between items-center text-xs pt-1">
+                    <span className="text-muted-foreground">Soma das formas (total: {fmtBRL(totalPreview)})</span>
+                    <span className={`font-bold tabular-nums ${Math.abs(somaPagamentos - totalPreview) > 0.01 ? "text-amber-600" : "text-emerald-600"}`}>
+                      {fmtBRL(somaPagamentos)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {error && (
             <p className="flex items-center gap-1.5 text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">
@@ -365,4 +463,3 @@ export default function EditOrderDialog({
     </Dialog>
   );
 }
-
