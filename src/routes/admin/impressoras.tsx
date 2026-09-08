@@ -59,9 +59,10 @@ const AGENT_DOWNLOAD_URL: string =
   ?? "/downloads/ArmazixPrinter-Setup.exe";
 
 // ─── Agent Status Banner ──────────────────────────────────────────
-// Versão mínima do agente com modo GDI/auto e detalhes de fila — abaixo
-// disso o driver "Daruma" cai no RAW puro e não imprime na DR700.
-const AGENT_MIN_VERSION = "1.1.0";
+// Versão mínima do agente com modo GDI/auto, detalhes de fila e altura de
+// página ajustada ao conteúdo (1.1.0 já tinha GDI, mas sem isso último
+// cada cupom saía com ~12in de papel em branco atrás — 1.1.1 corrige).
+const AGENT_MIN_VERSION = "1.1.1";
 
 function versionLt(a: string, b: string): boolean {
   const pa = a.split(".").map(n => parseInt(n, 10) || 0);
