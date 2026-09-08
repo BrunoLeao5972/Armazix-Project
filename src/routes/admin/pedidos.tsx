@@ -224,11 +224,12 @@ function Toast({ msg, type }: { msg: string; type: "success" | "error" }) {
 // ── OrderCard ─────────────────────────────────────────────────────────────────
 
 function OrderCard({
-  order, onAdvance, onCancel, onPrint, onPrintFallback, onEdit, isAdvancing,
+  order, onAdvance, onCancel, onUncancel, onPrint, onPrintFallback, onEdit, isAdvancing,
 }: {
   order: Order;
   onAdvance: (id: string, next: string, paymentMethod?: string) => void;
   onCancel: (id: string) => void;
+  onUncancel: (id: string) => void;
   onPrint: (id: string) => void;
   onPrintFallback: (msg: string, type: "success" | "error") => void;
   onEdit: (order: Order) => void;
@@ -286,6 +287,10 @@ function OrderCard({
   // cancelado, onde mexer é estorno (fora de escopo).
   const canEdit = !["delivered", "cancelled"].includes(order.status);
   const prevStatus = PREV_STATUS[order.status];
+  // "Reverter cancelamento" — pra quando o operador cancela sem querer. O
+  // servidor descobre qual status restaurar (order_timeline), não dá pra
+  // saber de antemão no cliente — por isso não tem PREV_STATUS envolvido.
+  const canUncancel = order.status === "cancelled";
 
   return (
     <div className="bg-card border border-border/60 rounded-2xl p-3.5 shadow-sm hover:shadow-md transition-all duration-150 space-y-2.5">
@@ -419,6 +424,20 @@ function OrderCard({
               {confirmCancel && "Confirmar?"}
             </button>
           )}
+          {canUncancel && (
+            <button
+              onClick={() => onUncancel(order.orderId)}
+              disabled={isAdvancing}
+              title="Reverter cancelamento — volta o pedido pro status de antes"
+              className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg text-emerald-600 hover:bg-emerald-500/10 transition-colors disabled:opacity-40"
+            >
+              {isAdvancing
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Undo2 className="w-3.5 h-3.5" />
+              }
+              Reverter cancelamento
+            </button>
+          )}
           {prevStatus && (
             <button
               title="Retroceder — corrige um clique errado"
@@ -464,12 +483,13 @@ function OrderCard({
 
 // ── KanbanColumn ──────────────────────────────────────────────────────────────
 function KanbanColumn({
-  column, orders, onAdvance, onCancel, onPrint, onPrintFallback, onEdit, advancing, autoAccepting,
+  column, orders, onAdvance, onCancel, onUncancel, onPrint, onPrintFallback, onEdit, advancing, autoAccepting,
 }: {
   column: ColumnConfig;
   orders: Order[];
   onAdvance: (id: string, next: string, paymentMethod?: string) => void;
   onCancel: (id: string) => void;
+  onUncancel: (id: string) => void;
   onPrint: (id: string) => void;
   onPrintFallback: (msg: string, type: "success" | "error") => void;
   onEdit: (order: Order) => void;
@@ -507,6 +527,7 @@ function KanbanColumn({
               order={order}
               onAdvance={onAdvance}
               onCancel={onCancel}
+              onUncancel={onUncancel}
               onPrint={onPrint}
               onPrintFallback={onPrintFallback}
               onEdit={onEdit}
@@ -710,6 +731,27 @@ function OrdersPage() {
       }
     } catch {
       showToast("Erro de conexão ao cancelar o pedido", "error");
+    }
+    finally { setAdvancing(null); }
+  };
+
+  // "Reverter cancelamento" — pra pedido cancelado sem querer. O servidor
+  // descobre sozinho (pelo order_timeline) qual era o status antes do
+  // cancelamento e devolve em data.status; aqui só reflete no card.
+  const handleUncancel = async (orderId: string) => {
+    setAdvancing(orderId);
+    try {
+      const res = await api.post("/api/orders/uncancel", { orderId });
+      const data = await res.json().catch(() => ({} as { error?: string; status?: string }));
+      if (res.ok) {
+        const restored = data.status || "pending";
+        setOrders(prev => prev.map(o => o.orderId === orderId ? { ...o, status: restored } : o));
+        showToast("Cancelamento revertido", "success");
+      } else {
+        showToast(data.error || "Não foi possível reverter o cancelamento", "error");
+      }
+    } catch {
+      showToast("Erro de conexão ao reverter o cancelamento", "error");
     }
     finally { setAdvancing(null); }
   };
@@ -1033,6 +1075,7 @@ function OrdersPage() {
             orders={colOrders(col.statuses)}
             onAdvance={handleAdvance}
             onCancel={handleCancel}
+            onUncancel={handleUncancel}
             onPrint={id => { setPrintOrderId(id); setHasOpenedPrint(true); }}
             onPrintFallback={showToast}
             onEdit={setEditingOrder}

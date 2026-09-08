@@ -96,6 +96,7 @@ import {
   createOrderHandler,
   listOrdersHandler,
   updateOrderStatusHandler,
+  uncancelOrderHandler,
   createCouponHandler,
   listCustomersHandler,
   listSuppliersHandler,
@@ -329,6 +330,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/categories/update": updateCategoryHandler,
   "/api/categories/delete": deleteCategoryHandler,
   "/api/orders/update-status": updateOrderStatusHandler,
+  "/api/orders/uncancel": uncancelOrderHandler,
   "/api/orders/update-items": updateOrderItemsHandler,
   "/api/coupons/create": createCouponHandler,
   "/api/customers/create": createCustomerHandler,
@@ -540,6 +542,9 @@ const rateLimitConfigs: Record<string, string> = {
   // Edita itens/estoque/pagamento de um pedido já criado — mesmo perfil de
   // risco das rotas de financeiro/PDV acima.
   "/api/orders/update-items": "sensitive",
+  // Reverte cancelamento — mexe em reserva de estoque, mesmo perfil de
+  // update-items acima.
+  "/api/orders/uncancel": "sensitive",
 };
 
 // Rotas que continuam acessíveis mesmo com auth.planBlocked === true —

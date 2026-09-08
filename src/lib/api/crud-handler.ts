@@ -1467,6 +1467,102 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
   }
 }
 
+// ─── Reverter cancelamento ────────────────────────────────────────
+// Botão "Reverter cancelamento" no Kanban (pedidos.tsx), pra quando o
+// operador cancela um pedido sem querer. Diferente do "Retroceder"
+// (PREV_STATUS fixo no cliente, updateOrderStatusHandler acima) — cancelar
+// pode acontecer de qualquer etapa do fluxo, então não dá pra saber de
+// antemão qual status restaurar. Busca no order_timeline o registro
+// imediatamente anterior ao "cancelled" mais recente.
+export async function uncancelOrderHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const body = await request.json() as { orderId: string };
+  if (!body.orderId) return new Response(JSON.stringify({ error: "orderId obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  const dbUrl = process.env.DATABASE_URL!;
+  // Mesmo motivo do updateOrderStatusHandler acima: BYPASSRLS pra poder
+  // gravar em financeiro_lancamentos/reservar estoque dentro da transação
+  // (o isolamento continua garantido pelo eq(storeId, ...) manual).
+  const db = createDbTransactional(dbUrl);
+
+  try {
+    // IDOR fix: garante que o pedido é da própria loja antes de mexer
+    const existingOrder = await db.query.orders.findFirst({
+      where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)),
+    });
+    if (!existingOrder) {
+      return new Response(JSON.stringify({ error: "Order not found or no access" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+    if (existingOrder.status !== "cancelled") {
+      return new Response(JSON.stringify({ error: "Só é possível reverter pedidos cancelados" }), { status: 409, headers: { "content-type": "application/json" } });
+    }
+
+    // As 2 entradas mais recentes do timeline: a [0] é o próprio
+    // "cancelled", a [1] é o status que o pedido tinha antes dele. Sem
+    // histórico suficiente (não deveria acontecer — todo pedido nasce com
+    // pelo menos 1 entrada), cai pra "pending" por segurança.
+    const timeline = await db.query.orderTimeline.findMany({
+      where: eq(orderTimeline.orderId, body.orderId),
+      orderBy: desc(orderTimeline.createdAt),
+      limit: 2,
+    });
+    const restoredStatus: OrderStatus =
+      timeline[1]?.status && VALID_ORDER_STATUSES.includes(timeline[1].status as OrderStatus) && timeline[1].status !== "cancelled"
+        ? timeline[1].status as OrderStatus
+        : "pending";
+
+    const now = new Date();
+
+    await db.transaction(async (tx) => {
+      await tx.update(orders)
+        .set({ status: restoredStatus, cancelledAt: null, updatedAt: now })
+        .where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
+
+      await tx.insert(orderTimeline).values({
+        orderId: body.orderId,
+        status:  restoredStatus,
+        note:    `Cancelamento revertido — voltou para "${restoredStatus}"`,
+      });
+
+      // Reserva de estoque: só precisa re-reservar se o cancelamento tinha
+      // liberado a reserva (ver updateOrderStatusHandler acima) — ou seja,
+      // se o pedido ainda não tinha sido concretizado. Se já tinha (baixa
+      // real de estoque + lançamento financeiro feitos antes do
+      // cancelamento), eles continuam intocados — igual já é hoje no
+      // "Retroceder" pra pedidos concretizados.
+      if (existingOrder.concretizedAt === null) {
+        const [storeConfig] = await tx
+          .select({ allowNegativeStock: stores.allowNegativeStock })
+          .from(stores).where(eq(stores.id, storeId)).limit(1);
+
+        const items = await tx.query.orderItems.findMany({
+          where: eq(orderItems.orderId, body.orderId),
+          columns: { productId: true, productName: true, quantity: true },
+        });
+        await reserveStock(tx, storeId, items, storeConfig?.allowNegativeStock !== false);
+      }
+    });
+
+    return new Response(JSON.stringify({ success: true, status: restoredStatus }), { status: 200, headers: { "content-type": "application/json" } });
+  } catch (error) {
+    if (error instanceof StockReservationError) {
+      return new Response(JSON.stringify({ error: error.message }), { status: 409, headers: { "content-type": "application/json" } });
+    }
+    console.error("Uncancel order error:", error);
+    return new Response(JSON.stringify({ error: "Failed to restore order" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
 // ─── Create Coupon ───────────────────────────────────────────────
 export async function createCouponHandler(request: Request, auth?: AuthContext): Promise<Response> {
   // IDOR Fix: Validate store access using auth context only
