@@ -184,6 +184,12 @@ import {
   closeServicePointSessionHandler,
   listClosedServicePointSessionsHandler,
 } from "./api/service-points-handler";
+import {
+  getServicePointTabHandler,
+  addTabItemsHandler,
+  updateTabItemHandler,
+  registerAdvanceHandler,
+} from "./api/service-point-tab-handler";
 import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler, createPixPaymentHandler, pixWebhookHandler } from "./api/subscription-handler";
 import {
   listPrintersHandler,
@@ -192,7 +198,7 @@ import {
   deletePrinterHandler,
   detectPrintersHandler,
 } from "./api/printers";
-import { printTestHandler, printOrderHandler, printRawTestHandler } from "./api/print-handler";
+import { printTestHandler, printOrderHandler, printRawTestHandler, printConferenciaHandler } from "./api/print-handler";
 import {
   listSectorsHandler,
   createSectorHandler,
@@ -353,6 +359,9 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/service-points/batch-create": batchCreateServicePointsHandler,
   "/api/service-points/sessions/open":  openServicePointSessionHandler,
   "/api/service-points/sessions/close": closeServicePointSessionHandler,
+  "/api/service-points/tab/add-items":  addTabItemsHandler,
+  "/api/service-points/tab/update-item": updateTabItemHandler,
+  "/api/service-points/tab/advance":    registerAdvanceHandler,
   "/api/store-users/invite":          inviteStoreUserHandler,
   "/api/store-users/invite-revoke":   revokeStoreInviteHandler,
   "/api/store-users/update":          updateStoreUserHandler,
@@ -367,6 +376,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/printers/test-raw":            printRawTestHandler,
   "/api/printers/print-test":         printTestHandler,
   "/api/printers/print-order":        printOrderHandler,
+  "/api/printers/print-conferencia":  printConferenciaHandler,
   "/api/sectors/create":              createSectorHandler,
   "/api/sectors/update":              updateSectorHandler,
   "/api/sectors/delete":              deleteSectorHandler,
@@ -443,6 +453,7 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/pdv/mesas":              listMesasHandler,
   "/api/service-points/list":    listServicePointsHandler,
   "/api/service-points/sessions/closed": listClosedServicePointSessionsHandler,
+  "/api/service-points/tab":     getServicePointTabHandler,
   "/api/pdv/financeiro":         listFinanceiroLancamentosHandler,
   "/api/store-users/list":       listStoreUsersHandler,
   "/api/store-users/invites":    listStoreInvitesHandler,
@@ -516,6 +527,14 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/financeiro/contas-receber/efetivar": "sensitive",
   "/api/financeiro/contas-receber/cancelar": "sensitive",
   "/api/financeiro/contas-receber/delete":   "sensitive",
+  // Lança item na conta da mesa e registra pagamento parcial — mesmo
+  // perfil de risco das rotas de financeiro acima.
+  "/api/service-points/tab/add-items":   "sensitive",
+  "/api/service-points/tab/update-item": "sensitive",
+  "/api/service-points/tab/advance":     "sensitive",
+  // Abre conexão TCP de saída pro "Caminho / IP" da impressora, igual a
+  // print-order — mesmo tier restritivo (network-guard.ts).
+  "/api/printers/print-conferencia": "printer-network",
 };
 
 // Rotas que continuam acessíveis mesmo com auth.planBlocked === true —

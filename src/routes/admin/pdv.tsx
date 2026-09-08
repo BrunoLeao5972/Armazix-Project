@@ -7,6 +7,7 @@ import {
   Tag, CheckCircle2, Package, LayoutGrid, Clock, ReceiptText,
   ClipboardCheck, LayoutDashboard, Users, Wallet, ChevronRight,
   AlertCircle, LockKeyhole, Unlock, Settings, Grid3x3, HelpCircle, UserCircle, Store,
+  ArrowLeft, ClipboardEdit, Ban, CircleDollarSign, Printer,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { type PromoConfig, getEffectivePrice } from "@/lib/promo-engine";
@@ -42,6 +43,8 @@ const ModalEncerrarEncomenda = lazy(() => import("./-modal-encerrar-encomenda-pd
 const ModalPontosAtendimento = lazy(() =>
   import("./-modal-pontos-atendimento").then(m => ({ default: m.ModalPontosAtendimento }))
 );
+const ModalConferencia  = lazy(() => import("./-modal-conferencia-pdv"));
+const ModalAdiantamento = lazy(() => import("./-modal-adiantamento-pdv"));
 
 export const Route = createFileRoute("/admin/pdv")({
   component: PDVPage,
@@ -88,8 +91,19 @@ export interface CaixaMovimento {
 type ModalType =
   | "payment" | "abrir-caixa" | "fechar-caixa" | "movimentar" | "sessoes"
   | "funcoes" | "caixa-info" | "posicao" | "apontamento" | "encerrar-encomenda"
-  | "pontos-atendimento" | null;
+  | "pontos-atendimento" | "conferencia" | "adiantamento" | null;
 type PdvMode  = "catalog" | "map" | "delivery";
+
+// ─── Conta em aberto da mesa/comanda (painel de resumo do Mapa de
+// Atendimentos) — persistida no servidor via service_point_tab_items /
+// service_point_advances (ver src/lib/api/service-point-tab-handler.ts).
+export interface TabItem {
+  id: string; productId: string | null; productName: string;
+  productEmoji: string | null; unitPrice: string; quantity: number;
+}
+export interface TabAdvance {
+  id: string; valor: string; formaPagamento: string; createdAt: string;
+}
 
 // ─── Encomendas pendentes (pedidos de delivery/retirada do site ainda não
 // concretizados — reserva de estoque, sem forma de pagamento real
@@ -432,14 +446,152 @@ function MesaMap({
   );
 }
 
+// ─── Painel de Resumo da mesa/comanda selecionada no mapa ─────────
+// Aparece ao lado do Mapa de Atendimentos quando uma mesa/comanda ocupada
+// é selecionada — itens já lançados (persistidos em service_point_tab_items,
+// sobrevive a troca de mesa e a um F5) + barra de ações (Adicionar/Editar/
+// Excluir/Conferência/Adiantamento/Desbloqueio).
+function PainelResumoPonto({
+  ponto, items, advances, loading,
+  subtotal, discountValue, total, totalAdiantado, faltaPagar,
+  onAdicionar, onUpdateItem, onExcluir, onDesbloqueio, onConferencia, onAdiantamento,
+  onFinalizarVenda, onClose,
+}: {
+  ponto: Ponto; items: TabItem[]; advances: TabAdvance[]; loading: boolean;
+  subtotal: number; discountValue: number; total: number; totalAdiantado: number; faltaPagar: number;
+  onAdicionar: () => void; onUpdateItem: (itemId: string, quantity: number) => void;
+  onExcluir: () => void; onDesbloqueio: () => void; onConferencia: () => void; onAdiantamento: () => void;
+  onFinalizarVenda: () => void; onClose?: () => void;
+}) {
+  // "Editar" alterna um modo inline na própria lista (+/- e remover por
+  // linha) — sem modal novo, mesmo espírito do +/- que já existe no
+  // carrinho normal do CartPanel.
+  const [editMode, setEditMode] = useState(false);
+  void advances; // total já vem calculado (totalAdiantado); mantido na prop pra uso futuro (histórico de adiantamentos)
+
+  const ACOES = [
+    { label: "Adicionar",    icon: Plus,           onClick: onAdicionar,                color: "emerald" as const },
+    { label: "Editar",       icon: ClipboardEdit,  onClick: () => setEditMode(v => !v), color: editMode ? "emerald" as const : "muted" as const },
+    { label: "Excluir",      icon: Ban,            onClick: onExcluir,                  color: "red" as const },
+    { label: "Conferência",  icon: ClipboardCheck, onClick: onConferencia,              color: "muted" as const },
+    { label: "Adiantamento", icon: CircleDollarSign, onClick: onAdiantamento,           color: "blue" as const },
+    { label: "Desbloqueio",  icon: Unlock,         onClick: onDesbloqueio,              color: "muted" as const },
+  ];
+  const ACAO_COR: Record<string, string> = {
+    emerald: "text-emerald-600 hover:bg-emerald-50",
+    red:     "text-red-500 hover:bg-red-50",
+    blue:    "text-blue-600 hover:bg-blue-50",
+    muted:   "text-muted-foreground hover:bg-secondary hover:text-foreground",
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-card">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <MesaTableIcon className="w-4 h-4 text-emerald-500 shrink-0" />
+          <div className="min-w-0">
+            <h2 className="text-xs font-bold text-foreground leading-none truncate">{ponto.nameOrNumber}</h2>
+            {ponto.customerName && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{ponto.customerName}</p>}
+          </div>
+        </div>
+        {onClose && (
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors lg:hidden shrink-0">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        )}
+      </div>
+
+      {/* Barra de ações */}
+      <div className="grid grid-cols-6 gap-1 px-2 py-2 border-b border-border shrink-0 bg-secondary/40">
+        {ACOES.map(a => (
+          <button key={a.label} type="button" onClick={a.onClick} title={a.label}
+            className={`flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-semibold transition-colors ${ACAO_COR[a.color]}`}>
+            <a.icon className="w-4 h-4" />
+            <span className="leading-none truncate max-w-full">{a.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Itens já lançados na conta */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+        {loading ? (
+          <div className="flex items-center justify-center h-40">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 gap-3 text-muted-foreground">
+            <ShoppingCart className="w-10 h-10 opacity-20" />
+            <p className="text-xs text-center font-semibold tracking-wide">
+              CONTA VAZIA<br /><span className="text-muted-foreground font-normal tracking-normal">Toque em Adicionar</span>
+            </p>
+          </div>
+        ) : items.map(item => (
+          <div key={item.id} className="flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center text-sm shrink-0">
+              {item.productEmoji || "🛒"}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-foreground truncate">{item.productName}</p>
+              <p className="text-[11px] text-muted-foreground tabular-nums">{item.quantity}× {fmtBRL(item.unitPrice)}</p>
+            </div>
+            {editMode ? (
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => onUpdateItem(item.id, item.quantity - 1)}
+                  className="w-6 h-6 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:bg-secondary">
+                  <Minus className="w-3 h-3" />
+                </button>
+                <span className="w-5 text-center text-xs font-bold tabular-nums">{item.quantity}</span>
+                <button onClick={() => onUpdateItem(item.id, item.quantity + 1)}
+                  className="w-6 h-6 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:bg-secondary">
+                  <Plus className="w-3 h-3" />
+                </button>
+                <button onClick={() => onUpdateItem(item.id, 0)}
+                  className="w-6 h-6 rounded-md flex items-center justify-center text-red-400 hover:bg-red-50 hover:text-red-600">
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <span className="text-xs font-bold text-foreground tabular-nums shrink-0">
+                {fmtBRL(parseFloat(item.unitPrice) * item.quantity)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Footer: totais + finalizar */}
+      <div className="border-t border-border p-4 space-y-3 shrink-0">
+        <div className="space-y-1 text-sm">
+          <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span className="tabular-nums">{fmtBRL(subtotal)}</span></div>
+          {discountValue > 0 && (
+            <div className="flex justify-between text-amber-600 font-medium"><span>Desconto</span><span className="tabular-nums">−{fmtBRL(discountValue)}</span></div>
+          )}
+          {totalAdiantado > 0 && (
+            <div className="flex justify-between text-blue-600 font-medium"><span>Adiantado</span><span className="tabular-nums">−{fmtBRL(totalAdiantado)}</span></div>
+          )}
+          <div className="flex justify-between items-center pt-2 border-t border-border">
+            <span className="font-bold text-foreground">{totalAdiantado > 0 ? "Falta pagar" : "Total"}</span>
+            <span className="text-xl font-extrabold text-emerald-600 tabular-nums">{fmtBRL(totalAdiantado > 0 ? faltaPagar : total)}</span>
+          </div>
+        </div>
+        <button onClick={onFinalizarVenda} disabled={items.length === 0}
+          className="w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
+          <CreditCard className="w-4 h-4" />FINALIZAR VENDA (F2)
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const ENCOMENDA_PAY_LABEL: Record<string, string> = {
   pix: "PIX", cash: "Dinheiro", card: "Crédito", debit: "Débito", mercadopago: "Mercado Pago",
 };
 
 // ─── Encomendas pendentes (delivery/retirada do site) ─────────────
 function EncomendasList({
-  encomendas, onSelect,
-}: { encomendas: Encomenda[]; onSelect: (e: Encomenda) => void }) {
+  encomendas, activeId, onSelect,
+}: { encomendas: Encomenda[]; activeId?: string | null; onSelect: (e: Encomenda) => void }) {
   if (encomendas.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
@@ -460,9 +612,12 @@ function EncomendasList({
         {encomendas.map(enc => {
           const itemsSummary = enc.items.map(i => `${i.quantity}× ${i.productName}`).join(", ");
           const knownPayment = enc.paymentStatus === "paid" && enc.paymentMethod;
+          const isSelected = activeId === enc.id;
           return (
             <button key={enc.id} onClick={() => onSelect(enc)}
-              className="group relative flex flex-col gap-2 p-4 rounded-2xl border-2 border-border text-left transition-all duration-150 active:scale-[0.97] cursor-pointer hover:border-emerald-400 hover:shadow-md bg-card">
+              className={`group relative flex flex-col gap-2 p-4 rounded-2xl border-2 text-left transition-all duration-150 active:scale-[0.97] cursor-pointer bg-card ${
+                isSelected ? "border-emerald-500 ring-4 ring-emerald-100 shadow-md" : "border-border hover:border-emerald-400 hover:shadow-md"
+              }`}>
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
                   <Package className="w-3 h-3" />Pendente
@@ -491,6 +646,63 @@ function EncomendasList({
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Painel de Resumo da encomenda selecionada (aba Delivery) ─────
+// Mais simples que o da mesa/comanda: os itens já vêm prontos de um
+// pedido de verdade (não precisa de tab persistida) — só Conferência (ver
+// os itens) e Encerrar Encomenda (fluxo que já existia, só passa a abrir
+// a partir daqui em vez de popar direto ao clicar no card). Adicionar/
+// Editar/Adiantamento/Desbloqueio não se aplicam a um pedido que já veio
+// pronto do site.
+function PainelResumoEncomenda({
+  encomenda, onEncerrar, onClose,
+}: { encomenda: Encomenda; onEncerrar: () => void; onClose?: () => void }) {
+  return (
+    <div className="flex flex-col h-full bg-card">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Package className="w-4 h-4 text-emerald-500 shrink-0" />
+          <div className="min-w-0">
+            <h2 className="text-xs font-bold text-foreground leading-none truncate">
+              #{encomenda.number} — {encomenda.customer?.name || "Cliente"}
+            </h2>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {encomenda.type === "pickup" ? "Retirada" : "Entrega"}
+            </p>
+          </div>
+        </div>
+        {onClose && (
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors lg:hidden shrink-0">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+        {encomenda.items.map(item => (
+          <div key={item.id} className="flex items-center gap-2.5">
+            <span className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center text-[11px] font-bold text-muted-foreground shrink-0">
+              {item.quantity}×
+            </span>
+            <p className="flex-1 min-w-0 text-xs font-semibold text-foreground truncate">{item.productName}</p>
+            <span className="text-xs font-bold text-foreground tabular-nums shrink-0">{fmtBRL(item.total)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-border p-4 space-y-3 shrink-0">
+        <div className="flex justify-between items-center text-sm">
+          <span className="font-bold text-foreground">Total</span>
+          <span className="text-xl font-extrabold text-emerald-600 tabular-nums">{fmtBRL(encomenda.total)}</span>
+        </div>
+        <button onClick={onEncerrar}
+          className="w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
+          <ClipboardCheck className="w-4 h-4" />Encerrar Encomenda
+        </button>
       </div>
     </div>
   );
@@ -680,13 +892,13 @@ function CartPanel({
                 : lancadoOk ? <><CheckCircle2 className="w-4 h-4 text-sky-500" />Lançado!</>
                 : <><ClipboardCheck className="w-4 h-4" />Lançar Item [F3]</>}
             </button>
-            <button onClick={onOpenPayment} disabled={cart.length === 0 || !sessao}
+            <button onClick={onOpenPayment} disabled={(cart.length === 0 && totalQty === 0) || !sessao}
               className="h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
               <CreditCard className="w-4 h-4" />FINALIZAR VENDA (F2)
             </button>
           </div>
         ) : (
-          <button onClick={onOpenPayment} disabled={cart.length === 0 || !sessao}
+          <button onClick={onOpenPayment} disabled={(cart.length === 0 && totalQty === 0) || !sessao}
             className="w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:bg-secondary disabled:text-muted-foreground text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-emerald-100">
             <CreditCard className="w-4 h-4" />FINALIZAR VENDA (F2)
           </button>
@@ -746,6 +958,13 @@ function PDVPage() {
   const [denseGrid, setDenseGrid]         = useState(false); // false = compacto (mais colunas), true = confortável (cards maiores)
   const [encomendas, setEncomendas]       = useState<Encomenda[]>([]);
   const [selectedEncomenda, setSelectedEncomenda] = useState<Encomenda | null>(null);
+  // ── Conta em aberto da mesa/comanda selecionada no mapa (painel de
+  // resumo) — tabItems/tabAdvances vêm do servidor, diferente de `cart`
+  // (que agora só é a área de rascunho dentro do overlay de "Adicionar").
+  const [tabItems, setTabItems]           = useState<TabItem[]>([]);
+  const [tabAdvances, setTabAdvances]     = useState<TabAdvance[]>([]);
+  const [loadingTab, setLoadingTab]       = useState(false);
+  const [catalogOverlay, setCatalogOverlay] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // ── Encomendas pendentes (delivery/retirada do site ainda não
@@ -768,6 +987,38 @@ function PDVPage() {
       .then((d: { servicePoints?: Ponto[] }) => setPoints(d.servicePoints || []))
       .catch(() => {});
   }, []);
+
+  // ── Conta da mesa selecionada — busca sempre que a sessão aberta muda
+  // (trocar de mesa, ou reabrir a mesma depois de um F5). Sem isso o
+  // painel de resumo não teria como mostrar o que já foi lançado antes. ──
+  const fetchTab = useCallback((sessionId: string) => {
+    setLoadingTab(true);
+    fetch(`/api/service-points/tab?sessionId=${sessionId}`)
+      .then(r => r.json())
+      .then((d: { items?: TabItem[]; advances?: TabAdvance[] }) => {
+        setTabItems(d.items || []); setTabAdvances(d.advances || []);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingTab(false));
+  }, []);
+
+  useEffect(() => {
+    if (activePonto?.openSessionId) fetchTab(activePonto.openSessionId);
+    else { setTabItems([]); setTabAdvances([]); }
+  }, [activePonto?.openSessionId, fetchTab]);
+
+  // Ressincroniza a mesa selecionada sempre que o mapa é recarregado — ex:
+  // liberar a mesa atualmente selecionada pelo "X" do próprio card (em vez
+  // de pelo painel de resumo) não limpava mais activePonto sozinho, já que
+  // agora o resumo continua na tela em vez de trocar de modo. Sem isso o
+  // painel ficava mostrando uma mesa já livre/com dado desatualizado.
+  useEffect(() => {
+    if (!activePonto) return;
+    const fresh = points.find(p => p.id === activePonto.id);
+    if (!fresh || fresh.openSessionId !== activePonto.openSessionId) {
+      setActivePonto(fresh && fresh.openSessionId ? fresh : null);
+    }
+  }, [points]);
 
   // ── Fetch inicial ──
   useEffect(() => {
@@ -846,37 +1097,126 @@ function PDVPage() {
     setCart(prev => prev.map(i => i.productId === id ? { ...i, qty: i.qty + d } : i).filter(i => i.qty > 0));
   const removeFromCart = (id: string) => setCart(prev => prev.filter(i => i.productId !== id));
 
-  const subtotal      = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  // "Em mesa": o mapa está aberto com uma mesa/comanda selecionada — os
+  // totais e a venda passam a vir da conta persistida (tabItems), não do
+  // carrinho local (que nesse contexto só é a área de rascunho dentro do
+  // overlay de "Adicionar", até "Lançar Pedido" confirmar na conta).
+  const emMesa = pdvMode === "map" && !!activePonto;
+
+  const subtotal      = emMesa
+    ? tabItems.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity, 0)
+    : cart.reduce((s, i) => s + i.price * i.qty, 0);
   const discountValue = discountType === "pct" ? subtotal * (discount / 100) : Math.min(discount, subtotal);
   const total         = subtotal - discountValue;
-  const totalQty      = cart.reduce((s, i) => s + i.qty, 0);
+  const totalQty      = emMesa
+    ? tabItems.reduce((s, i) => s + i.quantity, 0)
+    : cart.reduce((s, i) => s + i.qty, 0);
+  const totalAdiantado = tabAdvances.reduce((s, a) => s + (parseFloat(a.valor) || 0), 0);
+  const faltaPagar      = Math.max(0, total - totalAdiantado);
 
-  // ── Confirma o lançamento dos itens no atendimento aberto (mesa/comanda) ──
-  const handleLancarPedido = useCallback(() => {
+  // ── "Lançar Pedido [F3]" — confirma os itens do carrinho local (overlay
+  // de "Adicionar") na conta da mesa, persistindo de verdade no servidor
+  // (antes disso era decorativo: só um setTimeout, nunca gravava nada). ──
+  const handleLancarPedido = useCallback(async () => {
     if (!cart.length || lancando || !activePonto) return;
     setLancando(true);
-    setTimeout(() => { setLancando(false); setLancadoOk(true); setTimeout(() => setLancadoOk(false), 2200); }, 700);
+    try {
+      const res  = await api.post("/api/service-points/tab/add-items", {
+        servicePointId: activePonto.id,
+        items: cart.map(i => ({
+          productId: i.productId, productName: i.name,
+          productEmoji: i.emoji || undefined, unitPrice: i.price.toFixed(2), quantity: i.qty,
+        })),
+      });
+      const data = await res.json() as { success?: boolean; items?: TabItem[]; error?: string };
+      if (res.ok && data.success) {
+        setTabItems(data.items || []);
+        setCart([]);
+        setLancadoOk(true); setTimeout(() => setLancadoOk(false), 2200);
+        setCatalogOverlay(false); // volta pro resumo da mesa
+      } else {
+        alert(data.error || "Erro ao lançar pedido");
+      }
+    } catch { alert("Erro de conexão"); }
+    finally { setLancando(false); }
   }, [cart, lancando, activePonto]);
+
+  // ── Ajusta/remove um item já lançado na conta da mesa ("Editar") ──
+  const handleUpdateTabItem = useCallback(async (itemId: string, quantity: number) => {
+    setTabItems(prev => quantity <= 0
+      ? prev.filter(i => i.id !== itemId)
+      : prev.map(i => i.id === itemId ? { ...i, quantity } : i));
+    try {
+      await api.post("/api/service-points/tab/update-item", { itemId, quantity });
+    } catch {
+      if (activePonto?.openSessionId) fetchTab(activePonto.openSessionId); // reverte com dado real
+    }
+  }, [activePonto, fetchTab]);
+
+  // ── "Excluir" (cancela a conta) e "Desbloqueio" (mesma liberação,
+  // exposta como ação de emergência — Armazix não tem lock concorrente
+  // entre terminais hoje, então não há "trava" real pra destravar; ver
+  // nota no plano) — ambos reaproveitam o mesmo endpoint que o "X" do
+  // mapa já usa pra liberar mesa sem gerar venda. ──
+  const handleLiberarMesa = useCallback(async (confirmMsg: string) => {
+    if (!activePonto) return;
+    if (!confirm(confirmMsg)) return;
+    try {
+      const res  = await api.post("/api/service-points/sessions/close", { servicePointId: activePonto.id });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (res.ok && data.success) {
+        setActivePonto(null); setTabItems([]); setTabAdvances([]); fetchPoints();
+      } else {
+        alert(data.error || "Erro ao liberar atendimento");
+      }
+    } catch { alert("Erro de conexão"); }
+  }, [activePonto, fetchPoints]);
+
+  // ── "Adiantamento" — pagamento parcial registrado antes de fechar a conta ──
+  const handleRegistrarAdiantamento = useCallback(async (valor: string, formaPagamento: string) => {
+    if (!activePonto) return { ok: false, error: "Nenhuma mesa selecionada" };
+    try {
+      const res  = await api.post("/api/service-points/tab/advance", {
+        servicePointId: activePonto.id, valor, formaPagamento,
+      });
+      const data = await res.json() as { success?: boolean; advance?: TabAdvance; error?: string };
+      if (res.ok && data.success && data.advance) {
+        setTabAdvances(prev => [...prev, data.advance!]);
+        return { ok: true };
+      }
+      return { ok: false, error: data.error || "Erro ao registrar adiantamento" };
+    } catch { return { ok: false, error: "Erro de conexão" }; }
+  }, [activePonto]);
 
   // ── Finalizar venda ──
   const handleFinalize = async (method: string, installments: number) => {
     if (submitting || !sessao) return;
     setSubmitting(true);
     try {
+      const itemsPayload = emMesa
+        ? tabItems.map(item => ({
+            productId:    item.productId,
+            productName:  item.productName,
+            productEmoji: item.productEmoji || undefined,
+            quantity:     item.quantity,
+            unitPrice:    item.unitPrice,
+            total:        (parseFloat(item.unitPrice) * item.quantity).toFixed(2),
+          }))
+        : cart.map(item => ({
+            productId:    item.productId,
+            productName:  item.name,
+            productEmoji: item.emoji,
+            quantity:     item.qty,
+            unitPrice:    item.price.toFixed(2),
+            total:        (item.price * item.qty).toFixed(2),
+          }));
       const res  = await api.post("/api/pdv/finalizar-venda", {
         sessaoId:       sessao.id,
         mesaLabel:      activePonto?.nameOrNumber,
         servicePointId: activePonto?.id,
         paymentMethod: method,
         installments:  installments > 1 ? installments : undefined,
-        items:         cart.map(item => ({
-          productId:    item.productId,
-          productName:  item.name,
-          productEmoji: item.emoji,
-          quantity:     item.qty,
-          unitPrice:    item.price.toFixed(2),
-          total:        (item.price * item.qty).toFixed(2),
-        })),
+        items:         itemsPayload,
         subtotal: subtotal.toFixed(2),
         discount: discountValue.toFixed(2),
         total:    total.toFixed(2),
@@ -888,14 +1228,16 @@ function PDVPage() {
         setSessao(prev => prev ? { ...prev, totalVendas: prev.totalVendas + 1 } : prev);
         // Libera o ponto de atendimento no mapa (a sessão dele já foi
         // fechada no servidor, dentro da mesma transação do pedido).
-        if (activePonto) fetchPoints();
+        if (activePonto) { fetchPoints(); setTabItems([]); setTabAdvances([]); }
+      } else if (!res.ok) {
+        alert(data.error || "Erro ao finalizar venda");
       }
     } catch {} finally { setSubmitting(false); }
   };
 
   const handleNovaNota = () => {
     setModal(null); setCart([]); setDiscount(0); setDiscountType("pct");
-    setOrderNumber(null); setActivePonto(null); setShowCart(false);
+    setOrderNumber(null); setActivePonto(null); setShowCart(false); setCatalogOverlay(false);
     setTimeout(() => searchRef.current?.focus(), 100);
   };
 
@@ -905,7 +1247,7 @@ function PDVPage() {
   // ── Fechamento de caixa ──
   const handleCaixaFechado = () => {
     setSessao(null); setMovimentos([]); setCart([]); setDiscount(0);
-    setActivePonto(null); setModal(null);
+    setActivePonto(null); setModal(null); setCatalogOverlay(false);
   };
 
   // ── Movimentação ──
@@ -922,7 +1264,12 @@ function PDVPage() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "F1")     { e.preventDefault(); searchRef.current?.focus(); }
-      if (e.key === "F2")     { e.preventDefault(); if (cart.length > 0 && sessao) setModal("payment"); }
+      if (e.key === "F2")     {
+        e.preventDefault();
+        if ((cart.length > 0 || totalQty > 0) && sessao) {
+          (async () => { if (activePonto && cart.length > 0) await handleLancarPedido(); setModal("payment"); })();
+        }
+      }
       if (e.key === "F3")     { e.preventDefault(); handleLancarPedido(); }
       if (e.key === "F4")     { e.preventDefault(); if (sessao) { setMovTipo("sangria"); setModal("movimentar"); } }
       if (e.key === "F5")     { e.preventDefault(); setPdvMode(m => m === "map" ? "catalog" : "map"); }
@@ -938,19 +1285,42 @@ function PDVPage() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [cart, sessao, handleLancarPedido]);
+  }, [cart, sessao, handleLancarPedido, totalQty, activePonto]);
 
   const cartProps = {
     cart, activePonto, discount, discountType, total, subtotal, discountValue, totalQty,
     sessao, lancandoPedido: lancando, lancadoOk,
     onUpdateQty: updateQty, onRemove: removeFromCart, onClear: () => setCart([]),
     onSetDiscount: setDiscount, onSetDiscountType: setDiscountType,
-    onOpenPayment: () => cart.length > 0 && sessao && setModal("payment"),
+    // Em mesa, se ainda houver itens só no rascunho local (overlay de
+    // "Adicionar" aberto sem ter clicado "Lançar Pedido"), confirma eles na
+    // conta antes de abrir o pagamento — evita perder o que foi adicionado
+    // por esquecer o passo extra.
+    onOpenPayment: async () => {
+      if (!sessao) return;
+      if (activePonto && cart.length > 0) await handleLancarPedido();
+      setModal("payment");
+    },
     onLancarPedido: handleLancarPedido,
     onOpenMovimentar: (t: "sangria" | "suprimento") => { if (!sessao) return; setMovTipo(t); setModal("movimentar"); },
     onFecharCaixa: () => sessao && setModal("fechar-caixa"),
     onOpenFuncoes: () => setModal("funcoes"),
   };
+
+  // Overlay de catálogo (botão "Adicionar" do painel de resumo): mostra o
+  // catálogo POR CIMA do mapa, com o CartPanel de sempre — mas os totais
+  // ali são só do que está sendo rascunhado agora (cart), não da conta
+  // inteira da mesa (subtotal/total acima já são "em mesa" o tempo todo,
+  // pra não misturar os dois quando o overlay está aberto).
+  const stagingSubtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const stagingTotalQty = cart.reduce((s, i) => s + i.qty, 0);
+  const overlayCartProps = {
+    ...cartProps,
+    subtotal: stagingSubtotal, total: stagingSubtotal, discountValue: 0, totalQty: stagingTotalQty,
+  };
+  const showCatalog        = pdvMode === "catalog" || catalogOverlay;
+  const showMesaResumo     = pdvMode === "map" && !!activePonto;
+  const showEncomendaResumo = pdvMode === "delivery" && !!selectedEncomenda;
 
   // ─────────────────────────────────────────────────────────────────
   return (
@@ -995,7 +1365,7 @@ function PDVPage() {
               <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-700">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 {activePonto.nameOrNumber}
-                <button onClick={() => setActivePonto(null)} className="ml-0.5 opacity-50 hover:opacity-100">
+                <button onClick={() => { setActivePonto(null); setCatalogOverlay(false); }} className="ml-0.5 opacity-50 hover:opacity-100">
                   <X className="w-3 h-3" />
                 </button>
               </div>
@@ -1014,8 +1384,8 @@ function PDVPage() {
                 className="flex items-center justify-center w-8 h-8 rounded-xl text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">
                 <Settings className="w-4 h-4" />
               </button>
-              {/* Mobile cart toggle — só no Catálogo, mesma regra do carrinho */}
-              {(!sessao || pdvMode === "catalog") && (
+              {/* Mobile cart/resumo toggle — mesma regra da coluna desktop */}
+              {(!sessao || showCatalog || showMesaResumo || showEncomendaResumo) && (
               <button onClick={() => setShowCart(true)}
                 className="relative lg:hidden flex items-center justify-center w-9 h-9 rounded-xl bg-emerald-500 text-white shadow-md shadow-emerald-100">
                 <ShoppingCart className="w-4 h-4" />
@@ -1030,21 +1400,36 @@ function PDVPage() {
           </div>
 
           {/* ── Conteúdo: Catálogo, Mapa ou Delivery ── */}
-          {pdvMode === "map" ? (
+          {pdvMode === "map" && !catalogOverlay ? (
             <MesaMap
               points={points}
               activePonto={activePonto}
               sessaoId={sessao?.id ?? null}
-              onSelect={p => { setActivePonto(p); setPdvMode("catalog"); }}
+              // Fica no mapa — o resumo da mesa aparece do lado (coluna
+              // direita) no desktop; no mobile, abre a mesma gaveta que o
+              // carrinho já usava (não existe coluna lateral em telas
+              // pequenas).
+              onSelect={p => { setActivePonto(p); setShowCart(true); }}
               onPontosChanged={fetchPoints}
             />
-          ) : pdvMode === "delivery" ? (
-            <EncomendasList encomendas={encomendas} onSelect={e => {
+          ) : pdvMode === "delivery" && !catalogOverlay ? (
+            <EncomendasList encomendas={encomendas} activeId={selectedEncomenda?.id ?? null} onSelect={e => {
               if (!sessao) { setModal("abrir-caixa"); return; }
-              setSelectedEncomenda(e); setModal("encerrar-encomenda");
+              // Seleciona e mostra o resumo do lado — "Encerrar Encomenda"
+              // (dentro do painel) que abre o modal de confirmação de
+              // pagamento, em vez de popar o modal direto ao clicar no card.
+              setSelectedEncomenda(e); setShowCart(true);
             }} />
           ) : (
             <>
+              {catalogOverlay && (
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
+                  <button onClick={() => setCatalogOverlay(false)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors">
+                    <ArrowLeft className="w-4 h-4" />Voltar{activePonto ? ` — ${activePonto.nameOrNumber}` : ""}
+                  </button>
+                </div>
+              )}
               {/* Categorias */}
               {rootCats.length > 0 && (
                 <div className="shrink-0 bg-card border-b border-border">
@@ -1221,27 +1606,69 @@ function PDVPage() {
         </div>
 
         {/* ═══════════════════════════════════════════
-            COLUNA DIREITA — Abertura de Caixa ou Carrinho
-            (o carrinho só faz sentido no Catálogo — some no Mapa de
-            Atendimentos e no Delivery pra não confundir o operador e dar
-            mais espaço pro conteúdo; abrir caixa continua sempre visível) ══ */}
-        {(!sessao || pdvMode === "catalog") && (
+            COLUNA DIREITA — Abertura de Caixa, Carrinho ou Resumo da Mesa
+            (o carrinho/resumo só faz sentido no Catálogo e no Mapa com uma
+            mesa selecionada — no Delivery some pra dar mais espaço pro
+            conteúdo; abrir caixa continua sempre visível) ══ */}
+        {(!sessao || showCatalog || showMesaResumo || showEncomendaResumo) && (
           <div className="hidden lg:flex w-[360px] shrink-0 border-l border-border flex-col h-full">
-            {sessao
-              ? <CartPanel {...cartProps} />
-              : <PainelAbrirCaixa onAberto={handleCaixaAberto} />}
+            {!sessao ? (
+              <PainelAbrirCaixa onAberto={handleCaixaAberto} />
+            ) : showCatalog ? (
+              <CartPanel {...(catalogOverlay ? overlayCartProps : cartProps)} />
+            ) : showMesaResumo ? (
+              <PainelResumoPonto
+                ponto={activePonto!} items={tabItems} advances={tabAdvances} loading={loadingTab}
+                subtotal={subtotal} discountValue={discountValue} total={total}
+                totalAdiantado={totalAdiantado} faltaPagar={faltaPagar}
+                onAdicionar={() => setCatalogOverlay(true)}
+                onUpdateItem={handleUpdateTabItem}
+                onExcluir={() => handleLiberarMesa("Cancelar essa conta? Os itens serão descartados e a mesa será liberada, sem gerar venda.")}
+                onDesbloqueio={() => handleLiberarMesa("Forçar liberação dessa mesa? Use isso só se ela ficou presa sem motivo aparente — os itens lançados serão perdidos.")}
+                onConferencia={() => setModal("conferencia")}
+                onAdiantamento={() => setModal("adiantamento")}
+                onFinalizarVenda={cartProps.onOpenPayment}
+              />
+            ) : (
+              <PainelResumoEncomenda
+                encomenda={selectedEncomenda!}
+                onEncerrar={() => setModal("encerrar-encomenda")}
+              />
+            )}
           </div>
         )}
       </div>
 
-      {/* ── Mobile cart drawer (mesma regra da coluna desktop) ── */}
-      {showCart && (!sessao || pdvMode === "catalog") && (
+      {/* ── Mobile cart/resumo drawer (mesma regra da coluna desktop) ── */}
+      {showCart && (!sessao || showCatalog || showMesaResumo || showEncomendaResumo) && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setShowCart(false)} />
           <div className="relative ml-auto w-full max-w-sm h-full bg-card shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
-            {sessao
-              ? <CartPanel {...cartProps} onClose={() => setShowCart(false)} />
-              : <PainelAbrirCaixa onAberto={handleCaixaAberto} />}
+            {!sessao ? (
+              <PainelAbrirCaixa onAberto={handleCaixaAberto} />
+            ) : showCatalog ? (
+              <CartPanel {...(catalogOverlay ? overlayCartProps : cartProps)} onClose={() => setShowCart(false)} />
+            ) : showMesaResumo ? (
+              <PainelResumoPonto
+                ponto={activePonto!} items={tabItems} advances={tabAdvances} loading={loadingTab}
+                subtotal={subtotal} discountValue={discountValue} total={total}
+                totalAdiantado={totalAdiantado} faltaPagar={faltaPagar}
+                onAdicionar={() => setCatalogOverlay(true)}
+                onUpdateItem={handleUpdateTabItem}
+                onExcluir={() => handleLiberarMesa("Cancelar essa conta? Os itens serão descartados e a mesa será liberada, sem gerar venda.")}
+                onDesbloqueio={() => handleLiberarMesa("Forçar liberação dessa mesa? Use isso só se ela ficou presa sem motivo aparente — os itens lançados serão perdidos.")}
+                onConferencia={() => setModal("conferencia")}
+                onAdiantamento={() => setModal("adiantamento")}
+                onFinalizarVenda={cartProps.onOpenPayment}
+                onClose={() => setShowCart(false)}
+              />
+            ) : (
+              <PainelResumoEncomenda
+                encomenda={selectedEncomenda!}
+                onEncerrar={() => setModal("encerrar-encomenda")}
+                onClose={() => setShowCart(false)}
+              />
+            )}
           </div>
         </div>
       )}
@@ -1287,7 +1714,10 @@ function PDVPage() {
         {modal === "encerrar-encomenda" && sessao && selectedEncomenda && (
           <ModalEncerrarEncomenda
             encomenda={selectedEncomenda} sessaoId={sessao.id} paymentConfig={paymentConfig}
-            onClose={() => { setModal(null); setSelectedEncomenda(null); }}
+            // Só fecha o modal — o resumo da encomenda no painel lateral
+            // continua selecionado, pra poder tentar de novo sem precisar
+            // clicar no card outra vez.
+            onClose={() => setModal(null)}
             onEncerrado={handleEncomendaEncerrada}
           />
         )}
@@ -1295,6 +1725,20 @@ function PDVPage() {
           // Fecha e já recarrega o mapa — pontos criados/editados na hora
           // (ex: uma "Mesa 12" nova) aparecem sem precisar sair do PDV.
           <ModalPontosAtendimento onClose={() => { setModal(null); fetchPoints(); }} />
+        )}
+        {modal === "conferencia" && activePonto?.openSessionId && (
+          <ModalConferencia
+            sessionId={activePonto.openSessionId} mesaLabel={activePonto.nameOrNumber}
+            subtotal={subtotal} totalAdiantado={totalAdiantado} total={total}
+            onClose={() => setModal(null)}
+          />
+        )}
+        {modal === "adiantamento" && activePonto && (
+          <ModalAdiantamento
+            faltaPagar={faltaPagar}
+            onClose={() => setModal(null)}
+            onConfirm={handleRegistrarAdiantamento}
+          />
         )}
         {modal === "payment" && (
           <ModalPagamento

@@ -876,6 +876,62 @@ export const servicePointSessionsRelations = relations(servicePointSessions, ({ 
   order:        one(orders,       { fields: [servicePointSessions.orderId],       references: [orders.id] }),
 }));
 
+// ─── SERVICE POINT TAB ITEMS (conta em aberto da mesa/comanda) ────
+// Antes disso o "Lançar Item [F3]" do PDV era decorativo — só um
+// setTimeout no front, sem gravar nada — e o carrinho era um único
+// estado local do navegador, não vinculado a mesa nenhuma. Essa tabela
+// persiste de verdade o que já foi lançado numa sessão de atendimento
+// aberta, sobrevivendo a troca de mesa e a um refresh de página.
+// Snapshot de nome/emoji/preço no momento do lançamento (mesmo padrão de
+// orderItems) — não referencia o produto vivo.
+export const servicePointTabItems = pgTable("service_point_tab_items", {
+  id:           uuid("id").defaultRandom().primaryKey(),
+  storeId:      uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  sessionId:    uuid("session_id").references(() => servicePointSessions.id, { onDelete: "cascade" }).notNull(),
+  productId:    uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+  productName:  varchar("product_name", { length: 200 }).notNull(),
+  productEmoji: varchar("product_emoji", { length: 10 }),
+  unitPrice:    numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
+  quantity:     integer("quantity").notNull(),
+  createdAt:    timestamp("created_at").defaultNow().notNull(),
+  updatedAt:    timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("service_point_tab_items_session_idx").on(t.sessionId),
+  index("service_point_tab_items_store_idx").on(t.storeId),
+]);
+
+export const servicePointTabItemsRelations = relations(servicePointTabItems, ({ one }) => ({
+  store:   one(stores,                { fields: [servicePointTabItems.storeId],   references: [stores.id] }),
+  session: one(servicePointSessions,  { fields: [servicePointTabItems.sessionId], references: [servicePointSessions.id] }),
+  product: one(products,              { fields: [servicePointTabItems.productId], references: [products.id] }),
+}));
+
+// ─── SERVICE POINT ADVANCES ("Adiantamento") ──────────────────────
+// Pagamento parcial registrado numa conta ainda aberta — abate do total
+// quando a mesa/comanda for finalizada (finalizarVendaPdvHandler soma
+// essas linhas e desconta do valor cobrado nesse momento, pra não contar
+// o dinheiro duas vezes: ele já incrementou os totais de caixaSessoes
+// no momento em que foi registrado).
+export const servicePointAdvances = pgTable("service_point_advances", {
+  id:             uuid("id").defaultRandom().primaryKey(),
+  storeId:        uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  sessionId:      uuid("session_id").references(() => servicePointSessions.id, { onDelete: "cascade" }).notNull(),
+  caixaSessaoId:  uuid("caixa_sessao_id").references(() => caixaSessoes.id, { onDelete: "set null" }),
+  valor:          numeric("valor", { precision: 10, scale: 2 }).notNull(),
+  formaPagamento: varchar("forma_pagamento", { length: 20 }).notNull(),
+  criadoPor:      varchar("criado_por", { length: 120 }),
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("service_point_advances_session_idx").on(t.sessionId),
+  index("service_point_advances_store_idx").on(t.storeId),
+]);
+
+export const servicePointAdvancesRelations = relations(servicePointAdvances, ({ one }) => ({
+  store:       one(stores,               { fields: [servicePointAdvances.storeId],       references: [stores.id] }),
+  session:     one(servicePointSessions, { fields: [servicePointAdvances.sessionId],     references: [servicePointSessions.id] }),
+  caixaSessao: one(caixaSessoes,         { fields: [servicePointAdvances.caixaSessaoId], references: [caixaSessoes.id] }),
+}));
+
 // ─── CAIXA SESSOES (Sessões de caixa PDV) ────────────────────────
 export const caixaSessoes = pgTable("caixa_sessoes", {
   id:            uuid("id").defaultRandom().primaryKey(),

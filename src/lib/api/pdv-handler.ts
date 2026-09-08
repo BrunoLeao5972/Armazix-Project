@@ -8,7 +8,7 @@ import { concretizeReservation } from "@/lib/inventory/stock-reservation";
 const {
   caixaSessoes, caixaMovimentos, financeiroLancamentos,
   mesas, orders, orderItems, orderTimeline, products, stockMovements, stores,
-  servicePointSessions,
+  servicePointSessions, servicePointAdvances,
 } = schema;
 
 const JSON_HDR = { "content-type": "application/json" };
@@ -371,9 +371,46 @@ export async function finalizarVendaPdvHandler(
 
   const todayStr = today();
 
+  try {
   // Transação ACID: pedido + itens + estoque + financeiro + caixa
   const result = await db.transaction(async (tx) => {
-    // 1. Cria pedido
+    // 1a. Se veio de um ponto de atendimento (mesa/comanda) aberto pelo
+    // mapa, RESERVA a sessão primeiro — antes de criar qualquer coisa —
+    // com uma trava atômica (UPDATE ... WHERE closed_at IS NULL). Sem
+    // isso, um duplo clique ou um retry de rede em "Finalizar Venda"
+    // podia criar DOIS pedidos pra mesma mesa (só a atualização da sessão
+    // tinha essa guarda antes; a criação do pedido, baixa de estoque e
+    // lançamento financeiro rodavam de novo mesmo se a sessão já tivesse
+    // sido fechada por uma chamada concorrente). Mesmo padrão de
+    // `AlreadyClosedError` + WHERE ... IS NULL de encerrarEncomendaHandler.
+    let claimedSession: typeof servicePointSessions.$inferSelect | null = null;
+    if (body.servicePointId) {
+      const [claimed] = await tx.update(servicePointSessions)
+        .set({ closedAt: new Date() })
+        .where(and(
+          eq(servicePointSessions.servicePointId, body.servicePointId),
+          eq(servicePointSessions.storeId, storeId),
+          isNull(servicePointSessions.closedAt),
+        ))
+        .returning();
+      if (!claimed) throw new AlreadySoldError();
+      claimedSession = claimed;
+    }
+
+    // 1b. Adiantamentos já registrados nessa sessão (pagamento parcial
+    // feito antes de fechar a conta) — abatem do valor cobrado agora, pra
+    // não contar o dinheiro duas vezes (o adiantamento já incrementou os
+    // totais de caixa no momento em que foi registrado). O pedido em si
+    // guarda o total CHEIO — o histórico do pedido reflete o consumo real.
+    let jaAdiantado = 0;
+    if (claimedSession) {
+      const advRows = await tx.select({ valor: servicePointAdvances.valor })
+        .from(servicePointAdvances)
+        .where(eq(servicePointAdvances.sessionId, claimedSession.id));
+      jaAdiantado = advRows.reduce((s, r) => s + (parseFloat(r.valor) || 0), 0);
+    }
+
+    // 2. Cria pedido
     const [order] = await tx.insert(schema.orders).values({
       storeId,
       number:        nextNumber,
@@ -390,21 +427,13 @@ export async function finalizarVendaPdvHandler(
       deliveredAt:   new Date(),
     }).returning();
 
-    // 1b. Se veio de um ponto de atendimento (mesa/comanda) aberto pelo
-    // mapa, fecha a sessão e vincula o pedido — best effort: se não achar
-    // sessão aberta (venda direta, sem passar pelo mapa), não falha a
-    // venda inteira.
-    if (body.servicePointId) {
+    if (claimedSession) {
       await tx.update(servicePointSessions)
-        .set({ closedAt: new Date(), orderId: order.id })
-        .where(and(
-          eq(servicePointSessions.servicePointId, body.servicePointId),
-          eq(servicePointSessions.storeId, storeId),
-          isNull(servicePointSessions.closedAt),
-        ));
+        .set({ orderId: order.id })
+        .where(eq(servicePointSessions.id, claimedSession.id));
     }
 
-    // 2. Itens
+    // 3. Itens
     await tx.insert(schema.orderItems).values(
       body.items.map(item => ({
         orderId:      order.id,
@@ -417,7 +446,7 @@ export async function finalizarVendaPdvHandler(
       })),
     );
 
-    // 3. Baixa de estoque (apenas produtos com trackStock = true)
+    // 4. Baixa de estoque (apenas produtos com trackStock = true)
     for (const item of body.items) {
       if (!item.productId) continue;
       const [prod] = await tx
@@ -445,32 +474,44 @@ export async function finalizarVendaPdvHandler(
       });
     }
 
-    // 4. Lançamento financeiro
-    const [lancamento] = await tx.insert(financeiroLancamentos).values({
-      storeId,
-      tipo:            "entrada",
-      categoria:       "venda",
-      descricao:       `Venda PDV #${nextNumber}${body.mesaLabel ? ` — ${body.mesaLabel}` : ""}`,
-      valor:           body.total,
-      metodoPagamento: body.paymentMethod,
-      status:          "liquidado",
-      dataCompetencia: todayStr,
-      dataPagamento:   todayStr,
-      orderId:         order.id,
-      sessaoId:        body.sessaoId,
-    }).returning();
-
-    // 5. Atualiza totais da sessão de caixa
-    const metodo = body.paymentMethod;
+    // 5. Lançamento financeiro — só do valor cobrado AGORA (total menos o
+    // que já foi adiantado antes; esse adiantamento já gerou o próprio
+    // lançamento quando foi registrado). Se o adiantamento já cobriu tudo,
+    // não sobra nada pra lançar aqui (a receita inteira já está nos
+    // lançamentos de adiantamento) — mas o pedido continua criado normal.
     const totalVal = parseFloat(body.total) || 0;
+    const restante = Math.max(0, totalVal - jaAdiantado);
+    const metodo   = body.paymentMethod;
+
+    let lancamento: typeof financeiroLancamentos.$inferSelect | null = null;
+    if (restante > 0.004) {
+      [lancamento] = await tx.insert(financeiroLancamentos).values({
+        storeId,
+        tipo:            "entrada",
+        categoria:       "venda",
+        descricao:       `Venda PDV #${nextNumber}${body.mesaLabel ? ` — ${body.mesaLabel}` : ""}`,
+        valor:           restante.toFixed(2),
+        metodoPagamento: body.paymentMethod,
+        status:          "liquidado",
+        dataCompetencia: todayStr,
+        dataPagamento:   todayStr,
+        orderId:         order.id,
+        sessaoId:        body.sessaoId,
+      }).returning();
+    }
+
+    // 6. Atualiza totais da sessão de caixa — mesma regra: só o restante,
+    // pra não contar o adiantamento duas vezes.
     const updateSet: Record<string, unknown> = {
       totalVendas: sql`${caixaSessoes.totalVendas} + 1`,
     };
-    if (metodo === "cash")        updateSet.totalDinheiro = sql`${caixaSessoes.totalDinheiro} + ${totalVal}`;
-    else if (metodo === "pix")    updateSet.totalPix      = sql`${caixaSessoes.totalPix}      + ${totalVal}`;
-    else if (metodo === "card")   updateSet.totalCartao   = sql`${caixaSessoes.totalCartao}   + ${totalVal}`;
-    else if (metodo === "debit")  updateSet.totalDebito   = sql`${caixaSessoes.totalDebito}   + ${totalVal}`;
-    else                          updateSet.totalOutros   = sql`${caixaSessoes.totalOutros}   + ${totalVal}`;
+    if (restante > 0.004) {
+      if (metodo === "cash")        updateSet.totalDinheiro = sql`${caixaSessoes.totalDinheiro} + ${restante}`;
+      else if (metodo === "pix")    updateSet.totalPix      = sql`${caixaSessoes.totalPix}      + ${restante}`;
+      else if (metodo === "card")   updateSet.totalCartao   = sql`${caixaSessoes.totalCartao}   + ${restante}`;
+      else if (metodo === "debit")  updateSet.totalDebito   = sql`${caixaSessoes.totalDebito}   + ${restante}`;
+      else                          updateSet.totalOutros   = sql`${caixaSessoes.totalOutros}   + ${restante}`;
+    }
 
     await tx.update(caixaSessoes)
       .set(updateSet)
@@ -480,7 +521,18 @@ export async function finalizarVendaPdvHandler(
   });
 
   return json({ success: true, order: result.order, lancamento: result.lancamento }, 201);
+  } catch (e) {
+    if (e instanceof AlreadySoldError) {
+      return err("Esse atendimento já foi finalizado.", 409);
+    }
+    throw e;
+  }
 }
+
+// Corrida de duplo clique / retry de rede em "Finalizar Venda" pra a mesma
+// mesa — a trava atômica em service_point_sessions (WHERE closed_at IS
+// NULL) já barra a segunda chamada antes de criar um segundo pedido.
+class AlreadySoldError extends Error {}
 
 // ─── POST /api/pdv/encerrar-encomenda ─────────────────────────────
 // Encerra um pedido de delivery/retirada do site que chegou como "encomenda

@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { resolveSafeTarget } from "@/lib/security/network-guard";
 import {
   buildProductionTicket, buildCaixaCoupon, buildDeliveryTicket, buildFichaEntrega,
+  buildConferenciaTicket,
   linesToText, linesToEscPos,
   SAMPLE_STORE, SAMPLE_ORDER,
   dbOrderToSample,
@@ -22,7 +23,10 @@ function typeToLayout(type: string): PrintLayout {
   }
 }
 
-const { printers, orders, orderItems, customers } = schema;
+const {
+  printers, orders, orderItems, customers,
+  servicePointSessions, servicePointTabItems, servicePointAdvances, servicePoints,
+} = schema;
 
 // ─── Resolve printer by ID, scoped to store ───────────────────────
 async function getPrinter(db: Awaited<ReturnType<typeof createUnscopedDb>>, printerId: string, storeId: string) {
@@ -236,6 +240,93 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
   };
 
   const lines   = linesMap[body.layout]();
+  const preview = linesToText(lines, cols);
+  const escpos  = linesToEscPos(lines, cols);
+  const b64     = Buffer.from(escpos, "binary").toString("base64");
+
+  let sent = false;
+  let sendError: string | undefined;
+
+  if (body.send && printer.path) {
+    const net = await resolveSafeTarget(printer.path);
+    if (net) {
+      try {
+        await sendViaTcp(net.host, net.port, escpos);
+        sent = true;
+      } catch (err) {
+        sendError = (err as Error).message;
+      }
+    } else {
+      sendError = "Caminho não é IP/hostname válido, ou o alvo não é permitido. Use agente local para impressoras Windows.";
+    }
+  }
+
+  return new Response(JSON.stringify({ preview, escposB64: b64, sent, error: sendError }), {
+    status: 200, headers: { "content-type": "application/json" },
+  });
+}
+
+// ─── POST /api/printers/print-conferencia ─────────────────────────
+// "Conferência" do painel de resumo da mesa/comanda — pré-conta de uma
+// sessão AINDA ABERTA (sem pedido nenhum criado ainda). Diferente de
+// printOrderHandler, os itens vêm de service_point_tab_items, sempre
+// carregados do banco (nunca confia em itens mandados pelo body, mesmo
+// padrão de segurança do resto deste arquivo).
+export async function printConferenciaHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401, headers: { "content-type": "application/json" },
+    });
+  }
+
+  const body = await request.json() as { printerId: string; sessionId: string; send?: boolean };
+  if (!body.printerId || !body.sessionId) {
+    return new Response(JSON.stringify({ error: "printerId e sessionId são obrigatórios" }), {
+      status: 400, headers: { "content-type": "application/json" },
+    });
+  }
+
+  const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
+
+  const [printer, session] = await Promise.all([
+    getPrinter(db, body.printerId, storeId),
+    db.query.servicePointSessions.findFirst({
+      where: and(eq(servicePointSessions.id, body.sessionId), eq(servicePointSessions.storeId, storeId)),
+      with: { servicePoint: true },
+    }),
+  ]);
+
+  if (!printer) return new Response(JSON.stringify({ error: "Impressora não encontrada" }), { status: 404, headers: { "content-type": "application/json" } });
+  if (!session) return new Response(JSON.stringify({ error: "Atendimento não encontrado" }), { status: 404, headers: { "content-type": "application/json" } });
+
+  const [items, advances] = await Promise.all([
+    db.select().from(servicePointTabItems).where(eq(servicePointTabItems.sessionId, body.sessionId)),
+    db.select().from(servicePointAdvances).where(eq(servicePointAdvances.sessionId, body.sessionId)),
+  ]);
+
+  const subtotal       = items.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity, 0);
+  const totalAdiantado = advances.reduce((s, a) => s + parseFloat(a.valor), 0);
+  const agora          = new Date();
+
+  const cols      = printer.columns ?? 48;
+  const storeInfo = SAMPLE_STORE; // TODO: carregar nome/endereço reais da loja quando os campos existirem
+  const lines     = buildConferenciaTicket(storeInfo, {
+    mesaLabel: session.servicePoint?.nameOrNumber ?? "Atendimento",
+    date:      agora.toLocaleDateString("pt-BR"),
+    time:      agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+    items:     items.map(i => ({
+      qty: i.quantity, name: i.productName,
+      unitPrice: parseFloat(i.unitPrice), total: parseFloat(i.unitPrice) * i.quantity,
+    })),
+    subtotal,
+    totalAdiantado,
+    total: subtotal,
+  }, cols);
+
   const preview = linesToText(lines, cols);
   const escpos  = linesToEscPos(lines, cols);
   const b64     = Buffer.from(escpos, "binary").toString("base64");

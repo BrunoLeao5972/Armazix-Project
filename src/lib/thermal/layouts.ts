@@ -335,6 +335,66 @@ export function buildCaixaCoupon(store: SampleStore, order: SampleOrder, cols: n
   return lines;
 }
 
+// ─── CONFERÊNCIA — Pré-conta de mesa/comanda ainda aberta ─────────────────────
+// Diferente do Cupom (buildCaixaCoupon), essa conta NÃO foi fechada — não tem
+// forma de pagamento definida, e pode ter adiantamento parcial já registrado.
+// Cabeçalho deixa isso explícito pra não confundir o cliente com um
+// comprovante de venda de verdade.
+export interface ConferenciaData {
+  mesaLabel: string;
+  date: string; time: string;
+  items: SampleItem[];
+  subtotal: number;
+  totalAdiantado: number;
+  total: number;
+}
+
+export function buildConferenciaTicket(store: SampleStore, data: ConferenciaData, cols: number): ThermalLine[] {
+  const qtyW = 5;
+
+  const lines: ThermalLine[] = [
+    { text: store.name,    center: true, bold: true },
+    { text: store.address, center: true },
+    { text: store.phone,   center: true },
+    { text: "" },
+    { text: "", separator: "-" },
+    { text: "CONFERENCIA DE CONTA",      center: true, bold: true },
+    { text: "NAO E COMPROVANTE FISCAL",  center: true },
+    { text: "", separator: "-" },
+    { text: "" },
+    { text: twoCol(data.mesaLabel, `${data.date} ${data.time}`, cols), bold: true },
+    { text: "" },
+    {
+      text: `${formatLine("QTD", "left", qtyW)}${twoCol("DESCRICAO", "TOTAL", cols - qtyW)}`,
+      bold: true,
+    },
+    { text: "", separator: "-" },
+  ];
+
+  for (const item of data.items) {
+    lines.push({
+      text: `${formatLine(item.qty + "x", "left", qtyW)}${twoCol(item.name, fmtMoney(item.total), cols - qtyW)}`,
+    });
+  }
+
+  lines.push({ text: "", separator: "-" });
+  lines.push({ text: "" });
+  lines.push({ text: twoCol("Subtotal", fmtMoney(data.subtotal), cols) });
+  if (data.totalAdiantado > 0) {
+    lines.push({ text: twoCol("Ja pago (adiantamento)", `-${fmtMoney(data.totalAdiantado)}`, cols) });
+  }
+  lines.push({ text: "" });
+  lines.push({ text: "", separator: "=" });
+  lines.push({ text: twoCol("FALTA PAGAR", fmtMoney(data.total - data.totalAdiantado), cols), bold: true });
+  lines.push({ text: "", separator: "=" });
+  lines.push({ text: "" });
+  lines.push({ text: "Confira a conta antes de fechar", center: true });
+  lines.push({ text: "", separator: "-" });
+  lines.push({ text: store.url ?? store.name, center: true });
+
+  return lines;
+}
+
 // ─── DELIVERY — Resumo do pedido para o cliente ───────────────────────────────
 export function buildDeliveryTicket(store: SampleStore, order: SampleOrder, cols: number): ThermalLine[] {
   const lines: ThermalLine[] = [
