@@ -1,8 +1,7 @@
-import { createDb, createUnscopedDb, createTenantDbTransactional, setTenantContext } from "@/lib/db";
+import { createDb, createDbTransactional, createUnscopedDb, createTenantDbTransactional, setTenantContext } from "@/lib/db";
 import type { PromoConfig } from "@/lib/promo-engine";
 import { schema } from "@/lib/db";
 import { eq, desc, sql, and, ne, isNotNull, isNull, inArray } from "drizzle-orm";
-import { hasPdvAccess } from "@/lib/plans";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 import { verifyCustomerJWT } from "@/lib/auth";
 import { notifyOwnerNewOrder, notifyCustomerStatus, normalizePhone, DEFAULT_WPP_CONFIG, migrateWppConfig } from "@/lib/whatsapp-sender";
@@ -13,7 +12,7 @@ import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
 import { reserveStock, releaseReservation, concretizeReservation, StockReservationError } from "@/lib/inventory/stock-reservation";
 import { MAX_ADDRESSES } from "@/lib/api/customer-handler";
 
-const { products, categories, orders, orderItems, coupons, customers, stores, productAdditions, stockMovements, addresses, financeiroLancamentos, orderTimeline } = schema;
+const { products, categories, orders, orderItems, orderPayments, coupons, customers, stores, productAdditions, stockMovements, addresses, financeiroLancamentos, orderTimeline } = schema;
 
 // ─── Create Product ──────────────────────────────────────────────
 export async function createProductHandler(request: Request, auth?: AuthContext): Promise<Response> {
@@ -1225,7 +1224,7 @@ export async function listOrdersHandler(request: Request, auth?: AuthContext): P
     const storeOrders = await db.query.orders.findMany({
       where: eq(orders.storeId, storeId),
       orderBy: desc(orders.createdAt),
-      with: { items: true, customer: true },
+      with: { items: true, customer: true, payments: true },
     });
 
     const formatted = storeOrders.map(o => ({
@@ -1274,10 +1273,18 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
   }
 
   const dbUrl = process.env.DATABASE_URL!;
-  // Usa o driver WebSocket (não o HTTP) porque este handler roda uma
-  // transação abaixo (status + timeline + lançamento financeiro atômicos) —
-  // o driver neon-http não suporta db.transaction().
-  const db = await createTenantDbTransactional(dbUrl, storeId);
+  // Driver WebSocket admin (BYPASSRLS), não o tenant-scoped — achado desta
+  // sessão: financeiro_lancamentos só tem policy de SELECT pra
+  // armazix_tenant (drizzle/0045_rls_financeiro_lancamentos.sql, escrita
+  // sempre por createDb/createDbTransactional nos fluxos de PDV/pedido); a
+  // transação abaixo grava um lançamento na concretização, então usar a
+  // conexão tenant-scoped aqui SEMPRE falhava com "new row violates
+  // row-level security policy" — a "delivered" nunca chegava a acontecer
+  // pra loja alguma passando por essa rota (achado ao testar a remoção do
+  // bloqueio do PDV: o pedido nem chegava a mudar de status). Mesmo padrão
+  // (BYPASSRLS + filtro manual eq(storeId,...) já presente em toda query)
+  // já usado em finalizarVendaPdvHandler (pdv-handler.ts).
+  const db = createDbTransactional(dbUrl);
 
   try {
     // IDOR Fix: Verify order belongs to tenant before updating
@@ -1302,25 +1309,12 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     const now = new Date();
     const finalPaymentMethod = body.paymentMethod || existingOrder.paymentMethod;
 
-    // Loja com PDV não pode concretizar "delivered" por aqui — o botão de
-    // avançar do kanban virava um atalho de um clique que marcava a venda
-    // como paga sem forma de pagamento real confirmada. Precisa passar pelo
-    // encerramento na aba Delivery do PDV primeiro (que seta concretizedAt).
-    // Pedidos que já foram concretizados por lá (concretizedAt setado, ex:
-    // fluxo normal delivering→delivered pós-"Expedir") passam direto — é só
-    // uma atualização de status, sem reprocessar nada.
-    if (body.status === "delivered" && existingOrder.concretizedAt === null) {
-      const [storeRow] = await db
-        .select({ pdvEnabled: stores.pdvEnabled, plan: stores.plan, planStatus: stores.planStatus })
-        .from(stores)
-        .where(eq(stores.id, storeId))
-        .limit(1);
-      if (hasPdvAccess(storeRow)) {
-        return new Response(JSON.stringify({
-          error: "Encerre esse pedido pela aba Delivery do PDV antes de marcar como entregue/retirado.",
-        }), { status: 409, headers: { "content-type": "application/json" } });
-      }
-    }
+    // Concretizar "delivered" por aqui (sem passar pelo PDV) já não é mais
+    // bloqueado pra loja com PDV — o kanban tem seu próprio seletor de forma
+    // de pagamento (paymentOverride, pedidos.tsx) e, agora, edição completa
+    // do pedido com pagamento dividido de verdade (order_payments) antes de
+    // concluir. O PDV continua sendo um caminho válido (aba Delivery), só
+    // deixou de ser o único.
 
     const statusPatch: Record<string, unknown> = {
       status:    body.status,
@@ -1331,11 +1325,9 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     };
 
     // Transação atômica: status + timeline + reserva de estoque + financeiro
+    // (db admin/BYPASSRLS — ver nota acima; toda query já filtra
+    // eq(storeId, ...) manualmente, então o isolamento continua garantido).
     await db.transaction(async (tx) => {
-      // Ativa a RLS real para esta transação (db vem de createTenantDbTransactional,
-      // role sem BYPASSRLS) — sem isso a conexão não tem contexto de loja nenhum.
-      await tx.execute(setTenantContext(storeId));
-
       await tx.update(orders)
         .set(statusPatch)
         .where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
@@ -1379,18 +1371,40 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
           await concretizeReservation(tx, storeId, items, body.orderId, existingOrder.number);
 
           const today = now.toISOString().split("T")[0];
-          await tx.insert(financeiroLancamentos).values({
-            storeId,
-            tipo:            "entrada",
-            categoria:       "venda",
-            descricao:       `Recebimento Automático - Pedido #${existingOrder.number}`,
-            valor:           existingOrder.total,
-            metodoPagamento: finalPaymentMethod,
-            status:          "liquidado",
-            dataCompetencia: today,
-            dataPagamento:   today,
-            orderId:         body.orderId,
-          });
+
+          // Pagamento dividido (editado no Kanban) — um lançamento por
+          // forma, em vez de um único lançamento com uma forma só. Sem
+          // edição, orderPayments fica vazio e o comportamento é
+          // idêntico ao de sempre (um lançamento com finalPaymentMethod).
+          const splits = await tx.select().from(orderPayments).where(eq(orderPayments.orderId, body.orderId));
+
+          if (splits.length > 0) {
+            await tx.insert(financeiroLancamentos).values(splits.map(s => ({
+              storeId,
+              tipo:            "entrada" as const,
+              categoria:       "venda",
+              descricao:       `Recebimento Automático - Pedido #${existingOrder.number} (${s.formaPagamento})`,
+              valor:           s.valor,
+              metodoPagamento: s.formaPagamento,
+              status:          "liquidado",
+              dataCompetencia: today,
+              dataPagamento:   today,
+              orderId:         body.orderId,
+            })));
+          } else {
+            await tx.insert(financeiroLancamentos).values({
+              storeId,
+              tipo:            "entrada",
+              categoria:       "venda",
+              descricao:       `Recebimento Automático - Pedido #${existingOrder.number}`,
+              valor:           existingOrder.total,
+              metodoPagamento: finalPaymentMethod,
+              status:          "liquidado",
+              dataCompetencia: today,
+              dataPagamento:   today,
+              orderId:         body.orderId,
+            });
+          }
         }
       }
     });
@@ -1666,7 +1680,15 @@ export async function searchProductsHandler(request: Request, auth?: AuthContext
   const db = await createUnscopedDb(dbUrl, storeId);
 
   try {
-    const rows = await db.select({ id: products.id, name: products.name, sku: products.sku })
+    // price/emoji/active são aditivos — pedidos usados originalmente só pra
+    // autocomplete de relatórios (nome/sku); usados agora também pelo
+    // "Adicionar item" da edição de pedido do Kanban, que precisa mostrar
+    // um preço estimado (o preço de verdade sempre vem recalculado pelo
+    // priceOrder() no save, isso aqui é só preview).
+    const rows = await db.select({
+      id: products.id, name: products.name, sku: products.sku,
+      price: products.price, emoji: products.emoji, active: products.active,
+    })
       .from(products)
       .where(eq(products.storeId, storeId));
 

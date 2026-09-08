@@ -190,6 +190,7 @@ import {
   updateTabItemHandler,
   registerAdvanceHandler,
 } from "./api/service-point-tab-handler";
+import { updateOrderItemsHandler } from "./api/order-edit-handler";
 import { createSubscriptionHandler, getSubscriptionStatusHandler, subscriptionWebhookHandler, createPixPaymentHandler, pixWebhookHandler } from "./api/subscription-handler";
 import {
   listPrintersHandler,
@@ -328,6 +329,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/categories/update": updateCategoryHandler,
   "/api/categories/delete": deleteCategoryHandler,
   "/api/orders/update-status": updateOrderStatusHandler,
+  "/api/orders/update-items": updateOrderItemsHandler,
   "/api/coupons/create": createCouponHandler,
   "/api/customers/create": createCustomerHandler,
   "/api/customers/update": updateCustomerHandler,
@@ -535,6 +537,9 @@ const rateLimitConfigs: Record<string, string> = {
   // Abre conexão TCP de saída pro "Caminho / IP" da impressora, igual a
   // print-order — mesmo tier restritivo (network-guard.ts).
   "/api/printers/print-conferencia": "printer-network",
+  // Edita itens/estoque/pagamento de um pedido já criado — mesmo perfil de
+  // risco das rotas de financeiro/PDV acima.
+  "/api/orders/update-items": "sensitive",
 };
 
 // Rotas que continuam acessíveis mesmo com auth.planBlocked === true —

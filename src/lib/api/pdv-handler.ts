@@ -1,4 +1,4 @@
-import { createDb, createDbTransactional, createUnscopedDb, createTenantDbTransactional, setTenantContext } from "@/lib/db";
+import { createDb, createDbTransactional } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
@@ -541,10 +541,19 @@ class AlreadySoldError extends Error {}
 // lançamento financeiro atrelado à sessão de caixa aberta, e — se
 // `expedir` — avança o pedido pro status "Saiu para entrega" (o kanban já
 // imprime a ficha de entrega automaticamente nessa transição, se
-// configurado). Diferente do resto deste arquivo, usa
-// createTenantDbTransactional (RLS real) em vez do createDbTransactional
-// (BYPASSRLS) do resto do arquivo — código novo segue o padrão mais
-// hardened em vez de copiar o padrão antigo por inércia.
+// configurado).
+//
+// Usa createDbTransactional (BYPASSRLS), igual ao resto deste arquivo —
+// achado nessa sessão: a versão anterior usava createTenantDbTransactional
+// (RLS real) achando que era "mais hardened", mas financeiro_lancamentos só
+// tem policy de SELECT pra armazix_tenant
+// (drizzle/0045_rls_financeiro_lancamentos.sql — escrita nessa tabela
+// sempre foi pra ser feita via BYPASSRLS). Na prática, TODA encomenda
+// encerrada por aqui vinha caindo com "new row violates row-level security
+// policy" no insert do lançamento, e a transação inteira desfazia — ou
+// seja, "Encerrar Encomenda" nunca funcionava de verdade. O isolamento
+// continua garantido pelo filtro manual eq(storeId, ...) já presente em
+// toda query, mesmo padrão de finalizarVendaPdvHandler acima.
 const VALID_CLOSE_PAYMENT_METHODS = ["pix", "card", "debit", "cash", "mercadopago"];
 
 export async function encerrarEncomendaHandler(
@@ -588,12 +597,10 @@ export async function encerrarEncomendaHandler(
   if (!existingOrder) return err("Pedido não encontrado", 404);
   if (existingOrder.concretizedAt !== null) return err("Pedido já foi encerrado", 409);
 
-  const tenantDb = await createTenantDbTransactional(process.env.DATABASE_URL!, storeId);
+  const txDb = createDbTransactional(process.env.DATABASE_URL!);
 
   try {
-    const result = await tenantDb.transaction(async (tx) => {
-      await tx.execute(setTenantContext(storeId));
-
+    const result = await txDb.transaction(async (tx) => {
       const now = new Date();
       const novoStatus = body.expedir ? "delivering" : "delivered";
 

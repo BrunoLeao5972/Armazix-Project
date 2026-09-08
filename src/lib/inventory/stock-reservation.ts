@@ -98,6 +98,59 @@ export async function releaseReservation(
   }
 }
 
+export interface ReservationDelta {
+  productId: string | null;
+  productName: string;
+  /** Positivo = reserva mais (item novo ou quantidade aumentada); negativo
+   *  = libera parte da reserva (quantidade reduzida ou item removido). */
+  deltaQty: number;
+}
+
+// ─── Ajustar — edição de pedido (quantidade mudou, item foi
+// adicionado/removido) ─────────────────────────────────────────────
+// Generaliza reserveStock (delta positivo, mesma checagem de
+// allowNegativeStock) e releaseReservation (delta negativo, sempre
+// permitido) num único ajuste por produto — evita fazer release+reserve
+// em duas chamadas separadas (que abriria uma janela onde a reserva
+// momentaneamente cai a zero antes de subir de novo).
+export async function adjustReservation(
+  tx: Tx,
+  storeId: string,
+  deltas: ReservationDelta[],
+  allowNegativeStock: boolean,
+): Promise<void> {
+  for (const item of deltas) {
+    if (!item.productId || item.deltaQty === 0) continue;
+
+    const [prod] = await tx
+      .select({ stock: products.stock, reserved: products.reserved, trackStock: products.trackStock })
+      .from(products)
+      .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)))
+      .limit(1);
+    if (!prod?.trackStock) continue;
+
+    if (item.deltaQty < 0 || allowNegativeStock) {
+      await tx.update(products)
+        .set({ reserved: sql`GREATEST(0, ${products.reserved} + ${item.deltaQty})`, updatedAt: new Date() })
+        .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)));
+      continue;
+    }
+
+    const [updated] = await tx.update(products)
+      .set({ reserved: sql`${products.reserved} + ${item.deltaQty}`, updatedAt: new Date() })
+      .where(and(
+        eq(products.id, item.productId),
+        eq(products.storeId, storeId),
+        sql`(${products.stock} - ${products.reserved}) >= ${item.deltaQty}`,
+      ))
+      .returning({ id: products.id });
+
+    if (!updated) {
+      throw new StockReservationError(item.productName, (prod.stock ?? 0) - (prod.reserved ?? 0), item.deltaQty);
+    }
+  }
+}
+
 // ─── Concretizar — venda fechada de verdade ───────────────────────
 // Converte a reserva em baixa real: desconta de `stock`, zera a fatia
 // correspondente de `reserved`, e registra o movimento de estoque tipo

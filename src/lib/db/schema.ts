@@ -430,6 +430,7 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   coupon: one(coupons, { fields: [orders.couponId], references: [coupons.id] }),
   items: many(orderItems),
   timeline: many(orderTimeline),
+  payments: many(orderPayments),
 }));
 
 // ─── ORDER ITEMS ────────────────────────────────────────────────
@@ -453,6 +454,30 @@ export const orderItems = pgTable("order_items", {
 export const orderItemsRelations = relations(orderItems, ({ one }) => ({
   order: one(orders, { fields: [orderItems.orderId], references: [orders.id] }),
   product: one(products, { fields: [orderItems.productId], references: [products.id] }),
+}));
+
+// ─── ORDER PAYMENTS (pagamento dividido) ──────────────────────────
+// Um pedido pode ser pago com mais de uma forma (ex: parte no PIX, parte
+// em dinheiro) — cada linha aqui é uma fatia com seu próprio valor. Criada
+// pela edição de pedido no Kanban (updateOrderItemsHandler); na
+// concretização (status "delivered"), updateOrderStatusHandler gera um
+// financeiroLancamentos POR linha em vez de um lançamento único — mesmo
+// desenho de service_point_advances ("Adiantamento" do PDV).
+export const orderPayments = pgTable("order_payments", {
+  id:             uuid("id").defaultRandom().primaryKey(),
+  storeId:        uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  orderId:        uuid("order_id").references(() => orders.id, { onDelete: "cascade" }).notNull(),
+  formaPagamento: varchar("forma_pagamento", { length: 20 }).notNull(),
+  valor:          numeric("valor", { precision: 10, scale: 2 }).notNull(),
+  createdAt:      timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  index("order_payments_order_idx").on(t.orderId),
+  index("order_payments_store_idx").on(t.storeId),
+]);
+
+export const orderPaymentsRelations = relations(orderPayments, ({ one }) => ({
+  store: one(stores, { fields: [orderPayments.storeId], references: [stores.id] }),
+  order: one(orders, { fields: [orderPayments.orderId], references: [orders.id] }),
 }));
 
 // ─── ORDER TIMELINE ─────────────────────────────────────────────

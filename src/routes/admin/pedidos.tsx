@@ -5,7 +5,7 @@ import {
   Search, Filter, Clock, ChefHat, Truck, CheckCircle2, XCircle,
   Loader2, Package, ShoppingBag, QrCode, Banknote, CreditCard,
   MapPin, User, Printer, Check, X, Zap, Settings, RotateCcw, ChevronDown,
-  ArrowRight, Bike,
+  ArrowRight, Bike, Pencil, Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,9 +17,9 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { imprimirComandaProducao, imprimirFichaEntrega } from "@/lib/print/print-order";
-import { hasPdvAccess } from "@/lib/plans";
 
 const PrintOrderDialog = lazy(() => import("./-modal-imprimir-pedido"));
+const EditOrderDialog  = lazy(() => import("./-modal-editar-pedido"));
 
 export const Route = createFileRoute("/admin/pedidos")({
   component: OrdersPage,
@@ -28,17 +28,28 @@ export const Route = createFileRoute("/admin/pedidos")({
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface OrderCustomer { id: string; name: string | null; phone?: string | null }
-interface OrderItem { id: string; productName: string; quantity: number; unitPrice: string; total: string }
-interface RawOrder {
+export interface OrderItem {
+  id: string; productId: string | null; productName: string;
+  quantity: number; unitPrice: string; total: string;
+  additionsSnapshot?: { name: string; price: string }[] | null;
+  notes?: string | null;
+}
+export interface OrderPayment { id: string; formaPagamento: string; valor: string }
+export interface RawOrder {
   id: string; number: number; status: string; type: string;
   paymentMethod: string | null; total: string; date?: string;
-  customer: OrderCustomer | null; items: OrderItem[];
+  subtotal?: string; deliveryFee?: string; discount?: string;
+  couponId?: string | null; concretizedAt?: string | null;
+  customer: OrderCustomer | null; items: OrderItem[]; payments?: OrderPayment[];
   addressSnapshot: { street?: string; number?: string; neighborhood?: string } | null;
 }
 interface Order {
   orderId: string; number: number; customer: string;
   items: string[]; total: string; payment: string; status: string;
   rawDate: string; address: string; type: string;
+  // Objeto original completo — a edição do pedido (itens/pagamento) usa
+  // esses dados direto, sem precisar de um novo fetch de detalhe.
+  raw: RawOrder;
 }
 
 // ── Kanban columns ────────────────────────────────────────────────────────────
@@ -130,10 +141,10 @@ const STATUS_CFG: Record<string, { label: string; color: string }> = {
 
 // ── Payment icons/labels ───────────────────────────────────────────────────────
 const PAY_ICON: Record<string, React.ElementType> = {
-  pix: QrCode, cash: Banknote, card: CreditCard, debit: CreditCard,
+  pix: QrCode, cash: Banknote, card: CreditCard, debit: CreditCard, misto: Layers,
 };
 const PAY_LABEL: Record<string, string> = {
-  pix: "PIX", cash: "Dinheiro", card: "Crédito", debit: "Débito",
+  pix: "PIX", cash: "Dinheiro", card: "Crédito", debit: "Débito", misto: "Misto",
 };
 
 // ── Next action per status ────────────────────────────────────────────────────
@@ -205,15 +216,15 @@ const PAY_OPTIONS = [
 ] as const;
 
 function OrderCard({
-  order, onAdvance, onCancel, onPrint, onPrintFallback, isAdvancing, hasPdv,
+  order, onAdvance, onCancel, onPrint, onPrintFallback, onEdit, isAdvancing,
 }: {
   order: Order;
   onAdvance: (id: string, next: string, paymentMethod?: string) => void;
   onCancel: (id: string) => void;
   onPrint: (id: string) => void;
   onPrintFallback: (msg: string, type: "success" | "error") => void;
+  onEdit: (order: Order) => void;
   isAdvancing: boolean;
-  hasPdv: boolean;
 }) {
   const [reprintOpen, setReprintOpen] = useState(false);
   const reprintRef = useRef<HTMLDivElement>(null);
@@ -241,6 +252,10 @@ function OrderCard({
   const sCfg = STATUS_CFG[order.status];
   const PayIcon = PAY_ICON[order.payment] ?? Banknote;
   const canCancel = !["delivered", "cancelled"].includes(order.status);
+  // Editar (itens/pagamento) só faz sentido enquanto o pedido ainda não foi
+  // concretizado — depois disso, mexer em estoque/financeiro já lançado é
+  // estorno, uma operação diferente (fora de escopo aqui).
+  const canEdit = !order.raw.concretizedAt && order.status !== "cancelled";
 
   return (
     <div className="bg-card border border-border/60 rounded-2xl p-3.5 shadow-sm hover:shadow-md transition-all duration-150 space-y-2.5">
@@ -305,8 +320,8 @@ function OrderCard({
         </div>
       )}
 
-      {/* Seletor de pagamento — somente para lojas sem PDV e pedidos não finalizados */}
-      {!hasPdv && !["delivered", "cancelled"].includes(order.status) && (
+      {/* Seletor de pagamento — pedidos ainda não finalizados */}
+      {!["delivered", "cancelled"].includes(order.status) && (
         <div className="flex items-center gap-2 pt-1 border-t border-dashed border-border/40">
           <span className="text-[10px] font-medium text-muted-foreground shrink-0">Recebimento:</span>
           <div className="relative flex-1">
@@ -328,6 +343,17 @@ function OrderCard({
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40">
         <span className="text-sm font-bold">{order.total}</span>
         <div className="flex items-center gap-1.5">
+          {/* Editar pedido — itens, quantidade, add/remover item, pagamento
+              dividido. Só enquanto o pedido não foi concretizado. */}
+          <button
+            onClick={() => onEdit(order)}
+            disabled={!canEdit}
+            title={canEdit ? "Editar pedido" : "Pedido já concluído/cancelado — não pode ser editado"}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-secondary/60 disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+
           {/* Reimprimir dropdown */}
           <div className="relative" ref={reprintRef}>
             <button
@@ -382,11 +408,11 @@ function OrderCard({
               onClick={() => onAdvance(
                 order.orderId,
                 action.next,
-                (!hasPdv && isFinalAction) ? paymentOverride : undefined,
+                isFinalAction ? paymentOverride : undefined,
               )}
               className={[
                 "flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-xl hover:opacity-90 active:scale-95 transition-all disabled:opacity-50",
-                !hasPdv && isFinalAction
+                isFinalAction
                   ? "bg-emerald-600 text-white"
                   : "bg-primary text-primary-foreground",
               ].join(" ")}
@@ -395,7 +421,7 @@ function OrderCard({
                 ? <Loader2 className="w-3 h-3 animate-spin" />
                 : <action.icon className="w-3 h-3" />
               }
-              {!hasPdv && isFinalAction ? "Concluir e Lançar" : action.label}
+              {isFinalAction ? "Concluir e Lançar" : action.label}
             </button>
           )}
         </div>
@@ -406,7 +432,7 @@ function OrderCard({
 
 // ── KanbanColumn ──────────────────────────────────────────────────────────────
 function KanbanColumn({
-  column, orders, onAdvance, onCancel, onPrint, onPrintFallback, advancing, autoAccepting, hasPdv,
+  column, orders, onAdvance, onCancel, onPrint, onPrintFallback, onEdit, advancing, autoAccepting,
 }: {
   column: ColumnConfig;
   orders: Order[];
@@ -414,9 +440,9 @@ function KanbanColumn({
   onCancel: (id: string) => void;
   onPrint: (id: string) => void;
   onPrintFallback: (msg: string, type: "success" | "error") => void;
+  onEdit: (order: Order) => void;
   advancing: string | null;
   autoAccepting: Set<string>;
-  hasPdv: boolean;
 }) {
   return (
     <div className={`flex flex-col rounded-2xl border ${column.border} overflow-hidden`}>
@@ -451,8 +477,8 @@ function KanbanColumn({
               onCancel={onCancel}
               onPrint={onPrint}
               onPrintFallback={onPrintFallback}
+              onEdit={onEdit}
               isAdvancing={advancing === order.orderId || autoAccepting.has(order.orderId)}
-              hasPdv={hasPdv}
             />
           ))
         )}
@@ -471,26 +497,13 @@ function OrdersPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [printOrderId, setPrintOrderId] = useState<string | null>(null);
   const [hasOpenedPrint, setHasOpenedPrint] = useState(false);
-  const [hasPdv, setHasPdv] = useState(true);
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const storeIdRef = useRef<string | null>(null);
 
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const showToast = useCallback((msg: string, type: "success" | "error") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
-  }, []);
-
-  // Detecta se a loja tem PDV — mesma regra do backend (requirePdvAccess em
-  // pdv-handler.ts): addon pago (pdvEnabled) OU plano que já inclui PDV
-  // (Pro/Full), com assinatura ativa. Checar só "plan === full" deixava loja
-  // Pro ou com addon avulso tratada como "sem PDV" aqui.
-  useEffect(() => {
-    api.get("/api/store/user")
-      .then(r => r.json())
-      .then((d: { store?: { plan?: string; pdvEnabled?: boolean; planStatus?: string } }) => {
-        setHasPdv(hasPdvAccess(d.store));
-      })
-      .catch(() => {});
   }, []);
 
   // ── Config de impressão ──────────────────────────────────────────────────────
@@ -586,6 +599,7 @@ function OrdersPage() {
       ? `${o.addressSnapshot.street || ""}, ${o.addressSnapshot.number || ""} — ${o.addressSnapshot.neighborhood || ""}`.replace(/^,\s*—\s*$/, "")
       : o.type === "pickup" ? "Retirada no local" : "",
     type: o.type,
+    raw: o,
   }), []);
 
   const fetchOrders = useCallback(async (storeId: string, silent = false) => {
@@ -989,9 +1003,9 @@ function OrdersPage() {
             onCancel={handleCancel}
             onPrint={id => { setPrintOrderId(id); setHasOpenedPrint(true); }}
             onPrintFallback={showToast}
+            onEdit={setEditingOrder}
             advancing={advancing}
             autoAccepting={autoAccepting}
-            hasPdv={hasPdv}
           />
         ))}
       </div>
@@ -1002,6 +1016,22 @@ function OrdersPage() {
           <PrintOrderDialog
             orderId={printOrderId}
             onClose={() => setPrintOrderId(null)}
+          />
+        </Suspense>
+      )}
+
+      {/* ── Editar pedido — itens, quantidade, add/remover item, pagamento
+          dividido ────────────────────────────────────────────────────────── */}
+      {editingOrder && (
+        <Suspense fallback={null}>
+          <EditOrderDialog
+            order={editingOrder.raw}
+            onClose={() => setEditingOrder(null)}
+            onSaved={updated => {
+              setOrders(prev => prev.map(o => o.orderId === updated.id ? normalize(updated) : o));
+              setEditingOrder(null);
+              showToast("Pedido atualizado", "success");
+            }}
           />
         </Suspense>
       )}
