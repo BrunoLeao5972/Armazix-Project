@@ -63,12 +63,13 @@ const AGENT_DOWNLOAD_URL: string =
 // Versão mínima do agente com modo GDI/auto, detalhes de fila, altura de
 // página ajustada ao conteúdo (1.1.1), resolução de impressão correta
 // (1.1.2), medição de largura com o mesmo hint 1-bit da impressão real
-// (1.1.3), margem inferior reduzida (1.1.4) e maiúsculas forçadas no
-// desenho GDI + log de páginas físicas por job (1.1.5 — mitigação parcial
-// de um bug do driver "Daruma DR700 Spooler" que corrompe jobs GDI longos;
-// a fonte "Grande" continua desabilitada pra esse driver, ver
+// (1.1.3), margem inferior reduzida (1.1.4), maiúsculas forçadas no
+// desenho GDI + log de páginas físicas por job (1.1.5) e `paper_columns`
+// separado da régua de texto (1.1.6 — corrige a fonte "Grande" escolhendo
+// bobina de 57mm num rolo de 80mm; confirmado byte a byte comparando o
+// stream que o driver Daruma gera nos dois casos. Ver
 // src/lib/thermal/print-strategy.ts).
-const AGENT_MIN_VERSION = "1.1.5";
+const AGENT_MIN_VERSION = "1.1.6";
 
 function versionLt(a: string, b: string): boolean {
   const pa = a.split(".").map(n => parseInt(n, 10) || 0);

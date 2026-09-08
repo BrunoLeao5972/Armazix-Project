@@ -79,23 +79,36 @@ export interface FontSizePlan {
   doubleRaw: boolean;
 }
 
+// Layouts em que "Grande" foi testado ao vivo, repetidas vezes (inclusive em
+// cupons maiores que Produção/Delivery), sem NUNCA corromper no modo GDI —
+// Caixa e Ficha de Entrega. Produção e Delivery reproduzem o bug do driver
+// "Daruma DR700 Spooler" mesmo depois de corrigida a largura física do papel
+// (paperColumns) — decisão do usuário: manter esses dois SEMPRE em tamanho
+// normal (sem efeito de "Grande") até haver uma correção real, em vez de
+// arriscar travar a impressora numa loja em produção.
+const GDI_GRANDE_SAFE_LAYOUTS = new Set(["caixa", "ficha"]);
+
 export function resolveFontSizePlan(
   mode: PrintMode,
   fontSize: PrinterFontSize | string | null | undefined,
   physicalColumns: number,
+  layout?: string | null,
 ): FontSizePlan {
   const cols = Math.max(1, physicalColumns);
   if ((fontSize ?? "").trim().toLowerCase() !== "grande") return { layoutColumns: cols, doubleRaw: false };
 
-  // GDI/auto (Daruma): testado ao vivo — fonte "Grande" (a régua de colunas
-  // encolhida, forçando o agente a calcular um ponto maior) trava a
-  // impressora e sai lixo, de forma reprodutível; "Normal" no MESMO
-  // hardware sempre saiu limpo. É a MESMA fila/driver problemático de todo
-  // o resto do arquivo (server.js, Daruma DR700 Spooler) — o aumento de
-  // fonte contínuo do GDI não é seguro nesse driver especificamente.
-  // Desabilitado até haver uma forma confirmada de fazer isso sem travar.
+  // GDI/auto (Daruma): a largura física do papel já vem de `paperColumns`
+  // (as colunas FÍSICAS do cadastro, nunca encolhidas — ver server.js/
+  // printViaGdi e sendViaAgent em print-order.ts) — isso corrigiu um bug
+  // real (fonte "Grande" escolhia bobina de 57mm num rolo de 80mm,
+  // confirmado byte a byte). Mesmo corrigido, Produção e Delivery ainda
+  // corrompem em fonte Grande (conteúdo mais longo/vertical parece
+  // estourar algum limite do driver) — restrito só aos layouts já
+  // confirmados seguros (`GDI_GRANDE_SAFE_LAYOUTS`); sem `layout` conhecido
+  // (ex.: Conferência do PDV, nunca testada em Grande) também fica normal.
   if (mode === "gdi" || mode === "auto") {
-    return { layoutColumns: cols, doubleRaw: false };
+    if (!layout || !GDI_GRANDE_SAFE_LAYOUTS.has(layout)) return { layoutColumns: cols, doubleRaw: false };
+    return { layoutColumns: Math.max(20, Math.round(cols / 1.3)), doubleRaw: false };
   }
   if (mode === "raw") {
     return { layoutColumns: Math.max(16, Math.round(cols / 2)), doubleRaw: true };

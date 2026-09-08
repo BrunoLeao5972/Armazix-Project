@@ -21,9 +21,12 @@ type PrintLayout = "production" | "caixa" | "delivery" | "ficha";
 // esse valor que os build*Ticket recebem, e o mesmo que volta pro front em
 // `columns` pra mandar ao agente — sem isso o agente calcularia a fonte GDI
 // pra caber a régua física (maior), anulando o aumento.
-function resolvePrinterLayout(driver: string | null | undefined, fontSize: string | null | undefined, columns: number | null | undefined) {
+function resolvePrinterLayout(
+  driver: string | null | undefined, fontSize: string | null | undefined,
+  columns: number | null | undefined, layout?: string | null,
+) {
   const strategy = resolvePrintStrategy(driver);
-  const plan      = resolveFontSizePlan(strategy.mode, fontSize, columns ?? 48);
+  const plan      = resolveFontSizePlan(strategy.mode, fontSize, columns ?? 48, layout);
   return { strategy, plan, cols: plan.layoutColumns };
 }
 
@@ -114,7 +117,7 @@ export async function printRawTestHandler(request: Request, auth?: AuthContext):
 
   const physicalCols = Math.min(255, Math.max(1, body.columns ?? 48));
   const layout: PrintLayout = body.layout ?? typeToLayout(body.type ?? "");
-  const { strategy, plan, cols } = resolvePrinterLayout(body.driver, body.fontSize, physicalCols);
+  const { strategy, plan, cols } = resolvePrinterLayout(body.driver, body.fontSize, physicalCols, layout);
 
   const linesMap = {
     production: () => buildProductionTicket(SAMPLE_STORE, SAMPLE_ORDER, cols),
@@ -189,7 +192,7 @@ export async function printTestHandler(request: Request, auth?: AuthContext): Pr
 
   const order = SAMPLE_ORDER;
   const store = SAMPLE_STORE;
-  const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns);
+  const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns, body.layout);
 
   const linesMap = {
     production: () => buildProductionTicket(store, order, cols),
@@ -265,7 +268,7 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
 
   const sampleOrder = dbOrderToSample(order as unknown as DbOrderForPrint);
   const storeInfo   = SAMPLE_STORE; // TODO: load from db when store name/address fields are added
-  const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns);
+  const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns, body.layout);
 
   const linesMap = {
     production: () => buildProductionTicket(storeInfo, sampleOrder, cols),
@@ -346,7 +349,9 @@ export async function printConferenciaHandler(request: Request, auth?: AuthConte
   const agora          = new Date();
 
   const storeInfo = SAMPLE_STORE; // TODO: carregar nome/endereço reais da loja quando os campos existirem
-  const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns);
+  // "conferencia" nunca foi testada em Grande — fica sempre normal (ver
+  // GDI_GRANDE_SAFE_LAYOUTS em print-strategy.ts).
+  const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns, "conferencia");
   const lines     = buildConferenciaTicket(storeInfo, {
     mesaLabel: session.servicePoint?.nameOrNumber ?? "Atendimento",
     date:      agora.toLocaleDateString("pt-BR"),

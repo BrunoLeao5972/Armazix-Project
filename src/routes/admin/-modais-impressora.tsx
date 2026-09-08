@@ -68,10 +68,10 @@ function typeToDefaultLayout(type: string): PrintLayout {
 // Compartilhado entre a pré-visualização e o envio, pra nunca divergir.
 function buildScaledTicket(
   driver: string | null | undefined, fontSize: string | null | undefined, physicalCols: number,
-  builder: (cols: number) => ThermalLine[],
+  builder: (cols: number) => ThermalLine[], layout: PrintLayout,
 ): { lines: ThermalLine[]; cols: number } {
   const strategy = resolvePrintStrategy(driver);
-  const plan     = resolveFontSizePlan(strategy.mode, fontSize, physicalCols);
+  const plan     = resolveFontSizePlan(strategy.mode, fontSize, physicalCols, layout);
   const lines    = builder(plan.layoutColumns);
   return { lines: plan.doubleRaw ? scaleLinesForRaw(lines) : lines, cols: plan.layoutColumns };
 }
@@ -81,7 +81,7 @@ function buildScaledTicket(
 // Impressora de rede não passa por aqui (o servidor faz o TCP). `lines`/
 // `cols` já devem vir de buildScaledTicket.
 async function sendSampleToDevice(
-  path: string, driver: string | null | undefined, lines: ThermalLine[], cols: number,
+  path: string, driver: string | null | undefined, lines: ThermalLine[], cols: number, paperCols: number,
 ): Promise<string> {
   const strategy = resolvePrintStrategy(driver);
   if (strategy.mode === "browser") {
@@ -89,7 +89,7 @@ async function sendSampleToDevice(
     return "Enviado para a impressão do navegador.";
   }
   const escpos = linesToEscPos(lines, cols, strategy.profile);
-  const result = await sendViaAgent(path, escposToBase64(escpos), { mode: strategy.mode, lines, columns: cols });
+  const result = await sendViaAgent(path, escposToBase64(escpos), { mode: strategy.mode, lines, columns: cols, paperColumns: paperCols });
   const usado  = result.mode ? ` (modo ${result.mode}${result.fallback ? ", após fallback" : ""})` : "";
   return `Enviado para a impressora com sucesso!${usado}`;
 }
@@ -210,7 +210,7 @@ export function PrintPreviewModal({
     }
   }, [activeLayout]);
 
-  const { lines, cols } = buildScaledTicket(printer?.driver, printer?.fontSize, physicalCols, buildLines);
+  const { lines, cols } = buildScaledTicket(printer?.driver, printer?.fontSize, physicalCols, buildLines, activeLayout);
 
   const handleSendToDevice = async () => {
     if (!printer) return;
@@ -230,7 +230,7 @@ export function PrintPreviewModal({
         else setSendError(data.error ?? "Impressão falhou");
       } else {
         // ── Nome de impressora Windows → agente local (ou navegador) ──
-        setSent(await sendSampleToDevice(printer.path!, printer.driver, lines, cols));
+        setSent(await sendSampleToDevice(printer.path!, printer.driver, lines, cols, physicalCols));
       }
     } catch (err) {
       setSendError(describeAgentError(err));
@@ -614,8 +614,8 @@ export default function PrinterFormModal({
             ficha:      () => buildFichaEntrega(SAMPLE_STORE, SAMPLE_ORDER, c),
           };
           return linesMap[layout]();
-        });
-        const msg = await sendSampleToDevice(form.path.trim(), form.driver, lines, cols);
+        }, layout);
+        const msg = await sendSampleToDevice(form.path.trim(), form.driver, lines, cols, physicalCols);
         setTestFeedback({ ok: true, msg });
       }
     } catch (err) {
@@ -743,7 +743,7 @@ export default function PrinterFormModal({
                     if (form.fontSize.toLowerCase() !== "grande") return "Pensado pra clientes com dificuldade de leitura.";
                     const mode = resolvePrintStrategy(form.driver).mode;
                     if (mode === "raw") return "Letra em dobro (limite do hardware ESC/POS) — cabe metade do texto por linha.";
-                    if (mode === "gdi" || mode === "auto") return "Sem efeito nesse driver — testado ao vivo travando a impressão (instabilidade conhecida do driver Daruma com fonte maior via GDI).";
+                    if (mode === "gdi" || mode === "auto") return "Letra ~30% maior nos layouts Caixa e Ficha de Entrega — cabe menos texto por linha. Produção e Delivery ficam no tamanho normal (instabilidade conhecida do driver Daruma nesses dois).";
                     return "Sem efeito nesse driver.";
                   })()}
                 </p>

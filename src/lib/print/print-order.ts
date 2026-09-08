@@ -86,7 +86,13 @@ export function escposToBase64(binary: string): string {
 export interface AgentPrintOptions {
   mode?:    Exclude<PrintMode, "browser">;
   lines?:   ThermalLine[];
+  // Régua com que `lines` foi montado (pode ser menor que a física em
+  // fonte "Grande") — o agente ajusta a fonte pra caber isso na largura...
   columns?: number;
+  // ...que é decidida por ESTA: as colunas físicas do cadastro (32 = 58mm,
+  // 48 = 80mm). Sem isso o agente deduzia o papel pela régua do layout e
+  // imprimia "Grande" num papel de 57mm dentro do rolo de 80mm.
+  paperColumns?: number;
 }
 
 export interface AgentPrintResult {
@@ -108,9 +114,10 @@ export async function sendViaAgent(printerName: string, escposB64: string, opts:
       body: JSON.stringify({
         printer_name: printerName,
         escpos_b64:   escposB64 || undefined,
-        mode:         opts.mode ?? "raw",
-        lines:        opts.lines,
-        columns:      opts.columns,
+        mode:          opts.mode ?? "raw",
+        lines:         opts.lines,
+        columns:       opts.columns,
+        paper_columns: opts.paperColumns ?? opts.columns,
       }),
       signal: ctrl.signal,
     });
@@ -148,7 +155,7 @@ export async function dispatchPrint(printer: PrinterRecord, data: PrintApiRespon
   if (!data.escposB64 && !data.lines?.length) throw new Error(data.error ?? "Nada para imprimir");
 
   await sendViaAgent(printer.path, data.escposB64 ?? "", {
-    mode, lines: data.lines, columns: cols,
+    mode, lines: data.lines, columns: cols, paperColumns: printer.columns ?? 48,
   });
 }
 

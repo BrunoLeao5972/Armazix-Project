@@ -138,10 +138,17 @@ describe("resolveFontSizePlan", () => {
     }
   });
 
-  it("Grande + gdi/auto: sem efeito (desabilitado — testado ao vivo travando a Daruma DR700)", () => {
+  it("Grande + gdi/auto + layout Caixa/Ficha: encolhe ~30% a régua de colunas (a largura física do papel vem de paperColumns, separada — ver print-order.ts/server.js)", () => {
+    expect(resolveFontSizePlan("gdi", "Grande", 48, "caixa")).toEqual({ layoutColumns: 37, doubleRaw: false });
+    expect(resolveFontSizePlan("auto", "Grande", 48, "ficha")).toEqual({ layoutColumns: 37, doubleRaw: false });
+    expect(resolveFontSizePlan("gdi", "Grande", 32, "caixa")).toEqual({ layoutColumns: 25, doubleRaw: false });
+  });
+
+  it("Grande + gdi/auto + layout Produção/Delivery/sem layout: sem efeito (testado ao vivo — corrompe mesmo com a largura de papel corrigida)", () => {
+    expect(resolveFontSizePlan("gdi", "Grande", 48, "production")).toEqual({ layoutColumns: 48, doubleRaw: false });
+    expect(resolveFontSizePlan("gdi", "Grande", 48, "delivery")).toEqual({ layoutColumns: 48, doubleRaw: false });
+    expect(resolveFontSizePlan("gdi", "Grande", 48, "conferencia")).toEqual({ layoutColumns: 48, doubleRaw: false });
     expect(resolveFontSizePlan("gdi", "Grande", 48)).toEqual({ layoutColumns: 48, doubleRaw: false });
-    expect(resolveFontSizePlan("auto", "Grande", 48)).toEqual({ layoutColumns: 48, doubleRaw: false });
-    expect(resolveFontSizePlan("gdi", "Grande", 32)).toEqual({ layoutColumns: 32, doubleRaw: false });
   });
 
   it("Grande + raw: cai à metade e marca doubleRaw", () => {
@@ -154,7 +161,7 @@ describe("resolveFontSizePlan", () => {
 
   it("nunca deixa a régua degenerada mesmo com poucas colunas físicas", () => {
     expect(resolveFontSizePlan("raw", "Grande", 20).layoutColumns).toBeGreaterThanOrEqual(16);
-    expect(resolveFontSizePlan("gdi", "Grande", 20).layoutColumns).toBeGreaterThanOrEqual(20);
+    expect(resolveFontSizePlan("gdi", "Grande", 20, "caixa").layoutColumns).toBeGreaterThanOrEqual(20);
   });
 
   it("não distingue maiúscula/minúscula", () => {
