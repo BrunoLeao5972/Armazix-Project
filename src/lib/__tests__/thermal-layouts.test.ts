@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   linesToEscPos, linesToText, ESCPOS, type ThermalLine,
-  buildCaixaCoupon, buildFichaEntrega, dbOrderToSample, dbStoreToSample,
+  buildCaixaCoupon, buildFichaEntrega, buildDeliveryTicket, buildProductionTicket,
+  dbOrderToSample, dbStoreToSample,
   SAMPLE_STORE, SAMPLE_ORDER, type DbOrderForPrint,
 } from "@/lib/thermal/layouts";
 import {
@@ -260,5 +261,102 @@ describe("buildCaixaCoupon / buildFichaEntrega — impressão de pagamento misto
   it("pagamento único continua na linha simples de sempre", () => {
     const text = linesToText(buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, 40), 40);
     expect(text).toContain(`FORMA DE PAGAMENTO: ${SAMPLE_ORDER.paymentMethod}`);
+  });
+});
+
+describe("Rodapé — marca fixa do sistema em todos os papéis", () => {
+  // Loja com nome bem diferente de "ARMAZIX.COM.BR" — a ÚLTIMA linha (o
+  // rodapé) nunca pode mostrar o nome da loja, só a marca do sistema.
+  const store = { name: "Padaria da Esquina Ltda", address: "Av. Central, 1", phone: "123" };
+
+  it("Produção, Cupom, Delivery e Ficha terminam com ARMAZIX.COM.BR", () => {
+    for (const lines of [
+      buildProductionTicket(store, SAMPLE_ORDER, 40),
+      buildCaixaCoupon(store, SAMPLE_ORDER, 40),
+      buildDeliveryTicket(store, SAMPLE_ORDER, 40),
+      buildFichaEntrega(store, SAMPLE_ORDER, 40),
+    ]) {
+      const lastNonEmpty = [...lines].reverse().find(l => l.text.trim() !== "");
+      expect(lastNonEmpty?.text).toBe("ARMAZIX.COM.BR");
+    }
+  });
+
+  // Produção/Delivery/Ficha nunca mostram dado nenhum da loja (nem no
+  // cabeçalho) — só o Cupom/Conferência mostram nome+endereço no topo, e
+  // isso continua legítimo (não é o rodapé).
+  it("Produção, Delivery e Ficha não mostram o nome da loja em lugar nenhum", () => {
+    for (const text of [
+      linesToText(buildProductionTicket(store, SAMPLE_ORDER, 40), 40),
+      linesToText(buildDeliveryTicket(store, SAMPLE_ORDER, 40), 40),
+      linesToText(buildFichaEntrega(store, SAMPLE_ORDER, 40), 40),
+    ]) {
+      expect(text).not.toContain("Padaria da Esquina");
+    }
+  });
+});
+
+describe("buildCaixaCoupon — cabeçalho da loja", () => {
+  it("chama-se COMPROVANTE DE COMPRA (não mais 'Cupom Não Fiscal')", () => {
+    const text = linesToText(buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, 40), 40);
+    expect(text).toContain("COMPROVANTE DE COMPRA");
+    expect(text).not.toContain("CUPOM NAO FISCAL");
+  });
+
+  it("não repete o telefone da loja no cabeçalho", () => {
+    const text = linesToText(buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, 40), 40);
+    expect(text).not.toContain(SAMPLE_STORE.phone);
+  });
+
+  it("endereço da loja quebra em várias linhas quando não cabe na largura", () => {
+    const address = "Avenida Presidente Getulio Vargas Filho, 12345 - Bairro Muito Distante do Centro";
+    const store = { ...SAMPLE_STORE, address };
+    const lines = buildCaixaCoupon(store, SAMPLE_ORDER, 40);
+    for (const l of lines) expect(l.text.length).toBeLessThanOrEqual(40);
+    // nenhuma linha isolada carrega o endereço inteiro (teve que quebrar)
+    expect(lines.some(l => l.text === address)).toBe(false);
+    // primeira e última palavra do endereço aparecem em alguma linha
+    expect(lines.some(l => l.text.includes("Avenida"))).toBe(true);
+    expect(lines.some(l => l.text.includes("Centro"))).toBe(true);
+  });
+});
+
+describe("buildFichaEntrega — novo modelo (Taxa de entrega + Valor total no bloco PAGAMENTO)", () => {
+  it("Taxa de entrega e Valor total aparecem antes de 'Formas de pagamento', separados por traço", () => {
+    const order = {
+      ...SAMPLE_ORDER, paymentStatus: "pending" as const, deliveryFee: 5,
+      total: 30, payments: [{ method: "Dinheiro", total: 10 }, { method: "PIX", total: 20 }],
+    };
+    const text = linesToText(buildFichaEntrega(SAMPLE_STORE, order, 40), 40);
+    const iTaxa   = text.indexOf("Taxa de entrega:");
+    const iValor  = text.indexOf("Valor total:");
+    const iTraco  = text.indexOf("-".repeat(40));
+    const iFormas = text.indexOf("Formas de pagamento:");
+    expect(iTaxa).toBeGreaterThan(-1);
+    expect(iTaxa).toBeLessThan(iValor);
+    expect(iValor).toBeLessThan(iTraco);
+    expect(iTraco).toBeLessThan(iFormas);
+    expect(text).toMatch(/Valor total:\s+R\$ 30,00/);
+    expect(text).not.toContain("TAXA DE ENTREGA:"); // bloco antigo pós-itens não existe mais
+  });
+
+  it("sem taxa de entrega, pula a linha 'Taxa de entrega' mas mantém Valor total", () => {
+    const order = { ...SAMPLE_ORDER, deliveryFee: 0 };
+    const text = linesToText(buildFichaEntrega(SAMPLE_STORE, order, 40), 40);
+    expect(text).not.toContain("Taxa de entrega:");
+    expect(text).toContain("Valor total:");
+  });
+
+  it("endereço de entrega quebra linha quando não cabe (rua comprida)", () => {
+    const order = {
+      ...SAMPLE_ORDER,
+      address: { ...SAMPLE_ORDER.address, street: "Rua Comendador Joaquim Ferreira de Albuquerque Neto", number: "999" },
+    };
+    const lines = buildFichaEntrega(SAMPLE_STORE, order, 40);
+    for (const l of lines) expect(l.text.length).toBeLessThanOrEqual(40);
+    const fullLine = `ENDERECO DE ENTREGA: ${order.address.street}, ${order.address.number}`;
+    expect(lines.some(l => l.text === fullLine)).toBe(false); // teve que quebrar
+    expect(lines.some(l => l.text.startsWith("ENDERECO DE ENTREGA:"))).toBe(true);
+    expect(lines.some(l => l.text.includes("Neto,"))).toBe(true);
+    expect(lines.some(l => l.text.trim() === "999")).toBe(true);
   });
 });

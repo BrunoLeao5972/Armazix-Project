@@ -236,7 +236,11 @@ function linesToEscPosStandard(lines: ThermalLine[], _cols: number): string {
 }
 
 // ─── Sample data for test / preview prints ───────────────────────────────────
-export interface SampleStore { name: string; address: string; phone: string; url?: string; }
+export interface SampleStore { name: string; address: string; phone: string; }
+
+// Marca fixa do sistema — todo rodapé de cupom/ficha mostra isso, nunca o
+// nome da loja (o cliente já viu o nome da loja no cabeçalho do papel).
+const SYSTEM_BRAND = "ARMAZIX.COM.BR";
 export interface SampleItem  { qty: number; name: string; unitPrice: number; total: number; notes?: string; }
 export interface SampleAddress {
   street: string; number: string; neighborhood: string;
@@ -264,7 +268,6 @@ export const SAMPLE_STORE: SampleStore = {
   name:    "ARMAZIX TESTE DE IMPRESSAO",
   address: "Rua das Flores, 123 - Centro",
   phone:   "(85) 9 9999-9999",
-  url:     "ARMAZIX.COM.BR",
 };
 
 export const SAMPLE_ORDER: SampleOrder = {
@@ -344,7 +347,7 @@ export function buildProductionTicket(store: SampleStore, order: SampleOrder, co
 
   // ── Rodapé ───────────────────────────────────────────────────────────────
   lines.push({ text: "", separator: "=" });
-  lines.push({ text: store.url ?? store.name, center: true });
+  lines.push({ text: SYSTEM_BRAND, center: true });
   lines.push({ text: "", separator: "=" });
 
   return lines;
@@ -356,14 +359,15 @@ export function buildCaixaCoupon(store: SampleStore, order: SampleOrder, cols: n
 
   const lines: ThermalLine[] = [
     // ── Cabeçalho da loja ─────────────────────────────────────────────────────
-    { text: store.name,    center: true, bold: true },
-    { text: store.address, center: true },
-    { text: store.phone,   center: true },
+    // Sem telefone aqui — é redundante (já fica só no corpo da Ficha de
+    // Entrega, endereçado ao cliente); endereço quebra linha se não couber.
+    { text: store.name, center: true, bold: true },
+    ...wrapText(store.address, cols).map(l => ({ text: l, center: true })),
     { text: "" },
 
     // ── Identificação do cupom ────────────────────────────────────────────────
     { text: "", separator: "-" },
-    { text: "CUPOM NAO FISCAL", center: true, bold: true },
+    { text: "COMPROVANTE DE COMPRA", center: true, bold: true },
     { text: "", separator: "-" },
     { text: "" },
     { text: twoCol(`PEDIDO #${order.number}`, `${order.date} ${order.time}`, cols), bold: true },
@@ -415,7 +419,7 @@ export function buildCaixaCoupon(store: SampleStore, order: SampleOrder, cols: n
   lines.push({ text: "" });
   lines.push({ text: "Volte sempre!", center: true });
   lines.push({ text: "", separator: "-" });
-  lines.push({ text: store.url ?? store.name, center: true });
+  lines.push({ text: SYSTEM_BRAND, center: true });
 
   return lines;
 }
@@ -438,9 +442,10 @@ export function buildConferenciaTicket(store: SampleStore, data: ConferenciaData
   const qtyW = 5;
 
   const lines: ThermalLine[] = [
-    { text: store.name,    center: true, bold: true },
-    { text: store.address, center: true },
-    { text: store.phone,   center: true },
+    // Sem telefone no cabeçalho (redundante) — endereço quebra linha se
+    // não couber na largura do papel.
+    { text: store.name, center: true, bold: true },
+    ...wrapText(store.address, cols).map(l => ({ text: l, center: true })),
     { text: "" },
     { text: "", separator: "-" },
     { text: "CONFERENCIA DE CONTA",      center: true, bold: true },
@@ -475,7 +480,7 @@ export function buildConferenciaTicket(store: SampleStore, data: ConferenciaData
   lines.push({ text: "" });
   lines.push({ text: "Confira a conta antes de fechar", center: true });
   lines.push({ text: "", separator: "-" });
-  lines.push({ text: store.url ?? store.name, center: true });
+  lines.push({ text: SYSTEM_BRAND, center: true });
 
   return lines;
 }
@@ -544,7 +549,7 @@ export function buildDeliveryTicket(store: SampleStore, order: SampleOrder, cols
   lines.push({ text: "", separator: "=" });
 
   // ── Rodapé ────────────────────────────────────────────────────────────────
-  lines.push({ text: store.url ?? store.name, center: true });
+  lines.push({ text: SYSTEM_BRAND, center: true });
 
   return lines;
 }
@@ -572,9 +577,17 @@ export function buildFichaEntrega(store: SampleStore, order: SampleOrder, cols: 
 
     // ── Contato e endereço ────────────────────────────────────────────────────
     { text: `TELEFONE: ${order.customerPhone}` },
-    { text: `ENDERECO DE ENTREGA: ${addr.street}, ${addr.number}`, bold: true },
-    { text: `${addr.neighborhood} - ${addr.city}` },
   ];
+
+  // Endereço quebra em várias linhas se não couber na largura do papel —
+  // sem isso, um endereço comprido cortava no meio (e, no GDI, arriscava o
+  // mesmo tipo de corrupção que a fonte "Grande" causava nos outros layouts.
+  for (const l of wrapText(`ENDERECO DE ENTREGA: ${addr.street}, ${addr.number}`, cols)) {
+    lines.push({ text: l, bold: true });
+  }
+  for (const l of wrapText(`${addr.neighborhood} - ${addr.city}`, cols)) {
+    lines.push({ text: l });
+  }
 
   if (addr.complement) lines.push({ text: `COMPLEMENTO: ${addr.complement}` });
   if (addr.reference)  lines.push({ text: `REFERENCIA: ${addr.reference}` });
@@ -582,24 +595,26 @@ export function buildFichaEntrega(store: SampleStore, order: SampleOrder, cols: 
 
   // ── Pagamento ─────────────────────────────────────────────────────────────
   lines.push({ text: "PAGAMENTO", bold: true });
+  lines.push(
+    order.paymentStatus === "paid"
+      ? { text: "** PEDIDO JA PAGO **", center: true, bold: true }
+      : { text: "** Cobrar na entrega **", center: true, bold: true },
+  );
+  lines.push({ text: "" });
 
-  if (order.paymentStatus === "paid") {
-    lines.push({ text: "** PEDIDO JA PAGO **", center: true, bold: true });
+  if (order.deliveryFee > 0) {
+    lines.push({ text: twoCol("Taxa de entrega:", fmtMoney(order.deliveryFee), cols) });
+  }
+  lines.push({ text: twoCol("Valor total:", fmtMoney(order.total), cols), bold: true });
+  lines.push({ text: "", separator: "-" });
+  lines.push(...buildPaymentLines(order, cols, "Forma de pagamento", "Formas de pagamento", { uppercase: true }));
+
+  if (order.paymentStatus !== "paid" && isCash) {
     lines.push({ text: "" });
-    lines.push({ text: `Valor: ${fmtMoney(order.total)}`, bold: true });
-    lines.push(...buildPaymentLines(order, cols, "Forma de pagamento", "Formas de pagamento", { uppercase: true }));
-  } else {
-    lines.push({ text: "** Cobrar na entrega **", center: true, bold: true });
-    lines.push({ text: "" });
-    lines.push({ text: `Valor: ${fmtMoney(order.total)}`, bold: true });
-    lines.push(...buildPaymentLines(order, cols, "Forma de pagamento", "Formas de pagamento", { uppercase: true }));
-    if (isCash) {
-      lines.push({ text: "" });
-      const trocoLine = order.changeFor && order.changeFor > 0
-        ? `Troco para: ${fmtMoney(order.changeFor)}`
-        : "Troco para: R$______________";
-      lines.push({ text: trocoLine });
-    }
+    const trocoLine = order.changeFor && order.changeFor > 0
+      ? `Troco para: ${fmtMoney(order.changeFor)}`
+      : "Troco para: R$______________";
+    lines.push({ text: trocoLine });
   }
 
   lines.push({ text: "" });
@@ -622,13 +637,6 @@ export function buildFichaEntrega(store: SampleStore, order: SampleOrder, cols: 
 
   lines.push({ text: "", separator: "=" });
 
-  // ── Taxa de entrega ───────────────────────────────────────────────────────
-  if (order.deliveryFee > 0) {
-    lines.push({ text: "" });
-    lines.push({ text: twoCol("TAXA DE ENTREGA:", fmtMoney(order.deliveryFee), cols), bold: true });
-    lines.push({ text: "", separator: "=" });
-  }
-
   // ── Observação ────────────────────────────────────────────────────────────
   if (order.notes) {
     lines.push({ text: "" });
@@ -639,7 +647,7 @@ export function buildFichaEntrega(store: SampleStore, order: SampleOrder, cols: 
 
   // ── Rodapé ────────────────────────────────────────────────────────────────
   lines.push({ text: "" });
-  lines.push({ text: store.url ?? store.name, center: true });
+  lines.push({ text: SYSTEM_BRAND, center: true });
 
   return lines;
 }
