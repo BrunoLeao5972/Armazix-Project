@@ -59,10 +59,11 @@ const AGENT_DOWNLOAD_URL: string =
   ?? "/downloads/ArmazixPrinter-Setup.exe";
 
 // ─── Agent Status Banner ──────────────────────────────────────────
-// Versão mínima do agente com modo GDI/auto, detalhes de fila e altura de
-// página ajustada ao conteúdo (1.1.0 já tinha GDI, mas sem isso último
-// cada cupom saía com ~12in de papel em branco atrás — 1.1.1 corrige).
-const AGENT_MIN_VERSION = "1.1.1";
+// Versão mínima do agente com modo GDI/auto, detalhes de fila, altura de
+// página ajustada ao conteúdo (1.1.1) e resolução de impressão correta
+// (1.1.2 — sem isso a fila imprime a 100 DPI mesmo suportando 200,
+// deixando o texto borrado e a largura sem bater com as colunas).
+const AGENT_MIN_VERSION = "1.1.2";
 
 function versionLt(a: string, b: string): boolean {
   const pa = a.split(".").map(n => parseInt(n, 10) || 0);
