@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { linesToEscPos, linesToText, ESCPOS, type ThermalLine } from "@/lib/thermal/layouts";
-import { resolvePrintStrategy, suggestDriverFromQueue } from "@/lib/thermal/print-strategy";
+import {
+  resolvePrintStrategy, suggestDriverFromQueue, resolveFontSizePlan, scaleLinesForRaw,
+} from "@/lib/thermal/print-strategy";
 
 const ESC = "\x1B";
 const GS  = "\x1D";
@@ -124,5 +126,53 @@ describe("suggestDriverFromQueue", () => {
   });
   it("devolve null quando não conhece", () => {
     expect(suggestDriverFromQueue("HP LaserJet", "HP Universal Printing PCL 6")).toBeNull();
+  });
+});
+
+describe("resolveFontSizePlan", () => {
+  it("Normal não muda nada, em qualquer modo", () => {
+    for (const mode of ["raw", "gdi", "auto", "browser"] as const) {
+      expect(resolveFontSizePlan(mode, "Normal", 48)).toEqual({ layoutColumns: 48, doubleRaw: false });
+      expect(resolveFontSizePlan(mode, null, 48)).toEqual({ layoutColumns: 48, doubleRaw: false });
+      expect(resolveFontSizePlan(mode, undefined, 48)).toEqual({ layoutColumns: 48, doubleRaw: false });
+    }
+  });
+
+  it("Grande + gdi/auto: encolhe ~30% a régua de colunas, sem dobrar ESC/POS", () => {
+    expect(resolveFontSizePlan("gdi", "Grande", 48)).toEqual({ layoutColumns: 37, doubleRaw: false });
+    expect(resolveFontSizePlan("auto", "Grande", 48)).toEqual({ layoutColumns: 37, doubleRaw: false });
+    expect(resolveFontSizePlan("gdi", "Grande", 32)).toEqual({ layoutColumns: 25, doubleRaw: false });
+  });
+
+  it("Grande + raw: cai à metade e marca doubleRaw", () => {
+    expect(resolveFontSizePlan("raw", "Grande", 48)).toEqual({ layoutColumns: 24, doubleRaw: true });
+  });
+
+  it("Grande + browser: sem efeito (impressão do navegador tem zoom próprio)", () => {
+    expect(resolveFontSizePlan("browser", "Grande", 48)).toEqual({ layoutColumns: 48, doubleRaw: false });
+  });
+
+  it("nunca deixa a régua degenerada mesmo com poucas colunas físicas", () => {
+    expect(resolveFontSizePlan("raw", "Grande", 20).layoutColumns).toBeGreaterThanOrEqual(16);
+    expect(resolveFontSizePlan("gdi", "Grande", 20).layoutColumns).toBeGreaterThanOrEqual(20);
+  });
+
+  it("não distingue maiúscula/minúscula", () => {
+    expect(resolveFontSizePlan("raw", "grande", 48)).toEqual(resolveFontSizePlan("raw", "Grande", 48));
+  });
+});
+
+describe("scaleLinesForRaw", () => {
+  it("marca doubleBoth e limpa doubleH/doubleW em toda linha, inclusive separador", () => {
+    const lines: ThermalLine[] = [
+      { text: "Item", bold: true },
+      { text: "TOTAL", doubleH: true },
+      { text: "", separator: "=" },
+    ];
+    expect(scaleLinesForRaw(lines)).toEqual([
+      { text: "Item", bold: true, doubleBoth: true, doubleH: false, doubleW: false },
+      { text: "TOTAL", doubleBoth: true, doubleH: false, doubleW: false },
+      { text: "", separator: "=", doubleBoth: true, doubleH: false, doubleW: false },
+    ]);
   });
 });

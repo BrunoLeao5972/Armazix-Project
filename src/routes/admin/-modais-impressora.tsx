@@ -14,7 +14,7 @@ import {
 } from "@/lib/thermal/layouts";
 import {
   AGENT_URL, isNetworkPath, escposToBase64, sendViaAgent, printTextInBrowser, describeAgentError,
-  resolvePrintStrategy, suggestDriverFromQueue, type PrintMode,
+  resolvePrintStrategy, suggestDriverFromQueue, resolveFontSizePlan, scaleLinesForRaw, type PrintMode,
 } from "@/lib/print/print-order";
 import { TYPE_COLORS } from "./impressoras";
 import type { PrinterRecord } from "./impressoras";
@@ -23,13 +23,15 @@ interface PrinterForm {
   name: string;
   type: string;
   driver: string;
+  fontSize: string;
   path: string;
   columns: string;
 }
 
-const EMPTY: PrinterForm = { name: "", type: "Produção", driver: "Nenhum", path: "", columns: "48" };
-const TIPOS   = ["Produção", "Caixa", "Delivery"] as const;
-const DRIVERS = ["Nenhum", "Texto", "HTML", "Epson", "Daruma", "Elgin", "Tanca", "Goldentec"] as const;
+const EMPTY: PrinterForm = { name: "", type: "Produção", driver: "Nenhum", fontSize: "Normal", path: "", columns: "48" };
+const TIPOS      = ["Produção", "Caixa", "Delivery"] as const;
+const DRIVERS    = ["Nenhum", "Texto", "HTML", "Epson", "Daruma", "Elgin", "Tanca", "Goldentec"] as const;
+const FONT_SIZES = ["Normal", "Grande"] as const;
 
 // O que cada modo (decidido pelo Driver, ver src/lib/thermal/print-strategy.ts)
 // significa na prática — mostrado embaixo do campo pra ninguém escolher no escuro.
@@ -59,9 +61,25 @@ function typeToDefaultLayout(type: string): PrintLayout {
   return "production";
 }
 
+// Monta o ticket já na régua de colunas certa pro Tamanho da Fonte
+// configurado — "Grande" usa menos colunas (letra maior cabe menos texto
+// por linha) e, em impressora RAW, aplica tamanho duplo ESC/POS em toda
+// linha (só o GDI consegue os ~30% contínuos, ver print-strategy.ts).
+// Compartilhado entre a pré-visualização e o envio, pra nunca divergir.
+function buildScaledTicket(
+  driver: string | null | undefined, fontSize: string | null | undefined, physicalCols: number,
+  builder: (cols: number) => ThermalLine[],
+): { lines: ThermalLine[]; cols: number } {
+  const strategy = resolvePrintStrategy(driver);
+  const plan     = resolveFontSizePlan(strategy.mode, fontSize, physicalCols);
+  const lines    = builder(plan.layoutColumns);
+  return { lines: plan.doubleRaw ? scaleLinesForRaw(lines) : lines, cols: plan.layoutColumns };
+}
+
 // Manda uma página de teste montada no navegador (dados SAMPLE_*) pelo
 // caminho certo do driver: navegador, ou agente local com modo/perfil.
-// Impressora de rede não passa por aqui (o servidor faz o TCP).
+// Impressora de rede não passa por aqui (o servidor faz o TCP). `lines`/
+// `cols` já devem vir de buildScaledTicket.
 async function sendSampleToDevice(
   path: string, driver: string | null | undefined, lines: ThermalLine[], cols: number,
 ): Promise<string> {
@@ -173,7 +191,7 @@ export function PrintPreviewModal({
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
-  const cols = printer?.columns ?? 48;
+  const physicalCols = printer?.columns ?? 48;
 
   useEffect(() => {
     if (open && printer) {
@@ -183,16 +201,16 @@ export function PrintPreviewModal({
     }
   }, [open, printer]);
 
-  const buildLines = useCallback((): ThermalLine[] => {
+  const buildLines = useCallback((c: number): ThermalLine[] => {
     switch (activeLayout) {
-      case "production": return buildProductionTicket(SAMPLE_STORE, SAMPLE_ORDER, cols);
-      case "caixa":      return buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, cols);
-      case "delivery":   return buildDeliveryTicket(SAMPLE_STORE, SAMPLE_ORDER, cols);
-      case "ficha":      return buildFichaEntrega(SAMPLE_STORE, SAMPLE_ORDER, cols);
+      case "production": return buildProductionTicket(SAMPLE_STORE, SAMPLE_ORDER, c);
+      case "caixa":      return buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, c);
+      case "delivery":   return buildDeliveryTicket(SAMPLE_STORE, SAMPLE_ORDER, c);
+      case "ficha":      return buildFichaEntrega(SAMPLE_STORE, SAMPLE_ORDER, c);
     }
-  }, [activeLayout, cols]);
+  }, [activeLayout]);
 
-  const lines = buildLines();
+  const { lines, cols } = buildScaledTicket(printer?.driver, printer?.fontSize, physicalCols, buildLines);
 
   const handleSendToDevice = async () => {
     if (!printer) return;
@@ -236,7 +254,8 @@ export function PrintPreviewModal({
                 Teste de Impressão
               </DialogTitle>
               <p className="text-sm text-muted-foreground mt-0.5 truncate">
-                {printer.name} · {printer.code} · {cols} colunas · driver {printer.driver || "Nenhum"} ({strategyLabel(printer.driver)})
+                {printer.name} · {printer.code} · {physicalCols} colunas · driver {printer.driver || "Nenhum"} ({strategyLabel(printer.driver)})
+                {printer.fontSize?.toLowerCase() === "grande" && <> · fonte grande ({cols} col.)</>}
               </p>
             </div>
             <span className={`shrink-0 mt-0.5 inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold tracking-wide ${TYPE_COLORS[printer.type] ?? "bg-secondary text-muted-foreground"}`}>
@@ -552,7 +571,7 @@ export default function PrinterFormModal({
   useEffect(() => {
     if (open) {
       setForm(editing
-        ? { name: editing.name, type: editing.type, driver: editing.driver, path: editing.path ?? "", columns: String(editing.columns ?? 48) }
+        ? { name: editing.name, type: editing.type, driver: editing.driver, fontSize: editing.fontSize || "normal", path: editing.path ?? "", columns: String(editing.columns ?? 48) }
         : EMPTY);
       setSaveError(null);
       setErrors({});
@@ -571,10 +590,11 @@ export default function PrinterFormModal({
       if (isNetworkPath(form.path)) {
         // ── IP / hostname real → servidor faz TCP ────────────────
         const res  = await api.post("/api/printers/test-raw", {
-          path:    form.path.trim(),
-          columns: parseInt(form.columns, 10) || 48,
-          type:    form.type,
-          driver:  form.driver,
+          path:     form.path.trim(),
+          columns:  parseInt(form.columns, 10) || 48,
+          type:     form.type,
+          driver:   form.driver,
+          fontSize: form.fontSize,
         });
         const data = await res.json() as { preview?: string; sent?: boolean; error?: string };
         if (data.sent) {
@@ -584,15 +604,18 @@ export default function PrinterFormModal({
         }
       } else {
         // ── Nome de impressora Windows → agente local (ou navegador) ──
-        const cols   = parseInt(form.columns, 10) || 48;
+        const physicalCols = parseInt(form.columns, 10) || 48;
         const layout = typeToDefaultLayout(form.type);
-        const linesMap = {
-          production: () => buildProductionTicket(SAMPLE_STORE, SAMPLE_ORDER, cols),
-          caixa:      () => buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, cols),
-          delivery:   () => buildDeliveryTicket(SAMPLE_STORE, SAMPLE_ORDER, cols),
-          ficha:      () => buildFichaEntrega(SAMPLE_STORE, SAMPLE_ORDER, cols),
-        };
-        const msg = await sendSampleToDevice(form.path.trim(), form.driver, linesMap[layout](), cols);
+        const { lines, cols } = buildScaledTicket(form.driver, form.fontSize, physicalCols, c => {
+          const linesMap = {
+            production: () => buildProductionTicket(SAMPLE_STORE, SAMPLE_ORDER, c),
+            caixa:      () => buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, c),
+            delivery:   () => buildDeliveryTicket(SAMPLE_STORE, SAMPLE_ORDER, c),
+            ficha:      () => buildFichaEntrega(SAMPLE_STORE, SAMPLE_ORDER, c),
+          };
+          return linesMap[layout]();
+        });
+        const msg = await sendSampleToDevice(form.path.trim(), form.driver, lines, cols);
         setTestFeedback({ ok: true, msg });
       }
     } catch (err) {
@@ -617,7 +640,7 @@ export default function PrinterFormModal({
     setSaving(true);
     setSaveError(null);
     try {
-      const payload = { name: form.name, type: form.type, driver: form.driver, path: form.path, columns: parseInt(form.columns, 10) || 48, ...(editing ? { printerId: editing.id } : {}) };
+      const payload = { name: form.name, type: form.type, driver: form.driver, fontSize: form.fontSize, path: form.path, columns: parseInt(form.columns, 10) || 48, ...(editing ? { printerId: editing.id } : {}) };
       const res  = await api.post(editing ? "/api/printers/update" : "/api/printers/create", payload);
       const data = await res.json() as { success?: boolean; printer?: PrinterRecord; error?: string };
       if (res.ok && data.printer) { onSaved(data.printer, isNew); onClose(); }
@@ -708,6 +731,19 @@ export default function PrinterFormModal({
                   className="h-10 rounded-xl" />
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   80mm = 48 col · 58mm = 32 col
+                </p>
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Tamanho da Fonte">
+                <SelectField value={form.fontSize} onChange={v => set("fontSize", v)}
+                  options={FONT_SIZES} />
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                  {form.fontSize.toLowerCase() === "grande"
+                    ? resolvePrintStrategy(form.driver).mode === "raw"
+                      ? "Letra em dobro (limite do hardware ESC/POS) — cabe metade do texto por linha."
+                      : "Letra ~30% maior — cabe menos texto por linha."
+                    : "Pensado pra clientes com dificuldade de leitura."}
                 </p>
               </Field>
             </div>

@@ -30,6 +30,7 @@ export interface PrinterRecord {
   name: string;
   type: string;
   driver: string;
+  fontSize: string;
   path: string | null;
   columns: number | null;
   active: boolean;
@@ -60,10 +61,12 @@ const AGENT_DOWNLOAD_URL: string =
 
 // ─── Agent Status Banner ──────────────────────────────────────────
 // Versão mínima do agente com modo GDI/auto, detalhes de fila, altura de
-// página ajustada ao conteúdo (1.1.1) e resolução de impressão correta
-// (1.1.2 — sem isso a fila imprime a 100 DPI mesmo suportando 200,
-// deixando o texto borrado e a largura sem bater com as colunas).
-const AGENT_MIN_VERSION = "1.1.2";
+// página ajustada ao conteúdo (1.1.1), resolução de impressão correta
+// (1.1.2) e medição de largura com o mesmo hint 1-bit da impressão real
+// (1.1.3 — sem isso a régua de colunas some um pouco na borda direita em
+// DPI baixo). 1.1.4 só reduz a margem inferior, sem mudar comportamento
+// essencial, mas mantém a régua de versão em dia.
+const AGENT_MIN_VERSION = "1.1.4";
 
 function versionLt(a: string, b: string): boolean {
   const pa = a.split(".").map(n => parseInt(n, 10) || 0);

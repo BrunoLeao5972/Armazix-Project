@@ -11,11 +11,15 @@ import { api } from "@/lib/api-client";
 import type { ThermalLine } from "@/lib/thermal/layouts";
 import { resolvePrintStrategy, type PrintMode } from "@/lib/thermal/print-strategy";
 
-export { resolvePrintStrategy, suggestDriverFromQueue, type PrintMode, type PrintStrategy } from "@/lib/thermal/print-strategy";
+export {
+  resolvePrintStrategy, suggestDriverFromQueue, resolveFontSizePlan, scaleLinesForRaw,
+  type PrintMode, type PrintStrategy, type PrinterFontSize, type FontSizePlan,
+} from "@/lib/thermal/print-strategy";
 
 export interface PrinterRecord {
   id: string; name: string; code: string; type: string;
   driver?: string | null;
+  fontSize?: string | null;
   path: string | null; columns: number | null;
   active?: boolean;
 }
@@ -26,6 +30,11 @@ export interface PrintApiResponse {
   escposB64?: string;
   lines?:     ThermalLine[];
   mode?:      PrintMode;
+  // Colunas com que `lines`/`escposB64` foram montados — pode ser menor que
+  // printer.columns quando o Tamanho da Fonte é "Grande" (ver
+  // print-strategy.ts). Sempre priorizar este valor sobre printer.columns
+  // ao mandar pro agente: é a régua que o conteúdo realmente usa.
+  columns?:   number;
   sent?:      boolean;
   error?:     string;
 }
@@ -121,9 +130,14 @@ export async function sendViaAgent(printerName: string, escposB64: string, opts:
 // Lança Error com mensagem pronta pra UI.
 export async function dispatchPrint(printer: PrinterRecord, data: PrintApiResponse): Promise<void> {
   const mode = data.mode ?? resolvePrintStrategy(printer.driver).mode;
+  // `data.columns` é a régua com que o servidor MONTOU lines/escposB64 —
+  // pode ser menor que printer.columns em impressora "Grande" (ver
+  // print-strategy.ts). Sem isso, o agente calcularia a fonte GDI pra
+  // caber a régua física (maior), anulando o aumento de letra.
+  const cols = data.columns ?? printer.columns ?? 48;
 
   if (mode === "browser") {
-    printTextInBrowser(data.preview ?? "", printer.columns ?? 48);
+    printTextInBrowser(data.preview ?? "", cols);
     return;
   }
   if (data.sent) return;
@@ -134,7 +148,7 @@ export async function dispatchPrint(printer: PrinterRecord, data: PrintApiRespon
   if (!data.escposB64 && !data.lines?.length) throw new Error(data.error ?? "Nada para imprimir");
 
   await sendViaAgent(printer.path, data.escposB64 ?? "", {
-    mode, lines: data.lines, columns: printer.columns ?? 48,
+    mode, lines: data.lines, columns: cols,
   });
 }
 

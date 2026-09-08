@@ -1131,6 +1131,13 @@ export const printers = pgTable("printers", {
   driver:    varchar("driver", { length: 30 }).notNull().default("Nenhum"),
   path:      varchar("path", { length: 255 }),
   columns:   integer("columns").default(48),
+  // "Normal" | "Grande" (comparado sem distinguir maiúscula) — letra maior
+  // nos cupons dessa impressora, pensado pra clientes com dificuldade de
+  // leitura. Em impressora GDI (Daruma) vira ~30% maior de verdade,
+  // renderizado pelo driver; em impressora RAW (Epson/Elgin/Tanca/
+  // Goldentec) o hardware só tem tamanho em dobro via ESC/POS (GS !),
+  // então "Grande" ali é 2x. Ver src/lib/thermal/print-strategy.ts.
+  fontSize:  varchar("font_size", { length: 10 }).notNull().default("Normal"),
   active:    boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

@@ -11,7 +11,7 @@
 // modais de impressora), pra que os dois cheguem sempre à mesma decisão.
 // ─────────────────────────────────────────────────────────────────────────
 
-import type { EscposProfile } from "./layouts";
+import type { EscposProfile, ThermalLine } from "./layouts";
 
 // raw     → bytes ESC/POS direto no spooler (winspool, DataType RAW)
 // gdi     → agente renderiza o ticket via driver Windows (PrintDocument)
@@ -46,6 +46,64 @@ export function resolvePrintStrategy(driver: string | null | undefined): PrintSt
     case "goldentec": return { mode: "raw", profile: "standard" };
     default:          return DEFAULT_STRATEGY;
   }
+}
+
+// ─── Tamanho da fonte ("Normal" / "Grande") ────────────────────────────────
+// Pensado pra clientes com dificuldade de leitura. Duas formas BEM
+// diferentes de conseguir letra maior, dependendo de quem desenha o texto:
+//
+//   GDI (mode "gdi"/"auto", ex.: Daruma) — quem desenha é o driver do
+//   Windows, então a fonte pode ser qualquer tamanho contínuo. O agente já
+//   calcula o tamanho de fonte que faz exatamente `columns` caracteres
+//   caberem na largura física do papel (src/routes/.../armazix-print-agent
+//   server.js, printViaGdi) — encolher a régua de colunas usada pra montar
+//   o ticket (twoCol/formatLine/divider) ~30% faz o agente escolher uma
+//   fonte ~30% maior sozinho, sem nenhuma mudança no agente.
+//
+//   RAW (mode "raw", ex.: Epson/Elgin/Tanca/Goldentec) — quem desenha é o
+//   HARDWARE da impressora, com fonte fixa; o único jeito de aumentar é o
+//   comando ESC/POS `GS !` de tamanho duplo (já existe como `doubleBoth`
+//   no ThermalLine, usado hoje só no TOTAL). Não dá 30% contínuo — é o
+//   dobro. A régua de colunas cai à metade pra compensar (metade dos
+//   caracteres, cada um 2× mais largo ≈ mesma largura física de antes).
+export type PrinterFontSize = "normal" | "grande";
+
+export interface FontSizePlan {
+  // Colunas a usar pra MONTAR o ticket (build*Ticket/twoCol/divider) — troca
+  // a régua física (printer.columns) por uma menor quando a fonte é maior,
+  // pra o conteúdo continuar cabendo no papel.
+  layoutColumns: number;
+  // true = aplicar tamanho duplo (GS !) em toda linha antes de gerar o
+  // ESC/POS perfil "standard" — único jeito de aumentar fonte em impressora
+  // RAW. Sem efeito em GDI (o agente já desenha maior via layoutColumns).
+  doubleRaw: boolean;
+}
+
+export function resolveFontSizePlan(
+  mode: PrintMode,
+  fontSize: PrinterFontSize | string | null | undefined,
+  physicalColumns: number,
+): FontSizePlan {
+  const cols = Math.max(1, physicalColumns);
+  if ((fontSize ?? "").trim().toLowerCase() !== "grande") return { layoutColumns: cols, doubleRaw: false };
+
+  if (mode === "gdi" || mode === "auto") {
+    return { layoutColumns: Math.max(20, Math.round(cols / 1.3)), doubleRaw: false };
+  }
+  if (mode === "raw") {
+    return { layoutColumns: Math.max(16, Math.round(cols / 2)), doubleRaw: true };
+  }
+  // "browser" (driver HTML) — a impressão do navegador tem o próprio zoom;
+  // sem efeito por aqui.
+  return { layoutColumns: cols, doubleRaw: false };
+}
+
+// Aplica tamanho duplo (GS !) em toda linha do ticket — separador incluso,
+// pra continuar atravessando a largura toda do papel mesmo com a régua de
+// colunas reduzida pela metade (ver resolveFontSizePlan). Só faz sentido
+// junto do perfil ESC/POS "standard" (o "compat" da Daruma nem usa GS !).
+export function scaleLinesForRaw(lines: ThermalLine[]): ThermalLine[] {
+  return lines.map(l => ({ ...l, doubleBoth: true, doubleH: false, doubleW: false }));
 }
 
 // Sugere o valor do campo Driver a partir do nome da fila + driver Windows

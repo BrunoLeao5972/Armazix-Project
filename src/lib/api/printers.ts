@@ -16,6 +16,13 @@ async function rejectUnsafePrinterPath(path: string | null | undefined): Promise
   return target ? null : "Este endereço de impressora não é permitido.";
 }
 
+// "Normal" | "Grande" — qualquer outro valor cai pra "Normal" (comparação
+// sem distinguir maiúscula, ver src/lib/thermal/print-strategy.ts,
+// resolveFontSizePlan, que faz o mesmo na leitura).
+function normalizeFontSize(v: string | null | undefined): "Normal" | "Grande" {
+  return (v ?? "").trim().toLowerCase() === "grande" ? "Grande" : "Normal";
+}
+
 // ─── List ────────────────────────────────────────────────────────
 export async function listPrintersHandler(request: Request, auth?: AuthContext): Promise<Response> {
   let storeId: string;
@@ -66,6 +73,7 @@ export async function createPrinterHandler(request: Request, auth?: AuthContext)
     name: string;
     type: string;
     driver?: string;
+    fontSize?: string;
     path?: string;
     columns?: number;
   };
@@ -107,9 +115,10 @@ export async function createPrinterHandler(request: Request, auth?: AuthContext)
       code,
       name:    body.name.trim(),
       type:    body.type,
-      driver:  body.driver ?? "Nenhum",
-      path:    body.path?.trim() || null,
-      columns: body.columns ?? 48,
+      driver:   body.driver ?? "Nenhum",
+      fontSize: normalizeFontSize(body.fontSize),
+      path:     body.path?.trim() || null,
+      columns:  body.columns ?? 48,
     }).returning();
 
     return new Response(JSON.stringify({ success: true, printer }), {
@@ -142,6 +151,7 @@ export async function updatePrinterHandler(request: Request, auth?: AuthContext)
     name?: string;
     type?: string;
     driver?: string;
+    fontSize?: string;
     path?: string;
     columns?: number;
   };
@@ -177,7 +187,8 @@ export async function updatePrinterHandler(request: Request, auth?: AuthContext)
       .set({
         name:      body.name    !== undefined ? body.name.trim()   : existing.name,
         type:      body.type    !== undefined ? body.type          : existing.type,
-        driver:    body.driver  !== undefined ? body.driver        : existing.driver,
+        driver:    body.driver   !== undefined ? body.driver        : existing.driver,
+        fontSize:  body.fontSize !== undefined ? normalizeFontSize(body.fontSize) : existing.fontSize,
         path:      body.path    !== undefined ? (body.path.trim() || null) : existing.path,
         columns:   body.columns !== undefined ? body.columns       : existing.columns,
         updatedAt: new Date(),

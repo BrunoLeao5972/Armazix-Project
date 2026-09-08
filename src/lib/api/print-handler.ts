@@ -11,25 +11,41 @@ import {
   dbOrderToSample,
   type DbOrderForPrint, type ThermalLine,
 } from "@/lib/thermal/layouts";
-import { resolvePrintStrategy } from "@/lib/thermal/print-strategy";
+import { resolvePrintStrategy, resolveFontSizePlan, scaleLinesForRaw } from "@/lib/thermal/print-strategy";
 
 type PrintLayout = "production" | "caixa" | "delivery" | "ficha";
 
+// Decide de uma vez, a partir do cadastro da impressora, com quantas
+// colunas MONTAR o ticket (build*Ticket) — a régua física normal, ou uma
+// menor quando o Tamanho da Fonte é "Grande" (ver print-strategy.ts). É
+// esse valor que os build*Ticket recebem, e o mesmo que volta pro front em
+// `columns` pra mandar ao agente — sem isso o agente calcularia a fonte GDI
+// pra caber a régua física (maior), anulando o aumento.
+function resolvePrinterLayout(driver: string | null | undefined, fontSize: string | null | undefined, columns: number | null | undefined) {
+  const strategy = resolvePrintStrategy(driver);
+  const plan      = resolveFontSizePlan(strategy.mode, fontSize, columns ?? 48);
+  return { strategy, plan, cols: plan.layoutColumns };
+}
+
 // Serializa o ticket nos dois formatos que o front pode precisar (texto pro
 // preview, ESC/POS no perfil do driver) mais as `lines` cruas pro agente
-// renderizar via GDI, e o `mode` que diz por onde mandar. Único ponto que
-// decide o perfil de bytes — o front só repassa.
-function serializeTicket(lines: ThermalLine[], cols: number, driver: string | null | undefined) {
-  const strategy = resolvePrintStrategy(driver);
-  const escpos   = linesToEscPos(lines, cols, strategy.profile);
+// renderizar via GDI, e o `mode`/`columns` que dizem por onde e em que
+// régua mandar. Único ponto que decide o perfil de bytes — o front só
+// repassa. `lines` já deve ter sido montada com `cols` (ver
+// resolvePrinterLayout) — aqui só aplica o dobro de tamanho ESC/POS quando
+// o plano pede (impressora RAW em "Grande").
+function serializeTicket(lines: ThermalLine[], cols: number, strategy: ReturnType<typeof resolvePrintStrategy>, plan: ReturnType<typeof resolveFontSizePlan>) {
+  const scaledLines = plan.doubleRaw ? scaleLinesForRaw(lines) : lines;
+  const escpos       = linesToEscPos(scaledLines, cols, strategy.profile);
   return {
     escpos,
     payload: {
-      preview:   linesToText(lines, cols),
+      preview:   linesToText(scaledLines, cols),
       escposB64: Buffer.from(escpos, "binary").toString("base64"),
-      lines,
+      lines:     scaledLines,
       mode:      strategy.mode,
       profile:   strategy.profile,
+      columns:   cols,
     },
   };
 }
@@ -82,11 +98,12 @@ export async function printRawTestHandler(request: Request, auth?: AuthContext):
   }
 
   const body = await request.json() as {
-    path:     string;
-    columns?: number;
-    type?:    string;
-    driver?:  string;
-    layout?:  PrintLayout;
+    path:      string;
+    columns?:  number;
+    type?:     string;
+    driver?:   string;
+    fontSize?: string;
+    layout?:   PrintLayout;
   };
 
   if (!body.path?.trim()) {
@@ -95,8 +112,9 @@ export async function printRawTestHandler(request: Request, auth?: AuthContext):
     });
   }
 
-  const cols   = Math.min(255, Math.max(1, body.columns ?? 48));
+  const physicalCols = Math.min(255, Math.max(1, body.columns ?? 48));
   const layout: PrintLayout = body.layout ?? typeToLayout(body.type ?? "");
+  const { strategy, plan, cols } = resolvePrinterLayout(body.driver, body.fontSize, physicalCols);
 
   const linesMap = {
     production: () => buildProductionTicket(SAMPLE_STORE, SAMPLE_ORDER, cols),
@@ -106,7 +124,7 @@ export async function printRawTestHandler(request: Request, auth?: AuthContext):
   };
 
   const lines = linesMap[layout]();
-  const { escpos, payload } = serializeTicket(lines, cols, body.driver);
+  const { escpos, payload } = serializeTicket(lines, cols, strategy, plan);
 
   let sent      = false;
   let sendError: string | undefined;
@@ -169,9 +187,9 @@ export async function printTestHandler(request: Request, auth?: AuthContext): Pr
     });
   }
 
-  const cols  = printer.columns ?? 48;
   const order = SAMPLE_ORDER;
   const store = SAMPLE_STORE;
+  const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns);
 
   const linesMap = {
     production: () => buildProductionTicket(store, order, cols),
@@ -181,7 +199,7 @@ export async function printTestHandler(request: Request, auth?: AuthContext): Pr
   };
 
   const lines = linesMap[body.layout]();
-  const { escpos, payload } = serializeTicket(lines, cols, printer.driver);
+  const { escpos, payload } = serializeTicket(lines, cols, strategy, plan);
 
   let sent     = false;
   let sendError: string | undefined;
@@ -245,9 +263,9 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
   if (!printer) return new Response(JSON.stringify({ error: "Impressora não encontrada" }), { status: 404, headers: { "content-type": "application/json" } });
   if (!order)   return new Response(JSON.stringify({ error: "Pedido não encontrado" }),     { status: 404, headers: { "content-type": "application/json" } });
 
-  const cols        = printer.columns ?? 48;
   const sampleOrder = dbOrderToSample(order as unknown as DbOrderForPrint);
   const storeInfo   = SAMPLE_STORE; // TODO: load from db when store name/address fields are added
+  const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns);
 
   const linesMap = {
     production: () => buildProductionTicket(storeInfo, sampleOrder, cols),
@@ -257,7 +275,7 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
   };
 
   const lines = linesMap[body.layout]();
-  const { escpos, payload } = serializeTicket(lines, cols, printer.driver);
+  const { escpos, payload } = serializeTicket(lines, cols, strategy, plan);
 
   let sent = false;
   let sendError: string | undefined;
@@ -327,8 +345,8 @@ export async function printConferenciaHandler(request: Request, auth?: AuthConte
   const totalAdiantado = advances.reduce((s, a) => s + parseFloat(a.valor), 0);
   const agora          = new Date();
 
-  const cols      = printer.columns ?? 48;
   const storeInfo = SAMPLE_STORE; // TODO: carregar nome/endereço reais da loja quando os campos existirem
+  const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns);
   const lines     = buildConferenciaTicket(storeInfo, {
     mesaLabel: session.servicePoint?.nameOrNumber ?? "Atendimento",
     date:      agora.toLocaleDateString("pt-BR"),
@@ -342,7 +360,7 @@ export async function printConferenciaHandler(request: Request, auth?: AuthConte
     total: subtotal,
   }, cols);
 
-  const { escpos, payload } = serializeTicket(lines, cols, printer.driver);
+  const { escpos, payload } = serializeTicket(lines, cols, strategy, plan);
 
   let sent = false;
   let sendError: string | undefined;
