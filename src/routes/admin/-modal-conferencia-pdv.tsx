@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { X, Loader2, Printer, ClipboardCheck } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { isNetworkPath, dispatchPrint, describeAgentError } from "@/lib/print/print-order";
+import type { PrinterRecord, PrintApiResponse } from "@/lib/print/print-order";
 import { fmtBRL } from "./pdv";
-
-interface PrinterOption { id: string; name: string; type: string; active: boolean }
 
 // ─── Modal: Conferência ────────────────────────────────────────────
 // Pré-conta de uma mesa/comanda AINDA ABERTA — nunca fecha a conta, só
@@ -16,7 +16,7 @@ export default function ModalConferencia({
   subtotal: number; totalAdiantado: number; total: number;
   onClose: () => void;
 }) {
-  const [printers, setPrinters]   = useState<PrinterOption[]>([]);
+  const [printers, setPrinters]   = useState<PrinterRecord[]>([]);
   const [printerId, setPrinterId] = useState("");
   const [preview, setPreview]     = useState("");
   const [loading, setLoading]     = useState(false);
@@ -25,8 +25,8 @@ export default function ModalConferencia({
 
   useEffect(() => {
     fetch("/api/printers/list").then(r => r.json())
-      .then((d: { printers?: PrinterOption[] }) => {
-        const ativas    = (d.printers || []).filter(p => p.active);
+      .then((d: { printers?: PrinterRecord[] }) => {
+        const ativas    = (d.printers || []).filter(p => p.active !== false);
         const preferida = ativas.find(p => p.type === "Caixa") || ativas[0];
         setPrinters(ativas);
         if (preferida) setPrinterId(preferida.id);
@@ -46,15 +46,20 @@ export default function ModalConferencia({
       .finally(() => setLoading(false));
   }, [printerId, sessionId]);
 
+  // Rede → o servidor faz o TCP (send:true). Fila Windows → o servidor só
+  // gera os bytes/linhas e o agente local imprime (mesmo fluxo do modal de
+  // imprimir pedido). Driver HTML → impressão do navegador.
   const handleImprimir = async () => {
-    if (!printerId) return;
+    const printer = printers.find(p => p.id === printerId);
+    if (!printer) return;
     setPrinting(true); setError("");
     try {
-      const res  = await api.post("/api/printers/print-conferencia", { printerId, sessionId, send: true });
-      const data = await res.json() as { sent?: boolean; error?: string };
-      if (data.sent) onClose();
-      else setError(data.error || "Não foi possível enviar para a impressora.");
-    } catch { setError("Erro de conexão"); }
+      const needsTcp = isNetworkPath(printer.path ?? "");
+      const res  = await api.post("/api/printers/print-conferencia", { printerId, sessionId, send: needsTcp });
+      const data = await res.json() as PrintApiResponse;
+      await dispatchPrint(printer, data);
+      onClose();
+    } catch (err) { setError(describeAgentError(err)); }
     finally { setPrinting(false); }
   };
 

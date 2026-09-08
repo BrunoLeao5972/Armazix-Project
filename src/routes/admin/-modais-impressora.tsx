@@ -9,9 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   buildProductionTicket, buildCaixaCoupon, buildDeliveryTicket, buildFichaEntrega,
-  linesToEscPos, type ThermalLine,
+  linesToEscPos, linesToText, type ThermalLine,
   SAMPLE_STORE, SAMPLE_ORDER,
 } from "@/lib/thermal/layouts";
+import {
+  AGENT_URL, isNetworkPath, escposToBase64, sendViaAgent, printTextInBrowser, describeAgentError,
+  resolvePrintStrategy, suggestDriverFromQueue, type PrintMode,
+} from "@/lib/print/print-order";
 import { TYPE_COLORS } from "./impressoras";
 import type { PrinterRecord } from "./impressoras";
 
@@ -27,6 +31,20 @@ const EMPTY: PrinterForm = { name: "", type: "Produção", driver: "Nenhum", pat
 const TIPOS   = ["Produção", "Caixa", "Delivery"] as const;
 const DRIVERS = ["Nenhum", "Texto", "HTML", "Epson", "Daruma", "Elgin", "Tanca", "Goldentec"] as const;
 
+// O que cada modo (decidido pelo Driver, ver src/lib/thermal/print-strategy.ts)
+// significa na prática — mostrado embaixo do campo pra ninguém escolher no escuro.
+const MODE_HINT: Record<PrintMode, string> = {
+  raw:     "ESC/POS direto na fila do Windows (winspool RAW).",
+  gdi:     "Renderizado pelo driver do Windows — funciona em qualquer impressora instalada.",
+  auto:    "ESC/POS simplificado; o agente escolhe pela fila (Generic/Text Only → RAW, senão driver Windows) e tenta o outro se falhar.",
+  browser: "Abre o diálogo de impressão do navegador.",
+};
+
+function strategyLabel(driver: string | null | undefined): string {
+  const s = resolvePrintStrategy(driver);
+  return s.mode === "browser" ? "navegador" : `${s.mode}${s.profile === "compat" ? " · compat" : ""}`;
+}
+
 type PrintLayout = "production" | "caixa" | "delivery" | "ficha";
 const LAYOUT_TABS: { id: PrintLayout; label: string; hint: string }[] = [
   { id: "production", label: "Produção",         hint: "Cozinha / Bar" },
@@ -41,40 +59,21 @@ function typeToDefaultLayout(type: string): PrintLayout {
   return "production";
 }
 
-// ─── Agent helpers ───────────────────────────────────────────────
-const AGENT_URL = "http://localhost:3989";
-
-// True only for real network addresses (IP or hostname.with.dot).
-// Windows printer names like "IMP-TERMICA" or "HP LaserJet Pro" return false.
-function isNetworkPath(path: string): boolean {
-  const t = path.trim();
-  if (!t || t.startsWith("\\\\")) return false;
-  if (/^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?$/.test(t)) return true;   // IPv4
-  if (/^[\w-]+(?:\.[\w-]+)+(?::\d+)?$/.test(t))       return true;   // hostname.dot
-  return false;
-}
-
-// Converts a binary ESC/POS string to base64 (browser-safe, no Buffer needed).
-function escposToBase64(binary: string): string {
-  return btoa(Array.from(binary, c => String.fromCharCode(c.charCodeAt(0) & 0xff)).join(""));
-}
-
-// Sends ESC/POS bytes directly to the local Armazix Print Agent.
-async function sendViaAgent(printerName: string, escposB64: string): Promise<void> {
-  const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20_000);
-  try {
-    const res = await fetch(`${AGENT_URL}/print`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ printer_name: printerName, escpos_b64: escposB64 }),
-      signal:  ctrl.signal,
-    });
-    const data = await res.json() as { success?: boolean; error?: string };
-    if (!data.success) throw new Error(data.error ?? "Impressora não respondeu");
-  } finally {
-    clearTimeout(timer);
+// Manda uma página de teste montada no navegador (dados SAMPLE_*) pelo
+// caminho certo do driver: navegador, ou agente local com modo/perfil.
+// Impressora de rede não passa por aqui (o servidor faz o TCP).
+async function sendSampleToDevice(
+  path: string, driver: string | null | undefined, lines: ThermalLine[], cols: number,
+): Promise<string> {
+  const strategy = resolvePrintStrategy(driver);
+  if (strategy.mode === "browser") {
+    printTextInBrowser(linesToText(lines, cols), cols);
+    return "Enviado para a impressão do navegador.";
   }
+  const escpos = linesToEscPos(lines, cols, strategy.profile);
+  const result = await sendViaAgent(path, escposToBase64(escpos), { mode: strategy.mode, lines, columns: cols });
+  const usado  = result.mode ? ` (modo ${result.mode}${result.fallback ? ", após fallback" : ""})` : "";
+  return `Enviado para a impressora com sucesso!${usado}`;
 }
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
@@ -172,14 +171,14 @@ export function PrintPreviewModal({
 }) {
   const [activeLayout, setActiveLayout] = useState<PrintLayout>("production");
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const cols = printer?.columns ?? 48;
 
   useEffect(() => {
     if (open && printer) {
       setActiveLayout(typeToDefaultLayout(printer.type));
-      setSent(false);
+      setSent(null);
       setSendError(null);
     }
   }, [open, printer]);
@@ -198,7 +197,7 @@ export function PrintPreviewModal({
   const handleSendToDevice = async () => {
     if (!printer) return;
     setSending(true);
-    setSent(false);
+    setSent(null);
     setSendError(null);
     try {
       if (isNetworkPath(printer.path ?? "")) {
@@ -209,21 +208,14 @@ export function PrintPreviewModal({
           send:      true,
         });
         const data = await res.json() as { sent?: boolean; error?: string };
-        if (data.sent) setSent(true);
+        if (data.sent) setSent("Enviado para a impressora com sucesso!");
         else setSendError(data.error ?? "Impressão falhou");
       } else {
-        // ── Nome de impressora Windows → agente local ───────────
-        const escpos = linesToEscPos(lines, cols);
-        const b64    = escposToBase64(escpos);
-        await sendViaAgent(printer.path!, b64);
-        setSent(true);
+        // ── Nome de impressora Windows → agente local (ou navegador) ──
+        setSent(await sendSampleToDevice(printer.path!, printer.driver, lines, cols));
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Erro de conexão";
-      const offline = msg.includes("fetch") || msg.includes("Failed") || msg.includes("abort");
-      setSendError(offline
-        ? "Agente não encontrado. Verifique se o Armazix Print Agent está ativo na bandeja."
-        : msg);
+      setSendError(describeAgentError(err));
     } finally {
       setSending(false);
     }
@@ -244,7 +236,7 @@ export function PrintPreviewModal({
                 Teste de Impressão
               </DialogTitle>
               <p className="text-sm text-muted-foreground mt-0.5 truncate">
-                {printer.name} · {printer.code} · {cols} colunas
+                {printer.name} · {printer.code} · {cols} colunas · driver {printer.driver || "Nenhum"} ({strategyLabel(printer.driver)})
               </p>
             </div>
             <span className={`shrink-0 mt-0.5 inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold tracking-wide ${TYPE_COLORS[printer.type] ?? "bg-secondary text-muted-foreground"}`}>
@@ -284,7 +276,7 @@ export function PrintPreviewModal({
           )}
           {sent && (
             <p className="text-xs text-emerald-600 mb-2 text-center flex items-center justify-center gap-1.5">
-              <Check className="w-3.5 h-3.5" /> Enviado para a impressora com sucesso!
+              <Check className="w-3.5 h-3.5" /> {sent}
             </p>
           )}
           <div className="flex items-center justify-between gap-3">
@@ -319,15 +311,27 @@ export function PrintPreviewModal({
 // ─── Agent Printers Dialog ────────────────────────────────────────
 type AgentStatus = "idle" | "loading" | "ok" | "not-found" | "error";
 
+// Agente ≥ 1.1 devolve `details` (driver/porta/padrão por fila); o 1.0 só
+// devolve os nomes — a lista se monta dos dois jeitos.
+export interface AgentPrinterDetail {
+  name: string;
+  driver?: string;
+  port?: string;
+  isDefault?: boolean;
+}
+
+// Driver Windows que repassa bytes crus sem renderizar (o que o ESC/POS precisa).
+const isRawDriver = (driver?: string) => /generic|text only|raw/i.test(driver ?? "");
+
 export function AgentPrintersDialog({
   open, onClose, onSelect,
 }: {
   open: boolean;
   onClose: () => void;
-  onSelect: (name: string) => void;
+  onSelect: (name: string, detail?: AgentPrinterDetail) => void;
 }) {
   const [status, setStatus] = useState<AgentStatus>("idle");
-  const [printers, setPrinters] = useState<string[]>([]);
+  const [printers, setPrinters] = useState<AgentPrinterDetail[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
 
   const fetchFromAgent = useCallback(async () => {
@@ -340,8 +344,10 @@ export function AgentPrintersDialog({
       const res   = await fetch(`${AGENT_URL}/printers`, { signal: ctrl.signal });
       clearTimeout(timer);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as { printers?: string[] };
-      setPrinters(data.printers ?? []);
+      const data = await res.json() as { printers?: string[]; details?: AgentPrinterDetail[] };
+      setPrinters(data.details?.length
+        ? data.details
+        : (data.printers ?? []).map(name => ({ name })));
       setStatus("ok");
     } catch (err: unknown) {
       const isNetwork =
@@ -413,7 +419,7 @@ export function AgentPrintersDialog({
                 <p className="text-sm font-semibold">Agente não encontrado</p>
                 <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed max-w-xs mx-auto">
                   O <strong>Armazix Print Agent</strong> não está rodando neste computador.
-                  Abra a pasta do agente e execute o <strong>start.bat</strong>, depois clique em tentar novamente.
+                  Instale/abra o agente (ícone verde na bandeja, ao lado do relógio) e clique em tentar novamente.
                 </p>
               </div>
               <Button variant="outline" size="sm" onClick={fetchFromAgent}
@@ -457,22 +463,46 @@ export function AgentPrintersDialog({
                 {printers.length} impressora{printers.length !== 1 ? "s" : ""} encontrada{printers.length !== 1 ? "s" : ""} — clique para selecionar:
               </p>
               <ul className="space-y-1.5 max-h-64 overflow-y-auto -mr-1 pr-1">
-                {printers.map(name => (
-                  <li key={name}>
+                {printers.map(p => (
+                  <li key={p.name}>
                     <button
                       type="button"
-                      onClick={() => { onSelect(name); onClose(); }}
+                      onClick={() => { onSelect(p.name, p); onClose(); }}
                       className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border border-border/60 bg-background hover:bg-secondary/60 hover:border-primary/40 transition-all text-left group"
                     >
                       <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
                         <Printer className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
-                      <span className="text-sm font-medium truncate flex-1">{name}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium truncate">{p.name}</span>
+                          {p.isDefault && (
+                            <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary font-semibold">padrão</span>
+                          )}
+                        </div>
+                        {(p.driver || p.port) && (
+                          <p className="text-[11px] text-muted-foreground truncate">
+                            {p.driver ?? "—"}{p.port ? ` · ${p.port}` : ""}
+                            {p.driver && (
+                              <span className={`ml-1.5 font-semibold ${isRawDriver(p.driver) ? "text-emerald-600" : "text-amber-600"}`}>
+                                {isRawDriver(p.driver) ? "RAW" : "driver"}
+                              </span>
+                            )}
+                          </p>
+                        )}
+                      </div>
                       <Check className="w-3.5 h-3.5 text-muted-foreground/20 group-hover:text-primary ml-auto shrink-0 transition-colors" />
                     </button>
                   </li>
                 ))}
               </ul>
+              {printers.some(p => p.driver && !isRawDriver(p.driver)) && (
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  <span className="font-semibold text-amber-600">driver</span> = fila que renderiza pelo driver do fabricante
+                  (ESC/POS cru pode "sair OK" e não imprimir). Prefira uma fila <span className="font-semibold text-emerald-600">RAW</span>
+                  (Generic / Text Only) quando existir, ou escolha o Driver da marca no cadastro — o Armazix ajusta o modo sozinho.
+                </p>
+              )}
               <div className="flex justify-end pt-0.5">
                 <button type="button" onClick={fetchFromAgent}
                   className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors">
@@ -544,6 +574,7 @@ export default function PrinterFormModal({
           path:    form.path.trim(),
           columns: parseInt(form.columns, 10) || 48,
           type:    form.type,
+          driver:  form.driver,
         });
         const data = await res.json() as { preview?: string; sent?: boolean; error?: string };
         if (data.sent) {
@@ -552,7 +583,7 @@ export default function PrinterFormModal({
           setTestFeedback({ ok: false, msg: data.error ?? "Impressora não respondeu. Verifique o endereço." });
         }
       } else {
-        // ── Nome de impressora Windows → agente local ────────────
+        // ── Nome de impressora Windows → agente local (ou navegador) ──
         const cols   = parseInt(form.columns, 10) || 48;
         const layout = typeToDefaultLayout(form.type);
         const linesMap = {
@@ -561,21 +592,11 @@ export default function PrinterFormModal({
           delivery:   () => buildDeliveryTicket(SAMPLE_STORE, SAMPLE_ORDER, cols),
           ficha:      () => buildFichaEntrega(SAMPLE_STORE, SAMPLE_ORDER, cols),
         };
-        const lines  = linesMap[layout]();
-        const escpos = linesToEscPos(lines, cols);
-        const b64    = escposToBase64(escpos);
-        await sendViaAgent(form.path.trim(), b64);
-        setTestFeedback({ ok: true, msg: "Página de teste enviada com sucesso!" });
+        const msg = await sendSampleToDevice(form.path.trim(), form.driver, linesMap[layout](), cols);
+        setTestFeedback({ ok: true, msg });
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Erro desconhecido";
-      const offline = msg.includes("fetch") || msg.includes("Failed") || msg.includes("abort");
-      setTestFeedback({
-        ok: false,
-        msg: offline
-          ? "Agente Armazix Print não encontrado. Verifique se está ativo na bandeja do sistema."
-          : msg,
-      });
+      setTestFeedback({ ok: false, msg: describeAgentError(err) });
     } finally {
       setTesting(false);
       setTimeout(() => setTestFeedback(null), 6000);
@@ -659,6 +680,9 @@ export default function PrinterFormModal({
               </Field>
               <Field label="Driver">
                 <SelectField value={form.driver} onChange={v => set("driver", v)} options={DRIVERS} />
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                  {MODE_HINT[resolvePrintStrategy(form.driver).mode]}
+                </p>
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -738,7 +762,13 @@ export default function PrinterFormModal({
     <AgentPrintersDialog
       open={agentDialogOpen}
       onClose={() => setAgentDialogOpen(false)}
-      onSelect={name => set("path", name)}
+      onSelect={(name, detail) => {
+        set("path", name);
+        // Fila "DarumaDR700 (RAW)" / driver "Daruma DR700 Spooler" → Driver =
+        // Daruma, etc. Só sugere quando reconhece a marca; senão mantém.
+        const sugerido = suggestDriverFromQueue(name, detail?.driver);
+        if (sugerido) set("driver", sugerido);
+      }}
     />
   </>
   );

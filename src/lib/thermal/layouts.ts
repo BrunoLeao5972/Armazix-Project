@@ -35,7 +35,11 @@ export const ESCPOS = {
 
   // ── Paper feed and cut ────────────────────────────────────────────────────
   FEED_3:           `${ESC}d\x03`,   // feed 3 lines before cut
-  CUT_FULL:         `${GS}V\x00`,    // full paper cut
+  CUT_FULL:         `${GS}V\x00`,    // full paper cut (function A)
+  // GS V 65 16 — function B: avança até a posição de corte (+16 unidades) e
+  // corta. É o corte que a Daruma DR700 (e boa parte das térmicas BR) aceita;
+  // várias delas ignoram a função A (`GS V 0`) acima.
+  CUT_FEED_FULL:    `${GS}V\x41\x10`,
 
   // ── Backwards-compat aliases (kept so existing call-sites don't break) ────
   DOUBLE_ON:        `${GS}!\x11`,    // was ESC ! 0x30 — same visual effect
@@ -134,9 +138,61 @@ function toEscposAscii(text: string): string {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
+// Versão estrita: além de tirar acento, descarta qualquer byte fora do ASCII
+// imprimível (emoji em nome de produto, "─", "•"…). Impressora que não
+// entende `GS !`/`ESC M` costuma também engasgar com byte > 0x7E no meio
+// do texto — em vez de imprimir lixo, some com o caractere.
+function toStrictAscii(text: string): string {
+  return toEscposAscii(text).replace(/[^\x20-\x7E]/g, "");
+}
+
+// ─── Perfis de ESC/POS ───────────────────────────────────────────────────────
+// "standard": stream completo (fonte A/B, tamanho duplo, alinhamento por
+//   comando, corte função A) — Epson e compatíveis (Elgin, Tanca, Goldentec…).
+// "compat": stream mínimo — só `ESC @`, `ESC E` (negrito), texto ASCII com
+//   CRLF, 3×LF e corte função B. Alinhamento é emulado com espaços, tamanho
+//   duplo é ignorado. É exatamente o que a Daruma DR700 aceita: ela ignora ou
+//   se perde com `ESC M`, `GS !` e `GS V 0`, e o job "sai OK" no spooler sem
+//   imprimir nada.
+export type EscposProfile = "standard" | "compat";
+
 // ─── Serialise ThermalLine[] → ESC/POS binary string ─────────────────────────
 // The string uses single-byte chars so Buffer.from(str, "binary") yields raw bytes.
-export function linesToEscPos(lines: ThermalLine[], _cols: number): string {
+export function linesToEscPos(lines: ThermalLine[], cols: number, profile: EscposProfile = "standard"): string {
+  if (profile === "compat") return linesToEscPosCompat(lines, cols);
+  return linesToEscPosStandard(lines, cols);
+}
+
+function linesToEscPosCompat(lines: ThermalLine[], cols: number): string {
+  const CRLF = "\r\n";
+  let out = ESCPOS.INIT + ESCPOS.ALIGN_LEFT;
+
+  for (const l of lines) {
+    if (l.separator) {
+      const safeChar = l.separator === "─" ? "-" : l.separator;
+      out += safeChar.repeat(cols) + CRLF;
+      continue;
+    }
+
+    // Alinhamento emulado com espaços (mesma régua do preview em linesToText)
+    // — nada de `ESC a` por linha.
+    const text = toStrictAscii(l.text);
+    const aligned = l.center ? center(text, cols).trimEnd()
+                  : l.right  ? right(text, cols)
+                  : text;
+
+    const bold = !!(l.bold || l.doubleBoth);
+    if (bold) out += ESCPOS.BOLD_ON;
+    out += aligned;
+    if (bold) out += ESCPOS.BOLD_OFF;
+    out += CRLF;
+  }
+
+  out += "\n\n\n" + ESCPOS.CUT_FEED_FULL;
+  return out;
+}
+
+function linesToEscPosStandard(lines: ThermalLine[], _cols: number): string {
   let out = ESCPOS.INIT + ESCPOS.ALIGN_LEFT + ESCPOS.FONT_A + ESCPOS.SIZE_NORMAL;
 
   for (const l of lines) {

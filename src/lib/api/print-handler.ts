@@ -9,10 +9,30 @@ import {
   linesToText, linesToEscPos,
   SAMPLE_STORE, SAMPLE_ORDER,
   dbOrderToSample,
-  type DbOrderForPrint,
+  type DbOrderForPrint, type ThermalLine,
 } from "@/lib/thermal/layouts";
+import { resolvePrintStrategy } from "@/lib/thermal/print-strategy";
 
 type PrintLayout = "production" | "caixa" | "delivery" | "ficha";
+
+// Serializa o ticket nos dois formatos que o front pode precisar (texto pro
+// preview, ESC/POS no perfil do driver) mais as `lines` cruas pro agente
+// renderizar via GDI, e o `mode` que diz por onde mandar. Único ponto que
+// decide o perfil de bytes — o front só repassa.
+function serializeTicket(lines: ThermalLine[], cols: number, driver: string | null | undefined) {
+  const strategy = resolvePrintStrategy(driver);
+  const escpos   = linesToEscPos(lines, cols, strategy.profile);
+  return {
+    escpos,
+    payload: {
+      preview:   linesToText(lines, cols),
+      escposB64: Buffer.from(escpos, "binary").toString("base64"),
+      lines,
+      mode:      strategy.mode,
+      profile:   strategy.profile,
+    },
+  };
+}
 
 function typeToLayout(type: string): PrintLayout {
   switch (type) {
@@ -52,7 +72,7 @@ async function sendViaTcp(host: string, port: number, data: string): Promise<voi
 
 // ─── POST /api/printers/test-raw ─────────────────────────────────
 // Testa a impressora com config provisória (sem salvar no banco).
-// Body: { path, columns?, type?, layout? }
+// Body: { path, columns?, type?, driver?, layout? }
 export async function printRawTestHandler(request: Request, auth?: AuthContext): Promise<Response> {
   try { await requireStoreAccess(auth); } catch (error) {
     return new Response(JSON.stringify({ error: (error as Error).message }), {
@@ -65,6 +85,7 @@ export async function printRawTestHandler(request: Request, auth?: AuthContext):
     path:     string;
     columns?: number;
     type?:    string;
+    driver?:  string;
     layout?:  PrintLayout;
   };
 
@@ -84,10 +105,8 @@ export async function printRawTestHandler(request: Request, auth?: AuthContext):
     ficha:      () => buildFichaEntrega(SAMPLE_STORE, SAMPLE_ORDER, cols),
   };
 
-  const lines   = linesMap[layout]();
-  const preview = linesToText(lines, cols);
-  const escpos  = linesToEscPos(lines, cols);
-  const b64     = Buffer.from(escpos, "binary").toString("base64");
+  const lines = linesMap[layout]();
+  const { escpos, payload } = serializeTicket(lines, cols, body.driver);
 
   let sent      = false;
   let sendError: string | undefined;
@@ -109,7 +128,7 @@ export async function printRawTestHandler(request: Request, auth?: AuthContext):
     sendError = "Caminho / IP inválido ou não permitido.";
   }
 
-  return new Response(JSON.stringify({ preview, escposB64: b64, sent, error: sendError }), {
+  return new Response(JSON.stringify({ ...payload, sent, error: sendError }), {
     status: 200, headers: { "content-type": "application/json" },
   });
 }
@@ -161,10 +180,8 @@ export async function printTestHandler(request: Request, auth?: AuthContext): Pr
     ficha:      () => buildFichaEntrega(store, order, cols),
   };
 
-  const lines   = linesMap[body.layout]();
-  const preview = linesToText(lines, cols);
-  const escpos  = linesToEscPos(lines, cols);
-  const b64     = Buffer.from(escpos, "binary").toString("base64");
+  const lines = linesMap[body.layout]();
+  const { escpos, payload } = serializeTicket(lines, cols, printer.driver);
 
   let sent     = false;
   let sendError: string | undefined;
@@ -183,7 +200,7 @@ export async function printTestHandler(request: Request, auth?: AuthContext): Pr
     }
   }
 
-  return new Response(JSON.stringify({ preview, escposB64: b64, sent, error: sendError }), {
+  return new Response(JSON.stringify({ ...payload, sent, error: sendError }), {
     status: 200, headers: { "content-type": "application/json" },
   });
 }
@@ -239,10 +256,8 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
     ficha:      () => buildFichaEntrega(storeInfo, sampleOrder, cols),
   };
 
-  const lines   = linesMap[body.layout]();
-  const preview = linesToText(lines, cols);
-  const escpos  = linesToEscPos(lines, cols);
-  const b64     = Buffer.from(escpos, "binary").toString("base64");
+  const lines = linesMap[body.layout]();
+  const { escpos, payload } = serializeTicket(lines, cols, printer.driver);
 
   let sent = false;
   let sendError: string | undefined;
@@ -261,7 +276,7 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
     }
   }
 
-  return new Response(JSON.stringify({ preview, escposB64: b64, sent, error: sendError }), {
+  return new Response(JSON.stringify({ ...payload, sent, error: sendError }), {
     status: 200, headers: { "content-type": "application/json" },
   });
 }
@@ -327,9 +342,7 @@ export async function printConferenciaHandler(request: Request, auth?: AuthConte
     total: subtotal,
   }, cols);
 
-  const preview = linesToText(lines, cols);
-  const escpos  = linesToEscPos(lines, cols);
-  const b64     = Buffer.from(escpos, "binary").toString("base64");
+  const { escpos, payload } = serializeTicket(lines, cols, printer.driver);
 
   let sent = false;
   let sendError: string | undefined;
@@ -348,7 +361,7 @@ export async function printConferenciaHandler(request: Request, auth?: AuthConte
     }
   }
 
-  return new Response(JSON.stringify({ preview, escposB64: b64, sent, error: sendError }), {
+  return new Response(JSON.stringify({ ...payload, sent, error: sendError }), {
     status: 200, headers: { "content-type": "application/json" },
   });
 }

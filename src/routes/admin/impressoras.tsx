@@ -59,21 +59,42 @@ const AGENT_DOWNLOAD_URL: string =
   ?? "/downloads/ArmazixPrinter-Setup.exe";
 
 // ─── Agent Status Banner ──────────────────────────────────────────
+// Versão mínima do agente com modo GDI/auto e detalhes de fila — abaixo
+// disso o driver "Daruma" cai no RAW puro e não imprime na DR700.
+const AGENT_MIN_VERSION = "1.1.0";
+
+function versionLt(a: string, b: string): boolean {
+  const pa = a.split(".").map(n => parseInt(n, 10) || 0);
+  const pb = b.split(".").map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) < (pb[i] ?? 0);
+  }
+  return false;
+}
+
 function AgentBanner() {
   const [status, setStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [version, setVersion] = useState<string | null>(null);
 
   const check = useCallback(async () => {
     setStatus("checking");
+    setVersion(null);
     try {
       const ctrl  = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 3000);
       const res   = await fetch("http://localhost:3989/health", { signal: ctrl.signal });
       clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json().catch(() => ({})) as { version?: string };
+        setVersion(data.version ?? "1.0.0");
+      }
       setStatus(res.ok ? "online" : "offline");
     } catch {
       setStatus("offline");
     }
   }, []);
+
+  const outdated = status === "online" && !!version && versionLt(version, AGENT_MIN_VERSION);
 
   useEffect(() => { check(); }, [check]);
 
@@ -93,7 +114,13 @@ function AgentBanner() {
           {status === "online" && (
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[11px] font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
-              Ativo · porta 3989
+              Ativo · porta 3989{version ? ` · v${version}` : ""}
+            </span>
+          )}
+          {outdated && (
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[11px] font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+              Atualização disponível (v{AGENT_MIN_VERSION})
             </span>
           )}
           {status === "offline" && (
@@ -104,9 +131,11 @@ function AgentBanner() {
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {status === "online"
-            ? "Agente rodando — clique no ícone 🔍 no formulário de impressora para selecionar impressoras do PC."
-            : "Instale o agente para imprimir direto nas impressoras do computador sem precisar do IP de rede."}
+          {outdated
+            ? "Baixe e instale a versão nova por cima — ela traz o modo de impressão pelo driver do Windows (necessário para Daruma e outras que não aceitam ESC/POS direto)."
+            : status === "online"
+              ? "Agente rodando — clique no ícone 🔍 no formulário de impressora para selecionar impressoras do PC."
+              : "Instale o agente para imprimir direto nas impressoras do computador sem precisar do IP de rede."}
         </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">

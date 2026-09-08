@@ -3,8 +3,10 @@ import { api } from "@/lib/api-client";
 import { Check, Eye, Loader2, Printer, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { isNetworkPath, sendViaAgent } from "@/lib/print/print-order";
-import type { PrinterRecord } from "@/lib/print/print-order";
+import {
+  isNetworkPath, dispatchPrint, describeAgentError, printTextInBrowser, resolvePrintStrategy,
+} from "@/lib/print/print-order";
+import type { PrinterRecord, PrintApiResponse } from "@/lib/print/print-order";
 
 type PrintLayout = "production" | "caixa" | "delivery" | "ficha";
 
@@ -15,21 +17,29 @@ const LAYOUT_TABS: { id: PrintLayout; label: string; hint: string }[] = [
   { id: "ficha",      label: "Ficha",    hint: "Entrega detalhada"},
 ];
 
+// Como o pedido chega na impressora selecionada — só pra etiqueta do botão.
+function viaLabel(p: PrinterRecord): string {
+  if (resolvePrintStrategy(p.driver).mode === "browser") return "navegador";
+  if (isNetworkPath(p.path ?? "")) return "rede";
+  return "agente";
+}
+
 export default function PrintOrderDialog({ orderId, onClose }: { orderId: string | null; onClose: () => void }) {
   const [printers,    setPrinters]    = useState<PrinterRecord[]>([]);
   const [selected,    setSelected]    = useState<string>("");
   const [layout,      setLayout]      = useState<PrintLayout>("production");
-  const [preview,     setPreview]     = useState<string>("");
-  const [escposB64,   setEscposB64]   = useState<string>("");
+  const [printData,   setPrintData]   = useState<PrintApiResponse | null>(null);
   const [loading,     setLoading]     = useState(false);
   const [sending,     setSending]     = useState(false);
   const [sent,        setSent]        = useState(false);
   const [sendError,   setSendError]   = useState<string | null>(null);
 
+  const preview = printData?.preview ?? "";
+
   // Load printers once when dialog opens
   useEffect(() => {
     if (!orderId) return;
-    setSent(false); setSendError(null); setPreview(""); setEscposB64("");
+    setSent(false); setSendError(null); setPrintData(null);
     fetch("/api/printers/list")
       .then(r => r.json())
       .then((d: { printers?: PrinterRecord[] }) => {
@@ -40,19 +50,14 @@ export default function PrintOrderDialog({ orderId, onClose }: { orderId: string
       .catch(() => {});
   }, [orderId]);
 
-  // Fetch preview (and escposB64) whenever printer or layout changes
+  // Fetch preview (+ escposB64/lines/mode) whenever printer or layout changes
   useEffect(() => {
     if (!orderId || !selected) return;
     let cancelled = false;
     setLoading(true); setSent(false); setSendError(null);
     api.post("/api/printers/print-order", { printerId: selected, orderId, layout, send: false })
       .then(r => r.json())
-      .then((d: { preview?: string; escposB64?: string }) => {
-        if (!cancelled) {
-          setPreview(d.preview ?? "");
-          setEscposB64(d.escposB64 ?? "");
-        }
-      })
+      .then((d: PrintApiResponse) => { if (!cancelled) setPrintData(d); })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -60,57 +65,33 @@ export default function PrintOrderDialog({ orderId, onClose }: { orderId: string
 
   const handleBrowserPrint = () => {
     const printer = printers.find(p => p.id === selected);
-    const cols    = printer?.columns ?? 48;
-    const escaped = preview.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-    const html    = `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <title>Pedido #${orderId}</title>
-      <style>*{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Courier New',monospace;font-size:11px;line-height:1.4;width:${cols}ch;padding:8px;background:#fff;color:#000}
-        pre{white-space:pre}
-        @media print{@page{margin:4mm;size:${cols<=34?"58mm":"80mm"} auto}body{width:100%}}
-      </style></head><body><pre>${escaped}</pre></body></html>`;
-    const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:0;opacity:0";
-    document.body.appendChild(iframe);
-    const doc = iframe.contentDocument!;
-    doc.open(); doc.write(html); doc.close();
-    iframe.contentWindow?.focus();
-    iframe.contentWindow?.print();
-    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 2000);
+    printTextInBrowser(preview, printer?.columns ?? 48);
   };
 
   const handleSendToDevice = async () => {
     if (!selected || !orderId) return;
     const printer = printers.find(p => p.id === selected);
-    if (!printer?.path) return;
+    if (!printer) return;
     setSending(true); setSent(false); setSendError(null);
     try {
-      if (isNetworkPath(printer.path)) {
-        // IP/hostname → servidor faz TCP
-        const res  = await api.post("/api/printers/print-order", { printerId: selected, orderId, layout, send: true });
-        const data = await res.json() as { sent?: boolean; error?: string };
-        if (data.sent) setSent(true);
-        else setSendError(data.error ?? "Erro ao enviar para a impressora");
-      } else {
-        // Nome Windows → agente local
-        const b64 = escposB64 || await (
-          api.post("/api/printers/print-order", { printerId: selected, orderId, layout, send: false })
-            .then(r => r.json())
-            .then((d: { escposB64?: string }) => d.escposB64 ?? "")
-        );
-        await sendViaAgent(printer.path, b64);
-        setSent(true);
-      }
+      // Rede: o servidor precisa disparar o TCP (send:true) — busca de novo.
+      // Agente/navegador: o payload do preview já serve.
+      const needsTcp = isNetworkPath(printer.path ?? "");
+      const data = (needsTcp || !printData)
+        ? await api.post("/api/printers/print-order", { printerId: selected, orderId, layout, send: needsTcp })
+            .then(r => r.json() as Promise<PrintApiResponse>)
+        : printData;
+      await dispatchPrint(printer, data);
+      setSent(true);
     } catch (err) {
-      const msg     = err instanceof Error ? err.message : "Erro de conexão";
-      const offline = msg.includes("fetch") || msg.includes("Failed") || msg.includes("abort");
-      setSendError(offline ? "Agente não encontrado. Verifique se o Armazix Print Agent está ativo na bandeja." : msg);
+      setSendError(describeAgentError(err));
     } finally {
       setSending(false);
     }
   };
 
-  const hasTcpPath = !!printers.find(p => p.id === selected)?.path;
+  const selectedPrinter = printers.find(p => p.id === selected);
+  const canSend = !!selectedPrinter && (!!selectedPrinter.path || resolvePrintStrategy(selectedPrinter.driver).mode === "browser");
 
   return (
     <Dialog open={!!orderId} onOpenChange={v => !v && onClose()}>
@@ -148,7 +129,9 @@ export default function PrintOrderDialog({ orderId, onClose }: { orderId: string
                     <Printer className="w-3.5 h-3.5 shrink-0" />
                     <span>{p.name}</span>
                     <span className="text-[10px] text-muted-foreground">{p.columns ?? 48}col</span>
-                    {p.path && <span className="text-[10px] text-emerald-600 font-semibold">TCP</span>}
+                    {(p.path || resolvePrintStrategy(p.driver).mode === "browser") && (
+                      <span className="text-[10px] text-emerald-600 font-semibold uppercase">{viaLabel(p)}</span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -213,7 +196,7 @@ export default function PrintOrderDialog({ orderId, onClose }: { orderId: string
               >
                 <Eye className="w-3.5 h-3.5" /> Imprimir no navegador
               </Button>
-              {hasTcpPath && (
+              {canSend && (
                 <Button
                   size="sm"
                   onClick={handleSendToDevice}

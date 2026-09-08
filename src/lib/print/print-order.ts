@@ -8,8 +8,27 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { api } from "@/lib/api-client";
+import type { ThermalLine } from "@/lib/thermal/layouts";
+import { resolvePrintStrategy, type PrintMode } from "@/lib/thermal/print-strategy";
 
-export interface PrinterRecord { id: string; name: string; code: string; type: string; path: string | null; columns: number | null; }
+export { resolvePrintStrategy, suggestDriverFromQueue, type PrintMode, type PrintStrategy } from "@/lib/thermal/print-strategy";
+
+export interface PrinterRecord {
+  id: string; name: string; code: string; type: string;
+  driver?: string | null;
+  path: string | null; columns: number | null;
+  active?: boolean;
+}
+
+// Resposta comum de /api/printers/print-order, print-test e print-conferencia.
+export interface PrintApiResponse {
+  preview?:   string;
+  escposB64?: string;
+  lines?:     ThermalLine[];
+  mode?:      PrintMode;
+  sent?:      boolean;
+  error?:     string;
+}
 
 export interface PrintableOrder {
   orderId: string; number: number; customer: string;
@@ -32,7 +51,7 @@ const PAY_LABEL: Record<string, string> = {
   pix: "PIX", cash: "Dinheiro", card: "Crédito", debit: "Débito", mercadopago: "Mercado Pago",
 };
 
-const AGENT_URL = "http://localhost:3989";
+export const AGENT_URL = "http://localhost:3989";
 
 // Returns true only for real network addresses:
 //   - IPv4: 192.168.1.10  or  192.168.1.10:9100
@@ -46,21 +65,93 @@ export function isNetworkPath(path: string): boolean {
   return false;
 }
 
-export async function sendViaAgent(printerName: string, escposB64: string): Promise<void> {
+// Converts a binary ESC/POS string to base64 (browser-safe, no Buffer needed).
+export function escposToBase64(binary: string): string {
+  return btoa(Array.from(binary, c => String.fromCharCode(c.charCodeAt(0) & 0xff)).join(""));
+}
+
+// O que vai junto do ESC/POS pro agente: `mode` decide se ele manda os bytes
+// crus (raw), renderiza `lines` pelo driver Windows (gdi) ou escolhe sozinho
+// pela fila (auto). Agente 1.0.x ignora os campos extras e imprime raw —
+// compatível pra trás.
+export interface AgentPrintOptions {
+  mode?:    Exclude<PrintMode, "browser">;
+  lines?:   ThermalLine[];
+  columns?: number;
+}
+
+export interface AgentPrintResult {
+  mode?:     string;   // modo efetivamente usado pelo agente
+  fallback?: boolean;  // true quando "auto" precisou cair pro segundo modo
+  bytes?:    number;
+  message?:  string;
+}
+
+export async function sendViaAgent(printerName: string, escposB64: string, opts: AgentPrintOptions = {}): Promise<AgentPrintResult> {
   const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20_000);
+  // GDI compila C#/renderiza pelo driver — mais lento que o RAW; "auto" pode
+  // tentar os dois em sequência.
+  const timer = setTimeout(() => ctrl.abort(), 45_000);
   try {
     const res  = await fetch(`${AGENT_URL}/print`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ printer_name: printerName, escpos_b64: escposB64 }),
+      body: JSON.stringify({
+        printer_name: printerName,
+        escpos_b64:   escposB64 || undefined,
+        mode:         opts.mode ?? "raw",
+        lines:        opts.lines,
+        columns:      opts.columns,
+      }),
       signal: ctrl.signal,
     });
-    const data = await res.json() as { success?: boolean; error?: string };
+    const data = await res.json() as { success?: boolean; error?: string } & AgentPrintResult;
     if (!data.success) throw new Error(data.error ?? "Impressora não respondeu");
+    return data;
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Fluxo completo do lado do navegador pra uma impressora já cadastrada, a
+// partir da resposta de um dos endpoints /api/printers/print-*:
+//   - driver HTML → impressão do navegador com o preview
+//   - caminho de rede → o servidor já tentou TCP (`sent`)
+//   - nome de fila Windows → agente local, com o modo do driver
+// Lança Error com mensagem pronta pra UI.
+export async function dispatchPrint(printer: PrinterRecord, data: PrintApiResponse): Promise<void> {
+  const mode = data.mode ?? resolvePrintStrategy(printer.driver).mode;
+
+  if (mode === "browser") {
+    printTextInBrowser(data.preview ?? "", printer.columns ?? 48);
+    return;
+  }
+  if (data.sent) return;
+  if (isNetworkPath(printer.path ?? "")) {
+    throw new Error(data.error ?? "Não foi possível enviar para a impressora de rede");
+  }
+  if (!printer.path) throw new Error("Impressora sem caminho configurado");
+  if (!data.escposB64 && !data.lines?.length) throw new Error(data.error ?? "Nada para imprimir");
+
+  await sendViaAgent(printer.path, data.escposB64 ?? "", {
+    mode, lines: data.lines, columns: printer.columns ?? 48,
+  });
+}
+
+// Mensagem amigável pros erros mais comuns de envio ao agente.
+export function describeAgentError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : "Erro de conexão";
+  const offline = msg.includes("fetch") || msg.includes("Failed") || msg.includes("abort");
+  return offline
+    ? "Agente não encontrado. Verifique se o Armazix Print Agent está ativo na bandeja."
+    : msg;
+}
+
+// Abre o diálogo de impressão do navegador com o texto monoespaçado do
+// cupom (mesmo preview que a UI mostra) — usado pelo driver "HTML" e como
+// fallback quando o agente/impressora não respondem.
+export function printTextInBrowser(text: string, cols?: number) {
+  printViaIframe(buildPrintHtml(text, cols));
 }
 
 function printViaIframe(html: string) {
@@ -74,10 +165,16 @@ function printViaIframe(html: string) {
   setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 2000);
 }
 
-function buildPrintHtml(text: string): string {
+// Sem `cols` mantém o layout antigo do fallback (40ch / 58mm, pre-wrap).
+// Com `cols` respeita a largura real da impressora (≤34 col = 58mm, senão
+// 80mm) e não quebra linha — o texto já vem formatado na régua certa.
+function buildPrintHtml(text: string, cols?: number): string {
   const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const width = cols ? `${cols}ch` : "40ch";
+  const paper = cols ? (cols <= 34 ? "58mm" : "80mm") : "58mm";
+  const wrap  = cols ? "pre" : "pre-wrap";
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:11px;line-height:1.5;width:40ch;padding:8px;background:#fff;color:#000}pre{white-space:pre-wrap}@media print{@page{margin:4mm;size:58mm auto}body{width:100%}}</style>
+    <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:11px;line-height:1.5;width:${width};padding:8px;background:#fff;color:#000}pre{white-space:${wrap}}@media print{@page{margin:4mm;size:${paper} auto}body{width:100%}}</style>
     </head><body><pre>${esc}</pre></body></html>`;
 }
 
@@ -150,22 +247,19 @@ export async function printOrder(
       layout,
       send:      isNetworkPath(printer.path ?? ""),
     });
-    const data = await res.json() as { sent?: boolean; escposB64?: string; error?: string };
+    const data = await res.json() as PrintApiResponse;
 
-    if (data.sent) return;
-
-    if (!isNetworkPath(printer.path ?? "") && data.escposB64) {
-      await sendViaAgent(printer.path!, data.escposB64);
-      return;
+    try {
+      await dispatchPrint(printer, data);
+    } catch (err) {
+      // Impressora de rede offline/IP errado, agente fechado, fila
+      // inexistente… Sem este fallback o pedido não imprimia nada e não
+      // avisava ninguém.
+      onFallback?.(`${describeAgentError(err)} — abrindo impressão no navegador`);
+      printViaIframe(buildPrintHtml(buildBrowserText(order, fallbackLayout)));
     }
-
-    // Impressora de rede configurada mas o envio TCP falhou (offline/IP
-    // errado) — ou nenhuma via de envio disponível. Sem este fallback o
-    // pedido não imprimia nada e não avisava ninguém.
-    onFallback?.(data.error || "Não foi possível enviar para a impressora — abrindo impressão no navegador");
-    printViaIframe(buildPrintHtml(buildBrowserText(order, fallbackLayout)));
   } catch {
-    onFallback?.("Agente de impressão não encontrado — abrindo impressão no navegador");
+    onFallback?.("Não foi possível gerar a impressão — abrindo impressão no navegador");
     printViaIframe(buildPrintHtml(buildBrowserText(order, fallbackLayout)));
   }
 }
