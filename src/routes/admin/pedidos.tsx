@@ -248,6 +248,27 @@ function OrderCard({
     return () => document.removeEventListener("mousedown", handler);
   }, [reprintOpen]);
 
+  // Cancelar exige 2 cliques — o 1º só arma o botão (vira "Confirmar?"),
+  // o 2º (dentro de 3s) de fato cancela. Some sozinho se o operador não
+  // confirmar, pra não ficar armado indefinidamente num clique perdido.
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const confirmCancelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (confirmCancelTimer.current) clearTimeout(confirmCancelTimer.current);
+  }, []);
+
+  const handleCancelClick = () => {
+    if (!confirmCancel) {
+      setConfirmCancel(true);
+      confirmCancelTimer.current = setTimeout(() => setConfirmCancel(false), 3000);
+      return;
+    }
+    if (confirmCancelTimer.current) clearTimeout(confirmCancelTimer.current);
+    setConfirmCancel(false);
+    onCancel(order.orderId);
+  };
+
   const action = order.status === "ready" && order.type === "pickup"
     ? { label: "Retirado", next: "delivered", icon: CheckCircle2 }
     : order.status === "received" && order.type !== "pickup"
@@ -385,11 +406,17 @@ function OrderCard({
 
           {canCancel && (
             <button
-              onClick={() => onCancel(order.orderId)}
+              onClick={handleCancelClick}
               disabled={isAdvancing}
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors px-2 py-1 rounded-lg hover:bg-destructive/8 disabled:opacity-40"
+              title={confirmCancel ? "Clique de novo pra confirmar o cancelamento" : "Cancelar pedido"}
+              className={`flex items-center gap-1 text-[11px] font-medium transition-colors px-2 py-1 rounded-lg disabled:opacity-40 ${
+                confirmCancel
+                  ? "text-destructive-foreground bg-destructive hover:bg-destructive/90 animate-pulse"
+                  : "text-muted-foreground hover:text-destructive hover:bg-destructive/8"
+              }`}
             >
               <XCircle className="w-3 h-3" />
+              {confirmCancel && "Confirmar?"}
             </button>
           )}
           {prevStatus && (

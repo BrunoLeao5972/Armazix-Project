@@ -247,6 +247,12 @@ export interface SampleOrder {
   customerName: string; customerPhone: string;
   type: "delivery" | "pickup";
   paymentMethod: string; paymentStatus: "paid" | "pending";
+  // Formas de pagamento SEPARADAS quando o pedido foi pago com 2+ formas
+  // (order_payments) — "misto" não diz nada pro cliente sobre como o
+  // pedido foi pago de verdade. Presente (length ≥ 2) só nesse caso;
+  // `paymentMethod` acima continua "misto" pros outros lugares do sistema
+  // que só precisam saber "foi mais de uma forma", não o preview impresso.
+  payments?: { method: string; total: number }[];
   subtotal: number; deliveryFee: number; discount: number; total: number;
   changeFor?: number;
   items: SampleItem[];
@@ -276,6 +282,30 @@ export const SAMPLE_ORDER: SampleOrder = {
     complement: "Apto 201", city: "Recife/PE", reference: "Prox. ao Mercadao",
   },
 };
+
+// ─── Linha(s) de forma de pagamento ───────────────────────────────────────────
+// Pedido pago com 1 forma só → uma linha ("FORMA DE PAGAMENTO: Dinheiro").
+// Pago com 2+ formas (order.payments preenchido — ver dbOrderToSample) → uma
+// linha por forma com o valor, nunca "Misto" (não diz nada pro cliente sobre
+// como o pedido foi pago de verdade). Compartilhado por Cupom, Delivery e
+// Ficha — cada um manda o próprio rótulo (singular/plural) e se é bold, pra
+// manter o estilo que já tinha.
+function buildPaymentLines(
+  order: SampleOrder, cols: number,
+  labelSingular: string, labelPlural: string,
+  opts: { bold?: boolean; uppercase?: boolean } = {},
+): ThermalLine[] {
+  const { bold = false, uppercase = false } = opts;
+  const cap = (s: string) => uppercase ? s.toUpperCase() : s;
+
+  if (!order.payments || order.payments.length < 2) {
+    return [{ text: `${labelSingular}: ${cap(order.paymentMethod)}`, bold }];
+  }
+  return [
+    { text: `${labelPlural}:`, bold },
+    ...order.payments.map(p => ({ text: twoCol(cap(p.method), fmtMoney(p.total), cols), bold })),
+  ];
+}
 
 // ─── PRODUÇÃO — Kitchen / Bar ticket ──────────────────────────────────────────
 // Mesmo "esqueleto" do Cupom (buildCaixaCoupon)/Ficha (buildFichaEntrega) —
@@ -375,7 +405,7 @@ export function buildCaixaCoupon(store: SampleStore, order: SampleOrder, cols: n
   lines.push({ text: "" });
   lines.push({ text: twoCol("TOTAL", fmtMoney(order.total), cols), bold: true });
   lines.push({ text: "" });
-  lines.push({ text: `FORMA DE PAGAMENTO: ${order.paymentMethod}` });
+  lines.push(...buildPaymentLines(order, cols, "FORMA DE PAGAMENTO", "FORMAS DE PAGAMENTO"));
   lines.push({ text: "" });
   lines.push({ text: "", separator: "=" });
 
@@ -509,7 +539,7 @@ export function buildDeliveryTicket(store: SampleStore, order: SampleOrder, cols
   lines.push({ text: "" });
   lines.push({ text: twoCol("TOTAL", fmtMoney(order.total), cols), bold: true });
   lines.push({ text: "" });
-  lines.push({ text: `FORMA DE PAGAMENTO: ${order.paymentMethod}` });
+  lines.push(...buildPaymentLines(order, cols, "FORMA DE PAGAMENTO", "FORMAS DE PAGAMENTO"));
   lines.push({ text: "" });
   lines.push({ text: "", separator: "=" });
 
@@ -521,8 +551,13 @@ export function buildDeliveryTicket(store: SampleStore, order: SampleOrder, cols
 
 // ─── FICHA DE ENTREGA — Motoboy sheet ────────────────────────────────────────
 export function buildFichaEntrega(store: SampleStore, order: SampleOrder, cols: number): ThermalLine[] {
-  const addr   = order.address;
-  const isCash = /dinheiro|cash/i.test(order.paymentMethod);
+  const addr = order.address;
+  // Misto: se QUALQUER forma paga for dinheiro, ainda precisa de linha de
+  // troco — checando só order.paymentMethod ("misto" não bate no regex),
+  // a Ficha silenciosamente sumia com o troco de quem pagou parte em dinheiro.
+  const isCash = order.payments && order.payments.length >= 2
+    ? order.payments.some(p => /dinheiro|cash/i.test(p.method))
+    : /dinheiro|cash/i.test(order.paymentMethod);
 
   const lines: ThermalLine[] = [
     // ── Header ───────────────────────────────────────────────────────────────
@@ -552,12 +587,12 @@ export function buildFichaEntrega(store: SampleStore, order: SampleOrder, cols: 
     lines.push({ text: "** PEDIDO JA PAGO **", center: true, bold: true });
     lines.push({ text: "" });
     lines.push({ text: `Valor: ${fmtMoney(order.total)}`, bold: true });
-    lines.push({ text: `Forma de pagamento: ${order.paymentMethod.toUpperCase()}` });
+    lines.push(...buildPaymentLines(order, cols, "Forma de pagamento", "Formas de pagamento", { uppercase: true }));
   } else {
     lines.push({ text: "** Cobrar na entrega **", center: true, bold: true });
     lines.push({ text: "" });
     lines.push({ text: `Valor: ${fmtMoney(order.total)}`, bold: true });
-    lines.push({ text: `Forma de pagamento: ${order.paymentMethod.toUpperCase()}` });
+    lines.push(...buildPaymentLines(order, cols, "Forma de pagamento", "Formas de pagamento", { uppercase: true }));
     if (isCash) {
       lines.push({ text: "" });
       const trocoLine = order.changeFor && order.changeFor > 0
@@ -628,6 +663,10 @@ export interface DbOrderForPrint {
   changeFor:     string | number | null;
   paymentMethod: string | null;
   paymentStatus: string | null;
+  // Formas de pagamento separadas (order_payments) — só relevante quando
+  // paymentMethod === "misto" (2+ formas registradas). Carregar via
+  // `with: { payments: true }` na query do pedido.
+  payments?: { formaPagamento: string; valor: string | number }[];
   type:          string;
   notes:         string | null;
   addressSnapshot: {
@@ -658,6 +697,12 @@ export function dbOrderToSample(order: DbOrderForPrint): SampleOrder {
     type:    (order.type === "pickup" ? "pickup" : "delivery") as "delivery" | "pickup",
     paymentMethod: pmMap[order.paymentMethod ?? ""] ?? order.paymentMethod ?? "—",
     paymentStatus: (order.paymentStatus === "paid" ? "paid" : "pending") as "paid" | "pending",
+    payments: order.payments && order.payments.length >= 2
+      ? order.payments.map(p => ({
+          method: pmMap[p.formaPagamento] ?? p.formaPagamento,
+          total:  parseFloat(String(p.valor)) || 0,
+        }))
+      : undefined,
     subtotal:    parseFloat(String(order.subtotal))    || 0,
     deliveryFee: parseFloat(String(order.deliveryFee)) || 0,
     discount:    parseFloat(String(order.discount))    || 0,
@@ -679,5 +724,33 @@ export function dbOrderToSample(order: DbOrderForPrint): SampleOrder {
       city:         addr?.city ? `${addr.city}${addr.state ? `/${addr.state}` : ""}` : "",
       reference:    addr?.reference,
     },
+  };
+}
+
+// ─── Real-store DB adapter ────────────────────────────────────────────────────
+export interface DbStoreForPrint {
+  name: string;
+  phone: string | null;
+  address: {
+    street?: string; number?: string; neighborhood?: string; complement?: string;
+  } | null;
+}
+
+// Cabeçalho REAL da loja pro cupom/ficha (nome, endereço, telefone) — antes
+// disso todo pedido saía com "ARMAZIX TESTE DE IMPRESSAO" fixo, mesmo em
+// pedido de verdade. Sem endereço cadastrado, a linha some (sem "undefined").
+export function dbStoreToSample(store: DbStoreForPrint): SampleStore {
+  const addr = store.address;
+  const address = addr
+    ? [
+        addr.street ? `${addr.street}${addr.number ? `, ${addr.number}` : ""}` : "",
+        addr.complement,
+        addr.neighborhood,
+      ].filter(Boolean).join(" - ")
+    : "";
+  return {
+    name:    store.name,
+    address,
+    phone:   store.phone ?? "",
   };
 }

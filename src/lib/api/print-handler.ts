@@ -8,8 +8,8 @@ import {
   buildConferenciaTicket,
   linesToText, linesToEscPos,
   SAMPLE_STORE, SAMPLE_ORDER,
-  dbOrderToSample,
-  type DbOrderForPrint, type ThermalLine,
+  dbOrderToSample, dbStoreToSample,
+  type DbOrderForPrint, type DbStoreForPrint, type ThermalLine,
 } from "@/lib/thermal/layouts";
 import { resolvePrintStrategy, resolveFontSizePlan, scaleLinesForRaw } from "@/lib/thermal/print-strategy";
 
@@ -63,9 +63,18 @@ function typeToLayout(type: string): PrintLayout {
 }
 
 const {
-  printers, orders, orderItems, customers,
+  printers, orders, orderItems, customers, stores,
   servicePointSessions, servicePointTabItems, servicePointAdvances, servicePoints,
 } = schema;
+
+// ─── Carrega nome/endereço/telefone reais da loja pro cabeçalho do cupom ──
+async function getStoreInfo(db: Awaited<ReturnType<typeof createUnscopedDb>>, storeId: string) {
+  const store = await db.query.stores.findFirst({
+    where: eq(stores.id, storeId),
+    columns: { name: true, phone: true, address: true },
+  });
+  return store ? dbStoreToSample(store as DbStoreForPrint) : SAMPLE_STORE;
+}
 
 // ─── Resolve printer by ID, scoped to store ───────────────────────
 async function getPrinter(db: Awaited<ReturnType<typeof createUnscopedDb>>, printerId: string, storeId: string) {
@@ -191,7 +200,7 @@ export async function printTestHandler(request: Request, auth?: AuthContext): Pr
   }
 
   const order = SAMPLE_ORDER;
-  const store = SAMPLE_STORE;
+  const store = await getStoreInfo(db, storeId);
   const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns, body.layout);
 
   const linesMap = {
@@ -255,19 +264,19 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
 
   const db = await createUnscopedDb(process.env.DATABASE_URL!, storeId);
 
-  const [printer, order] = await Promise.all([
+  const [printer, order, storeInfo] = await Promise.all([
     getPrinter(db, body.printerId, storeId),
     db.query.orders.findFirst({
       where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)),
-      with: { items: true, customer: true },
+      with: { items: true, customer: true, payments: true },
     }),
+    getStoreInfo(db, storeId),
   ]);
 
   if (!printer) return new Response(JSON.stringify({ error: "Impressora não encontrada" }), { status: 404, headers: { "content-type": "application/json" } });
   if (!order)   return new Response(JSON.stringify({ error: "Pedido não encontrado" }),     { status: 404, headers: { "content-type": "application/json" } });
 
   const sampleOrder = dbOrderToSample(order as unknown as DbOrderForPrint);
-  const storeInfo   = SAMPLE_STORE; // TODO: load from db when store name/address fields are added
   const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns, body.layout);
 
   const linesMap = {
@@ -348,7 +357,7 @@ export async function printConferenciaHandler(request: Request, auth?: AuthConte
   const totalAdiantado = advances.reduce((s, a) => s + parseFloat(a.valor), 0);
   const agora          = new Date();
 
-  const storeInfo = SAMPLE_STORE; // TODO: carregar nome/endereço reais da loja quando os campos existirem
+  const storeInfo = await getStoreInfo(db, storeId);
   // "conferencia" nunca foi testada em Grande — fica sempre normal (ver
   // GDI_GRANDE_SAFE_LAYOUTS em print-strategy.ts).
   const { strategy, plan, cols } = resolvePrinterLayout(printer.driver, printer.fontSize, printer.columns, "conferencia");

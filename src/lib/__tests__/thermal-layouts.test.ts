@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { linesToEscPos, linesToText, ESCPOS, type ThermalLine } from "@/lib/thermal/layouts";
+import {
+  linesToEscPos, linesToText, ESCPOS, type ThermalLine,
+  buildCaixaCoupon, buildFichaEntrega, dbOrderToSample, dbStoreToSample,
+  SAMPLE_STORE, SAMPLE_ORDER, type DbOrderForPrint,
+} from "@/lib/thermal/layouts";
 import {
   resolvePrintStrategy, suggestDriverFromQueue, resolveFontSizePlan, scaleLinesForRaw,
 } from "@/lib/thermal/print-strategy";
@@ -181,5 +185,80 @@ describe("scaleLinesForRaw", () => {
       { text: "TOTAL", doubleBoth: true, doubleH: false, doubleW: false },
       { text: "", separator: "=", doubleBoth: true, doubleH: false, doubleW: false },
     ]);
+  });
+});
+
+describe("dbStoreToSample", () => {
+  it("monta o endereço a partir de street/number/complement/neighborhood", () => {
+    expect(dbStoreToSample({
+      name: "Armazix Loja Teste", phone: "(85) 90000-0000",
+      address: { street: "Rua das Palmeiras", number: "50", complement: "Sala 2", neighborhood: "Centro" },
+    })).toEqual({
+      name: "Armazix Loja Teste", phone: "(85) 90000-0000",
+      address: "Rua das Palmeiras, 50 - Sala 2 - Centro",
+    });
+  });
+
+  it("sem endereço cadastrado, address fica string vazia (nunca 'undefined')", () => {
+    const r = dbStoreToSample({ name: "Loja Sem Endereço", phone: null, address: null });
+    expect(r).toEqual({ name: "Loja Sem Endereço", phone: "", address: "" });
+  });
+});
+
+const BASE_DB_ORDER: DbOrderForPrint = {
+  number: 1, createdAt: new Date("2026-01-01T12:00:00Z"),
+  customer: { name: "Cliente Teste", phone: "(85) 90000-0000" },
+  items: [{ productName: "Item", quantity: 1, unitPrice: "10.00", total: "10.00", notes: null }],
+  subtotal: "10.00", deliveryFee: "0", discount: "0", total: "10.00", changeFor: null,
+  paymentMethod: "misto", paymentStatus: "paid", type: "delivery", notes: null,
+  addressSnapshot: null,
+};
+
+describe("dbOrderToSample — formas de pagamento separadas (misto)", () => {
+  it("2+ pagamentos em order_payments viram `payments`, rotulados", () => {
+    const sample = dbOrderToSample({
+      ...BASE_DB_ORDER,
+      payments: [
+        { formaPagamento: "cash", valor: "20.00" },
+        { formaPagamento: "pix", valor: "10.00" },
+      ],
+    });
+    expect(sample.payments).toEqual([
+      { method: "Dinheiro", total: 20 },
+      { method: "PIX", total: 10 },
+    ]);
+  });
+
+  it("0 ou 1 pagamento em order_payments não vira `payments` (fica undefined)", () => {
+    expect(dbOrderToSample({ ...BASE_DB_ORDER, payments: [] }).payments).toBeUndefined();
+    expect(dbOrderToSample({ ...BASE_DB_ORDER, payments: [{ formaPagamento: "cash", valor: "10.00" }] }).payments).toBeUndefined();
+    expect(dbOrderToSample(BASE_DB_ORDER).payments).toBeUndefined();
+  });
+});
+
+describe("buildCaixaCoupon / buildFichaEntrega — impressão de pagamento misto", () => {
+  const order = { ...SAMPLE_ORDER, payments: [{ method: "Dinheiro", total: 20 }, { method: "PIX", total: 10 }] };
+
+  it("Cupom: uma linha por forma, nunca 'FORMA DE PAGAMENTO: misto'", () => {
+    const text = linesToText(buildCaixaCoupon(SAMPLE_STORE, order, 40), 40);
+    expect(text).toContain("FORMAS DE PAGAMENTO:");
+    expect(text).toMatch(/Dinheiro\s+R\$ 20,00/);
+    expect(text).toMatch(/PIX\s+R\$ 10,00/);
+    expect(text).not.toContain("misto");
+    expect(text).not.toContain("FORMA DE PAGAMENTO:");
+  });
+
+  it("Ficha: idem, em caixa alta, e detecta dinheiro dentro do misto pro troco", () => {
+    const withCash = { ...order, paymentStatus: "pending" as const, changeFor: 5 };
+    const text = linesToText(buildFichaEntrega(SAMPLE_STORE, withCash, 40), 40);
+    expect(text).toContain("Formas de pagamento:");
+    expect(text).toMatch(/DINHEIRO\s+R\$ 20,00/);
+    expect(text).toMatch(/PIX\s+R\$ 10,00/);
+    expect(text).toContain("Troco para: R$ 5,00");
+  });
+
+  it("pagamento único continua na linha simples de sempre", () => {
+    const text = linesToText(buildCaixaCoupon(SAMPLE_STORE, SAMPLE_ORDER, 40), 40);
+    expect(text).toContain(`FORMA DE PAGAMENTO: ${SAMPLE_ORDER.paymentMethod}`);
   });
 });
