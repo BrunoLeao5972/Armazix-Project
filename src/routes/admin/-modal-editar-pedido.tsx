@@ -35,6 +35,13 @@ const fmtBRL = (v: number | string) => {
   return "R$ " + (isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ","));
 };
 
+// Mesmo padrão de src/routes/store/checkout.tsx — CEP com máscara e
+// autocomplete via /api/validate-cep.
+const maskCep = (v: string) => {
+  const d = v.replace(/\D/g, "").slice(0, 8);
+  return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
+};
+
 let tempIdSeq = 0;
 const newTempKey = () => `novo-${Date.now()}-${tempIdSeq++}`;
 
@@ -76,13 +83,65 @@ export default function EditOrderDialog({
     setAddress(prev => ({ ...prev, ...patch }));
   };
 
+  // CEP primeiro — digitando os 8 dígitos, preenche rua/bairro/cidade/UF
+  // sozinho (mesmo endpoint e padrão de src/routes/store/checkout.tsx).
+  const [cepLoading, setCepLoading] = useState(false);
+  const handleCepChange = async (raw: string) => {
+    const masked = maskCep(raw);
+    const digits = masked.replace(/\D/g, "");
+    updateAddress({ zip: masked });
+    if (digits.length === 8) {
+      setCepLoading(true);
+      try {
+        const res = await fetch(`/api/validate-cep?cep=${digits}`);
+        const data = await res.json() as Record<string, string>;
+        if (data.street) {
+          updateAddress({
+            street: data.street, neighborhood: data.neighborhood || address.neighborhood,
+            city: data.city || address.city, state: data.state || address.state,
+          });
+        }
+      } catch { /* ignore */ } finally { setCepLoading(false); }
+    }
+  };
+
   // Taxa de entrega — editável manualmente (correção do operador sempre
   // vence). Sem mexer aqui, o endereço novo (se editado) recalcula a taxa
-  // automaticamente no servidor.
+  // automaticamente — mostrado ao vivo aqui (via /api/delivery/estimate,
+  // o mesmo motor que o checkout usa) e recalculado de verdade no
+  // servidor ao salvar (estimateDelivery, dentro de priceOrder()).
   const [deliveryFee, setDeliveryFee] = useState(() => (parseFloat(order.deliveryFee ?? "0") || 0).toFixed(2).replace(".", ","));
   const [deliveryFeeDirty, setDeliveryFeeDirty] = useState(false);
+  const [feeEstimating, setFeeEstimating] = useState(false);
   const discountValue = parseFloat(order.discount ?? "0") || 0;
   const originalTotal = parseFloat(order.total) || 0;
+
+  const enderecoCompleto = !!(address.street.trim() && address.city.trim() && address.state.trim());
+  const subtotalAtual = items.reduce((s, i) => s + (parseFloat(i.unitPrice) || 0) * i.quantity, 0);
+
+  useEffect(() => {
+    if (!isDelivery || deliveryFeeDirty || !enderecoCompleto) return;
+    let cancelado = false;
+    setFeeEstimating(true);
+    const t = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          storeId: localStorage.getItem("storeId") || "", subtotal: subtotalAtual.toFixed(2),
+          street: address.street, number: address.number, neighborhood: address.neighborhood,
+          city: address.city, state: address.state, zip: address.zip,
+        });
+        const res = await fetch(`/api/delivery/estimate?${params.toString()}`);
+        const data = await res.json() as { fee?: string; feePending?: boolean };
+        if (cancelado) return;
+        if (res.ok && !data.feePending && data.fee !== undefined) {
+          setDeliveryFee(parseFloat(data.fee).toFixed(2).replace(".", ","));
+        }
+      } catch { /* mantém o valor atual em caso de erro */ }
+      finally { if (!cancelado) setFeeEstimating(false); }
+    }, 600);
+    return () => { cancelado = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDelivery, deliveryFeeDirty, enderecoCompleto, address.street, address.number, address.neighborhood, address.city, address.state, address.zip, subtotalAtual]);
 
   // Pagamento — pedido ainda não concretizado: lista completa (substitui o
   // pagamento do pedido inteiro). Já concretizado: só escolhe a forma pra
@@ -300,6 +359,11 @@ export default function EditOrderDialog({
                 <MapPin className="w-3.5 h-3.5" />Endereço de Entrega
               </p>
               <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-1 relative">
+                  <Input value={address.zip} onChange={e => handleCepChange(e.target.value)}
+                    placeholder="CEP" inputMode="numeric" className="h-9 text-sm rounded-xl" />
+                  {cepLoading && <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+                </div>
                 <Input value={address.street} onChange={e => updateAddress({ street: e.target.value })}
                   placeholder="Rua" className="col-span-2 h-9 text-sm rounded-xl" />
                 <Input value={address.number} onChange={e => updateAddress({ number: e.target.value })}
@@ -312,12 +376,10 @@ export default function EditOrderDialog({
                   placeholder="Cidade" className="col-span-2 h-9 text-sm rounded-xl" />
                 <Input value={address.state} onChange={e => updateAddress({ state: e.target.value.toUpperCase().slice(0, 2) })}
                   placeholder="UF" maxLength={2} className="h-9 text-sm rounded-xl uppercase" />
-                <Input value={address.zip} onChange={e => updateAddress({ zip: e.target.value })}
-                  placeholder="CEP" className="col-span-3 h-9 text-sm rounded-xl" />
               </div>
               {addressDirty && !deliveryFeeDirty && (
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  A taxa de entrega vai recalcular automaticamente pro endereço novo ao salvar.
+                  {feeEstimating ? "Calculando a taxa de entrega pro endereço novo..." : "Taxa de entrega recalculada pro endereço novo."}
                 </p>
               )}
             </div>
@@ -334,6 +396,7 @@ export default function EditOrderDialog({
               <div className="flex justify-between items-center gap-2 text-sm">
                 <span className="text-muted-foreground flex items-center gap-1.5">
                   <Truck className="w-3.5 h-3.5" />Taxa de entrega
+                  {feeEstimating && !deliveryFeeDirty && <Loader2 className="w-3 h-3 animate-spin" />}
                 </span>
                 <Input
                   value={deliveryFee}
