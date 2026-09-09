@@ -12,6 +12,95 @@ import {
   HISTORICOS, historicoIndent, historicoLabel, ActionMenu, EmptyState, fmt, Toast, StatusIconBadge,
 } from "./-fin-shared";
 
+// ─────────────────────────────────────────────────
+// CAMPOS DE FORMULÁRIO — nível de módulo, não dentro do componente do modal
+// ─────────────────────────────────────────────────
+// Achado real (bug reportado: só dava pra digitar "letra por letra" nos
+// campos de Contas a Receber/Pagar): Field/Sel/Sep/ROLabel eram definidos
+// DENTRO do corpo de ModalEditarContaPagar/ModalNovaContaPagar — cada
+// tecla digitada chama setForm, que re-renderiza o modal, e uma NOVA
+// referência de função desses "componentes" era criada a cada render. O
+// React não tem como saber que é "o mesmo" Field de antes (a identidade da
+// função mudou), então desmonta o <input> anterior e monta um novo no
+// lugar — o campo perde o foco a cada tecla. Definidos aqui fora, a
+// identidade da função nunca muda entre renders, e o <input> real por
+// baixo é o mesmo elemento DOM o tempo todo.
+function EditarContaField({ label, value, onChange, disabled, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; disabled?: boolean; placeholder?: string;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</label>
+      <Input value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
+        placeholder={placeholder}
+        className={`h-9 rounded-xl text-sm ${disabled ? "opacity-50 cursor-not-allowed bg-secondary/30" : ""}`} />
+    </div>
+  );
+}
+
+function EditarContaSelect({ label, value, onChange, opts, disabled }: {
+  label: string; value: string; onChange: (v: string) => void; opts: string[]; disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</label>
+      <div className="relative">
+        <select value={value} onChange={e => onChange(e.target.value)} disabled={disabled}
+          className={`w-full h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer ${disabled ? "opacity-50 cursor-not-allowed bg-secondary/30" : ""}`}>
+          {opts.map(o => <option key={o}>{o}</option>)}
+        </select>
+        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+      </div>
+    </div>
+  );
+}
+
+function EditarContaReadOnly({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
+      <p className="text-sm text-foreground/60 bg-secondary/30 rounded-xl px-3 py-2 border border-dashed border-border/40">{value || "—"}</p>
+    </div>
+  );
+}
+
+function NovaContaField({ label, value, onChange, placeholder, type = "text" }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-semibold text-muted-foreground">{label}</label>
+      <Input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} type={type}
+        className="h-9 rounded-xl text-sm" />
+    </div>
+  );
+}
+
+function NovaContaSelect({ label, value, onChange, opts }: {
+  label: string; value: string; onChange: (v: string) => void; opts: string[];
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-semibold text-muted-foreground">{label}</label>
+      <div className="relative">
+        <select value={value} onChange={e => onChange(e.target.value)}
+          className="w-full h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
+          {opts.map(o => <option key={o}>{o}</option>)}
+        </select>
+        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+      </div>
+    </div>
+  );
+}
+
+function NovaContaSep({ title }: { title: string }) {
+  return (
+    <div className="border-t border-border/30 pt-4">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{title}</p>
+    </div>
+  );
+}
+
 // ── Modal Nova Conta a Pagar ──
 function ModalNovaContaPagar({ onClose, onSave }: { onClose: () => void; onSave: (dados: Record<string, unknown>) => void }) {
   const [form, setForm] = useState({
@@ -35,31 +124,6 @@ function ModalNovaContaPagar({ onClose, onSave }: { onClose: () => void; onSave:
     });
   };
 
-  const Field = ({ label, k, placeholder, type = "text" }: { label: string; k: string; placeholder?: string; type?: string }) => (
-    <div className="space-y-1.5">
-      <label className="text-xs font-semibold text-muted-foreground">{label}</label>
-      <Input value={f[k]} onChange={e => set(k, e.target.value)} placeholder={placeholder} type={type}
-        className="h-9 rounded-xl text-sm" />
-    </div>
-  );
-  const Sel = ({ label, k, opts }: { label: string; k: string; opts: string[] }) => (
-    <div className="space-y-1.5">
-      <label className="text-xs font-semibold text-muted-foreground">{label}</label>
-      <div className="relative">
-        <select value={f[k]} onChange={e => set(k, e.target.value)}
-          className="w-full h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
-          {opts.map(o => <option key={o}>{o}</option>)}
-        </select>
-        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-      </div>
-    </div>
-  );
-  const Sep = ({ title }: { title: string }) => (
-    <div className="border-t border-border/30 pt-4">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{title}</p>
-    </div>
-  );
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -74,29 +138,29 @@ function ModalNovaContaPagar({ onClose, onSave }: { onClose: () => void; onSave:
         <div className="p-6 space-y-0">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Informações Principais</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Fornecedor *" k="fornecedor" placeholder="Nome do fornecedor" />
-            <Field label="Documento" k="documento" placeholder="Ex: NF-1099" />
-            <Field label="Descrição *" k="desc" placeholder="Ex: Compra de mercadorias" />
-            <Sel label="Histórico" k="categoria" opts={historicosDespesa.map(h => historicoLabel(h))} />
-            <Sel label="Centro de Custo" k="centroCusto" opts={["Compras", "Infraestrutura", "Marketing", "RH", "TI", "Admin"]} />
-            <Field label="Responsável" k="responsavel" placeholder="Nome" />
+            <NovaContaField label="Fornecedor *" value={f.fornecedor} onChange={v => set("fornecedor", v)} placeholder="Nome do fornecedor" />
+            <NovaContaField label="Documento" value={f.documento} onChange={v => set("documento", v)} placeholder="Ex: NF-1099" />
+            <NovaContaField label="Descrição *" value={f.desc} onChange={v => set("desc", v)} placeholder="Ex: Compra de mercadorias" />
+            <NovaContaSelect label="Histórico" value={f.categoria} onChange={v => set("categoria", v)} opts={historicosDespesa.map(h => historicoLabel(h))} />
+            <NovaContaSelect label="Centro de Custo" value={f.centroCusto} onChange={v => set("centroCusto", v)} opts={["Compras", "Infraestrutura", "Marketing", "RH", "TI", "Admin"]} />
+            <NovaContaField label="Responsável" value={f.responsavel} onChange={v => set("responsavel", v)} placeholder="Nome" />
           </div>
-          <Sep title="Valores" />
+          <NovaContaSep title="Valores" />
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Valor *" k="valor" placeholder="0,00" />
-            <Field label="Juros" k="juros" placeholder="0,00" />
-            <Field label="Desconto" k="desconto" placeholder="0,00" />
+            <NovaContaField label="Valor *" value={f.valor} onChange={v => set("valor", v)} placeholder="0,00" />
+            <NovaContaField label="Juros" value={f.juros} onChange={v => set("juros", v)} placeholder="0,00" />
+            <NovaContaField label="Desconto" value={f.desconto} onChange={v => set("desconto", v)} placeholder="0,00" />
           </div>
-          <Sep title="Pagamento" />
+          <NovaContaSep title="Pagamento" />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Sel label="Forma de Pagamento" k="formaPgto" opts={["Boleto", "PIX", "Transferência", "Débito Auto", "Cartão", "Dinheiro"]} />
-            <Sel label="Conta Financeira" k="contaFinanceira" opts={["Caixa", "Banco", "Cartão", "Débito"]} />
-            <Sel label="Parcelas" k="parcelas" opts={["1", "2", "3", "6", "12"]} />
+            <NovaContaSelect label="Forma de Pagamento" value={f.formaPgto} onChange={v => set("formaPgto", v)} opts={["Boleto", "PIX", "Transferência", "Débito Auto", "Cartão", "Dinheiro"]} />
+            <NovaContaSelect label="Conta Financeira" value={f.contaFinanceira} onChange={v => set("contaFinanceira", v)} opts={["Caixa", "Banco", "Cartão", "Débito"]} />
+            <NovaContaSelect label="Parcelas" value={f.parcelas} onChange={v => set("parcelas", v)} opts={["1", "2", "3", "6", "12"]} />
           </div>
-          <Sep title="Datas" />
+          <NovaContaSep title="Datas" />
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Emissão" k="emissao" placeholder="DD/MM/AAAA" />
-            <Field label="Vencimento *" k="vencimento" placeholder="DD/MM/AAAA" />
+            <NovaContaField label="Emissão" value={f.emissao} onChange={v => set("emissao", v)} placeholder="DD/MM/AAAA" />
+            <NovaContaField label="Vencimento *" value={f.vencimento} onChange={v => set("vencimento", v)} placeholder="DD/MM/AAAA" />
           </div>
           <div className="border-t border-border/30 pt-4 mt-4">
             <div className="space-y-1.5">
@@ -219,35 +283,6 @@ function ModalEditarContaPagar({
     onSave(atualizada, { antes, depois });
   };
 
-  const ROLabel = ({ label, value }: { label: string; value: string }) => (
-    <div className="space-y-1">
-      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
-      <p className="text-sm text-foreground/60 bg-secondary/30 rounded-xl px-3 py-2 border border-dashed border-border/40">{value || "—"}</p>
-    </div>
-  );
-
-  const Field = ({ label, k, disabled, placeholder }: { label: string; k: keyof typeof form; disabled?: boolean; placeholder?: string }) => (
-    <div className="space-y-1">
-      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</label>
-      <Input value={form[k]} onChange={e => set(k, e.target.value)} disabled={disabled}
-        placeholder={placeholder}
-        className={`h-9 rounded-xl text-sm ${disabled ? "opacity-50 cursor-not-allowed bg-secondary/30" : ""}`} />
-    </div>
-  );
-
-  const Sel = ({ label, k, opts, disabled }: { label: string; k: keyof typeof form; opts: string[]; disabled?: boolean }) => (
-    <div className="space-y-1">
-      <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</label>
-      <div className="relative">
-        <select value={form[k]} onChange={e => set(k, e.target.value)} disabled={disabled}
-          className={`w-full h-9 pl-3 pr-8 text-sm rounded-xl border border-input bg-background appearance-none focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer ${disabled ? "opacity-50 cursor-not-allowed bg-secondary/30" : ""}`}>
-          {opts.map(o => <option key={o}>{o}</option>)}
-        </select>
-        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-      </div>
-    </div>
-  );
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -275,30 +310,30 @@ function ModalEditarContaPagar({
           <div>
             <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-3">Informações da Origem (somente leitura)</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <ROLabel label="Documento" value={conta.documento} />
-              <ROLabel label="Emissão" value={conta.emissao} />
-              <ROLabel label="Origem" value={conta.origem} />
-              <ROLabel label="Status" value={conta.status} />
-              <ROLabel label="Fornecedor" value={conta.fornecedor} />
+              <EditarContaReadOnly label="Documento" value={conta.documento} />
+              <EditarContaReadOnly label="Emissão" value={conta.emissao} />
+              <EditarContaReadOnly label="Origem" value={conta.origem} />
+              <EditarContaReadOnly label="Status" value={conta.status} />
+              <EditarContaReadOnly label="Fornecedor" value={conta.fornecedor} />
             </div>
           </div>
 
           <div>
             <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-3">Valores</p>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Valor Nominal" k="valor" disabled={regra.bloquearValores} placeholder="0,00" />
-              <Field label="Juros" k="juros" disabled={regra.bloquearValores} placeholder="0,00" />
-              <Field label="Desconto" k="desconto" disabled={regra.bloquearValores} placeholder="0,00" />
+              <EditarContaField label="Valor Nominal" value={form.valor} onChange={v => set("valor", v)} disabled={regra.bloquearValores} placeholder="0,00" />
+              <EditarContaField label="Juros" value={form.juros} onChange={v => set("juros", v)} disabled={regra.bloquearValores} placeholder="0,00" />
+              <EditarContaField label="Desconto" value={form.desconto} onChange={v => set("desconto", v)} disabled={regra.bloquearValores} placeholder="0,00" />
             </div>
           </div>
 
           <div>
             <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-3">Classificação</p>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Vencimento" k="vencimento" disabled={regra.bloquearVencimento} placeholder="DD/MM/AAAA" />
-              <Sel label="Histórico" k="categoria" disabled={false}
+              <EditarContaField label="Vencimento" value={form.vencimento} onChange={v => set("vencimento", v)} disabled={regra.bloquearVencimento} placeholder="DD/MM/AAAA" />
+              <EditarContaSelect label="Histórico" value={form.categoria} onChange={v => set("categoria", v)} disabled={false}
                 opts={HISTORICOS.filter(h => h.natureza === "DESPESA" && h.nivel === 3).map(h => historicoLabel(h))} />
-              <Sel label="Centro de Custo" k="centroCusto" disabled={false}
+              <EditarContaSelect label="Centro de Custo" value={form.centroCusto} onChange={v => set("centroCusto", v)} disabled={false}
                 opts={["Compras","Infraestrutura","Marketing","RH","TI","Admin"]} />
             </div>
           </div>

@@ -251,18 +251,17 @@ export function EmptyState({ icon: Icon, title, desc }: { icon: ElementType; tit
   );
 }
 
-export function DateTimeRangeFilter({ value, onChange }: {
-  value: DateTimeRange; onChange: (v: DateTimeRange) => void;
+// Nível de módulo, não dentro de DateTimeRangeFilter — mesmo bug de perda de
+// foco a cada tecla (ver comentário em -sec-receivables.tsx/-sec-payables.tsx):
+// definido dentro do componente, uma nova referência de função nascia a cada
+// render, e o React desmontava/remontava os <input> a cada mudança de valor.
+function CapsuleInput({
+  label, dateVal, timeVal, onDateChange, onTimeChange,
+}: {
+  label: string; dateVal: string; timeVal: string;
+  onDateChange: (v: string) => void; onTimeChange: (v: string) => void;
 }) {
-  const set = (k: keyof DateTimeRange, v: string) => onChange({ ...value, [k]: v });
-  const hasFilter = value.dataInicio || value.dataFim;
-
-  const CapsuleInput = ({
-    label, dateVal, timeVal, onDateChange, onTimeChange,
-  }: {
-    label: string; dateVal: string; timeVal: string;
-    onDateChange: (v: string) => void; onTimeChange: (v: string) => void;
-  }) => (
+  return (
     <div className="flex flex-col gap-1">
       <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1">{label}</span>
       <div className="flex items-center bg-secondary/50 border border-border/50 rounded-xl px-2 h-10 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/30 transition-all">
@@ -276,6 +275,13 @@ export function DateTimeRangeFilter({ value, onChange }: {
       </div>
     </div>
   );
+}
+
+export function DateTimeRangeFilter({ value, onChange }: {
+  value: DateTimeRange; onChange: (v: DateTimeRange) => void;
+}) {
+  const set = (k: keyof DateTimeRange, v: string) => onChange({ ...value, [k]: v });
+  const hasFilter = value.dataInicio || value.dataFim;
 
   return (
     <div className="flex flex-wrap items-end gap-3">
