@@ -108,16 +108,24 @@ const MODULOS_LABEL: Record<ModuloReport, { label: string; cor: string }> = { es
 // escondia nada (auditoria de segurança, achado F2). null enquanto carrega
 // OU se a request falhar: trata como sem permissão, nunca como "admin" por
 // default.
-function useStoreRole(): StoreRole | null {
+// Também devolve o nome do estabelecimento (store.name) — usado no
+// cabeçalho do PDF exportado (ver ResultadoRelatorioModal/exportarPDF),
+// pra não mostrar "ARMAZIX" no lugar do nome real da loja do cliente.
+function useStoreInfo(): { storeRole: StoreRole | null; storeName: string } {
   const [storeRole, setStoreRole] = useState<StoreRole | null>(null);
+  const [storeName, setStoreName] = useState("");
   useEffect(() => {
     let cancelado = false;
     fetch("/api/store/user").then(r => r.json())
-      .then((d: { storeRole?: StoreRole }) => { if (!cancelado) setStoreRole(d.storeRole ?? null); })
+      .then((d: { storeRole?: StoreRole; store?: { name?: string } }) => {
+        if (cancelado) return;
+        setStoreRole(d.storeRole ?? null);
+        setStoreName(d.store?.name ?? "");
+      })
       .catch(() => {});
     return () => { cancelado = true; };
   }, []);
-  return storeRole;
+  return { storeRole, storeName };
 }
 
 function hojeISO(offsetDias = 0): string {
@@ -339,7 +347,7 @@ function ReportCard({ report, isFavorito, onToggleFavorito, onVisualizar, isLock
 const EMISSOES_24H = 12;
 
 function ReportsPage() {
-  const storeRole = useStoreRole();
+  const { storeRole, storeName } = useStoreInfo();
   const [busca, setBusca] = useState("");
   const [filtroModulo, setFiltroModulo] = useState<ModuloReport | "todos">("todos");
   const [filtroUso, setFiltroUso] = useState<UsoReport | "todos">("todos");
@@ -455,6 +463,7 @@ function ReportsPage() {
           <ResultadoRelatorioModal
             reportId={resultadoAberto.reportId}
             filtros={resultadoAberto.filtros}
+            storeName={storeName}
             onClose={() => setResultadoAberto(null)}
           />
         )}

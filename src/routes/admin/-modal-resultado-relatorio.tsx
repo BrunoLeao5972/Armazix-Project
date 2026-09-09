@@ -734,14 +734,41 @@ export async function fetchReportData(reportId: string, filtros: FiltrosDrawer):
 // ─── Exportação — mesmas funções genéricas que existiam em
 // relatorios-preview.tsx (jsPDF + autoTable, xlsx), agora reaproveitadas
 // sobre o resultado de verdade em vez de dado mock. ───────────────────
-function exportarPDF(resultado: ResultadoRelatorio) {
+function exportarPDF(resultado: ResultadoRelatorio, storeName: string) {
   const doc = new jsPDF();
-  doc.setFontSize(16);
-  doc.text("ARMAZIX - " + resultado.titulo, 14, 20);
-  doc.setFontSize(10);
-  doc.text("Emitido em: " + new Date().toLocaleString("pt-BR"), 14, 28);
+  const pageWidth = doc.internal.pageSize.width;
+  const centerX = pageWidth / 2;
 
-  let startY = 34;
+  // Cabeçalho: nome do estabelecimento (não "ARMAZIX" — esse é o nome da
+  // loja do cliente, não da plataforma) centralizado, com o nome do
+  // relatório logo abaixo — a marca do sistema só aparece no rodapé.
+  let y = 18;
+  if (storeName) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(0);
+    doc.text(storeName, centerX, y, { align: "center" });
+    y += 8;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    doc.setTextColor(80);
+    doc.text(resultado.titulo, centerX, y, { align: "center" });
+    y += 7;
+  } else {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(0);
+    doc.text(resultado.titulo, centerX, y, { align: "center" });
+    y += 8;
+  }
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(130);
+  doc.text("Emitido em: " + new Date().toLocaleString("pt-BR"), centerX, y, { align: "center" });
+  doc.setTextColor(0);
+  y += 6;
+
+  let startY = y;
   if (resultado.kpis.length) {
     doc.setFontSize(9);
     const kpiLine = resultado.kpis.map(k => `${k.label}: ${k.value}`).join("   |   ");
@@ -772,12 +799,19 @@ function exportarPDF(resultado: ResultadoRelatorio) {
     });
   }
 
+  // Rodapé: paginação à esquerda (como já era), marca do sistema à direita —
+  // a única menção a "ARMAZIX" no PDF fica aqui, nunca no cabeçalho.
   const pageCount = (doc as unknown as { internal: { getNumberOfPages(): number } }).internal.getNumberOfPages();
+  const footerY = doc.internal.pageSize.height - 10;
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(8);
-    doc.text(`Página ${i} de ${pageCount} — ARMAZIX`, 14, doc.internal.pageSize.height - 10);
+    doc.setTextColor(100);
+    doc.text(`Página ${i} de ${pageCount}`, 14, footerY);
+    doc.text("armazix.com.br", pageWidth - 14, footerY, { align: "right" });
   }
+  doc.setTextColor(0);
 
   doc.save(`relatorio_${resultado.titulo.toLowerCase().replace(/\s+/g, "_")}_${Date.now()}.pdf`);
 }
@@ -856,8 +890,8 @@ function semTodoDado(resultado: ResultadoRelatorio): boolean {
 }
 
 export function ResultadoRelatorioModal({
-  reportId, filtros, onClose,
-}: { reportId: string; filtros: FiltrosDrawer; onClose: () => void }) {
+  reportId, filtros, storeName, onClose,
+}: { reportId: string; filtros: FiltrosDrawer; storeName?: string; onClose: () => void }) {
   const [resultado, setResultado] = useState<ResultadoRelatorio | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
@@ -887,7 +921,7 @@ export function ResultadoRelatorioModal({
           <div className="flex items-center gap-2">
             {resultado && (
               <>
-                <Button variant="outline" size="sm" onClick={() => exportarPDF(resultado)} className="text-red-600 border-red-200 hover:bg-red-50">
+                <Button variant="outline" size="sm" onClick={() => exportarPDF(resultado, storeName || "")} className="text-red-600 border-red-200 hover:bg-red-50">
                   <FileText className="w-4 h-4 mr-1.5" /> PDF
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => exportarExcel(resultado)} className="text-emerald-600 border-emerald-200 hover:bg-emerald-50">
