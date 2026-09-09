@@ -1815,6 +1815,104 @@ export async function searchProductsHandler(request: Request, auth?: AuthContext
   }
 }
 
+// ─── Get Customer (detalhe completo, sem máscara) ────────────────
+// listCustomersHandler mascara telefone/e-mail/CPF na LISTA por LGPD, mas
+// o modal de edição do admin (-modal-cliente.tsx) precisa do dado real pra
+// não sobrescrever o campo com o valor mascarado ao salvar — achado real:
+// form.phone.replace(/\D/g,"") em cima de "(85) *****-1297" virava
+// "851297", corrompendo o telefone do cliente toda vez que alguém abria
+// pra editar e salvava sem prestar atenção nisso. Devolve também o
+// endereço padrão (addresses.isDefault) do cliente, se existir — o
+// cadastro do admin também não estava salvando endereço nenhum.
+export async function getCustomerHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const customerId = new URL(request.url).searchParams.get("customerId");
+  if (!customerId) return new Response(JSON.stringify({ error: "customerId obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = await createUnscopedDb(dbUrl, storeId);
+
+  try {
+    const customer = await db.query.customers.findFirst({
+      where: and(eq(customers.id, customerId), eq(customers.storeId, storeId)),
+    });
+    if (!customer) {
+      return new Response(JSON.stringify({ error: "Contato não encontrado" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+
+    const [address] = await db.select().from(addresses)
+      .where(eq(addresses.customerId, customerId))
+      .orderBy(desc(addresses.isDefault), desc(addresses.createdAt))
+      .limit(1);
+
+    return new Response(JSON.stringify({ success: true, customer, address: address ?? null }), { status: 200, headers: { "content-type": "application/json" } });
+  } catch (error) {
+    console.error("Get customer error:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), { status: 500, headers: { "content-type": "application/json" } });
+  }
+}
+
+// ─── Endereço do contato (admin) ──────────────────────────────────
+// O cadastro de cliente do admin (-modal-cliente.tsx) tem uma aba
+// "Endereço" há tempos, mas create/updateCustomerHandler nunca liam esses
+// campos do body — o formulário existia só na tela, sem nunca persistir
+// nada. Um contato cadastrado pelo admin tem no máximo UM endereço (ao
+// contrário do checkout da loja, que permite vários com addresses.label) —
+// sempre o "padrão" (isDefault: true), então create faz um INSERT simples
+// e update faz um upsert nesse único registro.
+interface AddressInput {
+  street?: string; number?: string; complement?: string;
+  neighborhood?: string; city?: string; state?: string; zip?: string;
+}
+
+// Só considera "endereço fornecido" se os campos realmente obrigatórios
+// pra registro (schema addresses: street/number/neighborhood/city/state
+// NOT NULL) vieram preenchidos — envio parcial (só um CEP digitado e
+// nada mais, por exemplo) não gera um endereço incompleto no banco.
+function normalizeAddressInput(a: AddressInput | undefined): {
+  street: string; number: string; complement?: string;
+  neighborhood: string; city: string; state: string; zip: string;
+} | null {
+  if (!a) return null;
+  const street = a.street?.trim();
+  const number = a.number?.trim();
+  const city = a.city?.trim();
+  const state = a.state?.trim();
+  if (!street || !number || !city || !state) return null;
+  return {
+    street, number, city, state: state.toUpperCase().slice(0, 2),
+    neighborhood: a.neighborhood?.trim() || "-",
+    zip: a.zip?.replace(/\D/g, "") || "00000000",
+    ...(a.complement?.trim() && { complement: a.complement.trim() }),
+  };
+}
+
+async function upsertCustomerAddress(
+  db: Awaited<ReturnType<typeof createUnscopedDb>>,
+  customerId: string,
+  input: ReturnType<typeof normalizeAddressInput>,
+): Promise<void> {
+  if (!input) return;
+  const [existing] = await db.select({ id: addresses.id }).from(addresses)
+    .where(and(eq(addresses.customerId, customerId), eq(addresses.isDefault, true)))
+    .limit(1);
+  if (existing) {
+    await db.update(addresses).set(input).where(eq(addresses.id, existing.id));
+  } else {
+    await db.insert(addresses).values({ customerId, isDefault: true, ...input });
+  }
+}
+
 // ─── Create Customer ─────────────────────────────────────────────
 export async function createCustomerHandler(request: Request, auth?: AuthContext): Promise<Response> {
   // IDOR Fix: Validate store access using auth context only
@@ -1829,7 +1927,11 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
     });
   }
 
-  const body = await request.json() as { name: string; email?: string; phone?: string; cpf?: string; isSupplier?: boolean; isDeliverer?: boolean; status?: string };
+  const body = await request.json() as {
+    name: string; email?: string; phone?: string; cpf?: string;
+    isSupplier?: boolean; isDeliverer?: boolean; status?: string;
+    address?: AddressInput;
+  };
   if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -1847,6 +1949,11 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
       status: body.status ?? "ativo",
       active: (body.status ?? "ativo") === "ativo",
     }).returning();
+
+    const addressInput = normalizeAddressInput(body.address);
+    if (addressInput) {
+      await db.insert(addresses).values({ customerId: customer.id, isDefault: true, ...addressInput });
+    }
 
     // Invalida cache da listagem do CRM em background — não bloqueia a resposta.
     // Fail-safe: erros do Redis são absorvidos dentro de deleteKey().
@@ -1882,6 +1989,7 @@ export async function updateCustomerHandler(request: Request, auth?: AuthContext
     isSupplier?: boolean;
     isDeliverer?: boolean;
     status?: string;
+    address?: AddressInput;
   };
 
   if (!body.customerId) {
@@ -1917,6 +2025,10 @@ export async function updateCustomerHandler(request: Request, auth?: AuthContext
       })
       .where(and(eq(customers.id, body.customerId), eq(customers.storeId, storeId)))
       .returning();
+
+    if (body.address !== undefined) {
+      await upsertCustomerAddress(db, body.customerId, normalizeAddressInput(body.address));
+    }
 
     // Invalida cache da listagem do CRM em background — não bloqueia a resposta.
     waitUntil(request, deleteKey(customersCacheKey(storeId)));

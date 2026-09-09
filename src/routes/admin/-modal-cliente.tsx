@@ -45,6 +45,11 @@ const EMPTY: CustomerForm = {
 const BR_STATES = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS",
   "MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 
+interface AddressApi {
+  street: string; number: string; complement: string | null;
+  neighborhood: string; city: string; state: string; zip: string;
+}
+
 // ─── Masks ────────────────────────────────────────────────────────
 const maskCPF  = (v: string) => v.replace(/\D/g, "").substring(0, 11).replace(/(\d{3})(\d{3})(\d{3})(\d{0,2})/, "$1.$2.$3-$4").replace(/-$/, "");
 const maskCNPJ = (v: string) => v.replace(/\D/g, "").substring(0, 14).replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{0,2})/, "$1.$2.$3/$4-$5").replace(/-$/, "");
@@ -78,13 +83,44 @@ export default function CustomerFormModal({
   const [tab, setTab] = useState<"basic" | "contact" | "address" | "notes">("basic");
   const [errors, setErrors] = useState<{ name?: string }>({});
 
+  // Achado real: a lista de contatos (clientes.tsx) mascara telefone/e-mail/
+  // CPF por LGPD ("(85) *****-1297") — usar esse valor direto aqui (como
+  // era antes) e depois só remover os não-dígitos pra salvar
+  // (form.phone.replace(/\D/g,"")) corrompia o telefone real do cliente:
+  // os asteriscos somem no replace e sobra só DDD + 4 últimos dígitos.
+  // Por isso busca o registro completo (sem máscara) direto do servidor
+  // sempre que abre pra editar, em vez de reaproveitar o item já mascarado
+  // que veio da lista. De quebra, já traz o endereço salvo (se houver) —
+  // a aba Endereço também nunca carregava nada de um cliente existente.
   useEffect(() => {
-    if (editing) {
-      setForm({ ...EMPTY, name: editing.name, email: editing.email || "", phone: maskPhone(editing.phone || ""), cpf: editing.cpf ? maskCPF(editing.cpf) : "", isSupplier: editing.isSupplier ?? false, isDeliverer: editing.isDeliverer ?? false, status: (editing.status as CustomerForm["status"]) ?? "ativo" });
-    } else {
-      setForm(EMPTY);
-    }
+    if (!open) return;
+    if (!editing?.id) { setForm(EMPTY); setTab("basic"); return; }
+
+    setForm({ ...EMPTY, name: editing.name, status: (editing.status as CustomerForm["status"]) ?? "ativo" });
     setTab("basic");
+
+    let cancelado = false;
+    fetch(`/api/customers/get?customerId=${editing.id}`)
+      .then(r => r.json())
+      .then((d: { customer?: Customer; address?: AddressApi | null }) => {
+        if (cancelado || !d.customer) return;
+        const c = d.customer;
+        const a = d.address;
+        setForm(f => ({
+          ...f,
+          name: c.name, email: c.email || "",
+          phone: c.phone ? maskPhone(c.phone) : "",
+          cpf: c.cpf ? maskCPF(c.cpf) : "",
+          isSupplier: c.isSupplier ?? false, isDeliverer: c.isDeliverer ?? false,
+          status: (c.status as CustomerForm["status"]) ?? "ativo",
+          cep: a?.zip ? maskCEP(a.zip) : "",
+          street: a?.street || "", number: a?.number || "",
+          complement: a?.complement || "", neighborhood: a?.neighborhood || "",
+          city: a?.city || "", state: a?.state || "",
+        }));
+      })
+      .catch(() => {});
+    return () => { cancelado = true; };
   }, [editing, open]);
 
   const set = (k: keyof CustomerForm, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
@@ -117,6 +153,17 @@ export default function CustomerFormModal({
       let res: Response;
       let data: { success?: boolean; customer?: Customer; error?: string };
 
+      // A aba Endereço tinha os campos na tela mas nunca era enviada pro
+      // servidor — create/updateCustomerHandler simplesmente não liam isso
+      // do body. O backend valida o mínimo necessário (rua/número/cidade/UF)
+      // e ignora envio parcial (ex.: só CEP preenchido), então tudo bem
+      // mandar sempre — nunca sobrescreve com endereço incompleto.
+      const address = {
+        street: form.street, number: form.number, complement: form.complement,
+        neighborhood: form.neighborhood, city: form.city, state: form.state,
+        zip: form.cep.replace(/\D/g, ""),
+      };
+
       if (editing?.id) {
         // UPDATE — envia o id do registro existente; nunca cria duplicata
         res = await api.post("/api/customers/update", {
@@ -128,6 +175,7 @@ export default function CustomerFormModal({
           isSupplier:  form.isSupplier,
           isDeliverer: form.isDeliverer,
           status:      form.status,
+          address,
         });
         data = await res.json();
         if (res.ok && data.customer) {
@@ -146,6 +194,7 @@ export default function CustomerFormModal({
           isSupplier:  form.isSupplier,
           isDeliverer: form.isDeliverer,
           status:      form.status,
+          address,
         });
         data = await res.json();
         if (res.ok && data.customer) {

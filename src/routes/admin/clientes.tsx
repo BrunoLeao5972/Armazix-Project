@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { escapeHtml } from "@/lib/utils";
 import {
-  Search, Plus, MoreHorizontal, Mail, Phone,
+  Search, Plus, MoreHorizontal, Mail,
   Check, X, RefreshCw,
   Users, Edit, Trash2, FileDown,
 } from "lucide-react";
@@ -284,11 +284,6 @@ function CustomersPage() {
                         {c.email && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Mail className="w-3 h-3" />{c.email}
-                          </span>
-                        )}
-                        {c.phone && (
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Phone className="w-3 h-3" />{maskPhone(c.phone)}
                           </span>
                         )}
                       </div>
