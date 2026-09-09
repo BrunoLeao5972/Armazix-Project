@@ -300,7 +300,13 @@ export async function updateOrderItemsHandler(request: Request, auth?: AuthConte
 
     const updatedOrder = await db.query.orders.findFirst({
       where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)),
-      with: { items: true, payments: true },
+      // customer: sem isso, o card no Kanban perdia o nome do cliente
+      // depois de qualquer edição (normalize() em pedidos.tsx cai pro
+      // fallback "Cliente não identificado" quando customer vem undefined).
+      // productImage fora do items: guarda o PNG do produto inteiro em
+      // base64 (até ~600KB por item) e não é usado em lugar nenhum do
+      // Kanban/modal de edição.
+      with: { items: { columns: { productImage: false } }, payments: true, customer: true },
     });
 
     return json({

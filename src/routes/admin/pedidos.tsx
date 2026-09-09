@@ -623,7 +623,10 @@ function OrdersPage() {
       if (res.ok) {
         setOrders(prev => prev.map(o => o.orderId === order.orderId ? { ...o, status: "preparing" } : o));
         showToast(`Pedido #${order.number} aceito automaticamente`, "success");
-        if (printCfgRef.current.producao) imprimirComandaProducao(order, msg => showToast(msg, "error"));
+        // Prefixo deixa claro que o pedido JÁ avançou — sem isso, uma falha
+        // de impressão (impressora offline, agente fechado) aparecia como
+        // um erro genérico e o operador achava que o aceite tinha falhado.
+        if (printCfgRef.current.producao) imprimirComandaProducao(order, msg => showToast(`Pedido #${order.number} aceito, mas ${msg}`, "error"));
       } else {
         showToast(`Aceite automático falhou no pedido #${order.number}`, "error");
       }
@@ -706,8 +709,13 @@ function OrdersPage() {
             : o
         ));
         if (order) {
-          if (nextStatus === "preparing" && printCfg.producao) imprimirComandaProducao(order, msg => showToast(msg, "error"));
-          if (nextStatus === "delivering" && printCfg.expedicao) imprimirFichaEntrega(order, msg => showToast(msg, "error"));
+          // Prefixo "Pedido #N avançado, mas..." — sem isso, uma falha só
+          // da impressão automática (impressora offline, agente fechado)
+          // aparecia como um erro genérico e dava a impressão de que o
+          // clique em "Avançar"/"Enviar" tinha falhado, quando na verdade
+          // o status já tinha sido salvo com sucesso.
+          if (nextStatus === "preparing" && printCfg.producao) imprimirComandaProducao(order, msg => showToast(`Pedido #${order.number} avançado, mas ${msg}`, "error"));
+          if (nextStatus === "delivering" && printCfg.expedicao) imprimirFichaEntrega(order, msg => showToast(`Pedido #${order.number} avançado, mas ${msg}`, "error"));
         }
       } else {
         const data = await res.json().catch(() => ({} as { error?: string }));

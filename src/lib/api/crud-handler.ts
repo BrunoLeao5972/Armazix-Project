@@ -1224,7 +1224,12 @@ export async function listOrdersHandler(request: Request, auth?: AuthContext): P
     const storeOrders = await db.query.orders.findMany({
       where: eq(orders.storeId, storeId),
       orderBy: desc(orders.createdAt),
-      with: { items: true, customer: true, payments: true },
+      // productImage fora daqui: guarda o PNG do produto inteiro em base64
+      // (até ~600KB por item!) e não é usado em lugar nenhum do Kanban —
+      // trazer isso pra cada item de cada pedido, a cada poll de 30s,
+      // inflava o payload dessa rota em ordens de magnitude (achado real:
+      // só 3 pedidos de teste já geravam ~850KB de JSON).
+      with: { items: { columns: { productImage: false } }, customer: true, payments: true },
     });
 
     const formatted = storeOrders.map(o => ({
@@ -1427,7 +1432,9 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
           .then(r => r[0] ?? null),
         db.query.orders.findFirst({
           where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)),
-          with: { customer: true, items: true },
+          // Só usado pra montar um resumo de até 3 itens na mensagem de
+          // WhatsApp (nome+quantidade) — productImage nunca é lido aqui.
+          with: { customer: true, items: { columns: { productImage: false } } },
         }),
       ]);
 

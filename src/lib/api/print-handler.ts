@@ -268,7 +268,9 @@ export async function printOrderHandler(request: Request, auth?: AuthContext): P
     getPrinter(db, body.printerId, storeId),
     db.query.orders.findFirst({
       where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)),
-      with: { items: true, customer: true, payments: true },
+      // productImage fora do items: impressão térmica nunca usa imagem, só
+      // texto — e o campo guarda o PNG do produto inteiro em base64.
+      with: { items: { columns: { productImage: false } }, customer: true, payments: true },
     }),
     getStoreInfo(db, storeId),
   ]);
