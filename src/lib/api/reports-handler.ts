@@ -122,10 +122,14 @@ export async function getClientesTopHandler(request: Request, auth?: AuthContext
         .limit(50);
     });
 
-    const clientes = rows.map(r => ({
-      id: r.id, nome: r.nome, pedidos: r.pedidos, totalGasto: r.totalGasto,
-      ticketMedio: r.pedidos > 0 ? r.totalGasto / r.pedidos : 0,
-    }));
+    const clientes = rows.map(r => {
+      // sql<number> é só type assertion — o driver Postgres devolve NUMERIC
+      // como string em runtime. Sem o Number() aqui, o front recebia
+      // totalGasto como string e quebrava ao formatar (fmtBRL chamando
+      // .toFixed em string).
+      const totalGasto = Number(r.totalGasto);
+      return { id: r.id, nome: r.nome, pedidos: r.pedidos, totalGasto, ticketMedio: r.pedidos > 0 ? totalGasto / r.pedidos : 0 };
+    });
 
     return json({ clientes });
   } catch (error) {
@@ -171,15 +175,20 @@ export async function getProdutosLucrativosHandler(request: Request, auth?: Auth
     const semCusto: Array<{ id: string | null; nome: string; qtd: number; receita: number }> = [];
 
     for (const r of rows) {
+      // sql<number> é só type assertion — o driver Postgres devolve NUMERIC
+      // como string em runtime. Sem o Number() aqui, o front recebia
+      // receita como string e quebrava ao formatar (fmtBRL chamando
+      // .toFixed em string).
+      const receita = Number(r.receita);
       if (r.custoUnit != null) {
         const custoTotal = Number(r.custoUnit) * r.qtd;
-        const margem = r.receita - custoTotal;
+        const margem = receita - custoTotal;
         comCusto.push({
-          id: r.productId, nome: r.nome, qtd: r.qtd, receita: r.receita, custoTotal, margem,
-          margemPct: r.receita > 0 ? (margem / r.receita) * 100 : 0,
+          id: r.productId, nome: r.nome, qtd: r.qtd, receita, custoTotal, margem,
+          margemPct: receita > 0 ? (margem / receita) * 100 : 0,
         });
       } else {
-        semCusto.push({ id: r.productId, nome: r.nome, qtd: r.qtd, receita: r.receita });
+        semCusto.push({ id: r.productId, nome: r.nome, qtd: r.qtd, receita });
       }
     }
     comCusto.sort((a, b) => b.margem - a.margem);
@@ -865,7 +874,10 @@ export async function getProdutosPorCategoriaHandler(request: Request, auth?: Au
         .orderBy(desc(sql`count(*)`));
     });
 
-    return json({ categorias: rows, kpis: { totalCategorias: rows.length } });
+    // valorEstoque vem de sum(numeric) — Postgres devolve isso como string;
+    // sql<number> não converte nada em runtime, só no tipo declarado.
+    const categorias = rows.map(r => ({ ...r, valorEstoque: Number(r.valorEstoque) }));
+    return json({ categorias, kpis: { totalCategorias: categorias.length } });
   } catch (error) {
     console.error("[reports] produtos-por-categoria error:", error);
     return err("Erro ao buscar produtos por categoria", 500);
@@ -1051,7 +1063,10 @@ export async function getVendasPorProdutoHandler(request: Request, auth?: AuthCo
       return [...porProduto.entries()].map(([productId, v]) => ({ productId, ...v })).sort((a, b) => b.receita - a.receita);
     });
 
-    return json({ produtos, kpis: { totalProdutos: produtos.length, receitaTotal: produtos.reduce((s: number, p: { receita: number }) => s + p.receita, 0) } });
+    // receita pode vir como string (caminho sem filtro de vendedor agrega
+    // sum(numeric) direto no banco — sql<number> não converte em runtime).
+    const produtosNorm = produtos.map(p => ({ ...p, receita: Number(p.receita) }));
+    return json({ produtos: produtosNorm, kpis: { totalProdutos: produtosNorm.length, receitaTotal: produtosNorm.reduce((s, p) => s + p.receita, 0) } });
   } catch (error) {
     console.error("[reports] vendas-por-produto error:", error);
     return err("Erro ao buscar vendas por produto", 500);
@@ -1126,7 +1141,10 @@ export async function getVendasPorFormaPagamentoHandler(request: Request, auth?:
       }).from(orders).where(and(...conditions)).groupBy(orders.paymentMethod).orderBy(desc(sql`sum(cast(${orders.total} as numeric))`));
     });
 
-    return json({ formas: rows, kpis: { totalGeral: rows.reduce((s, r) => s + r.total, 0) } });
+    // total vem de sum(numeric) — Postgres devolve isso como string;
+    // sql<number> não converte nada em runtime, só no tipo declarado.
+    const formas = rows.map(r => ({ ...r, total: Number(r.total) }));
+    return json({ formas, kpis: { totalGeral: formas.reduce((s, r) => s + r.total, 0) } });
   } catch (error) {
     console.error("[reports] vendas-por-forma-pagamento error:", error);
     return err("Erro ao buscar vendas por forma de pagamento", 500);
@@ -1160,7 +1178,10 @@ export async function getProdutosMaisVendidosHandler(request: Request, auth?: Au
         .orderBy(desc(sql`sum(${orderItems.quantity})`)).limit(50);
     });
 
-    return json({ produtos: rows, kpis: { totalProdutos: rows.length } });
+    // receita vem de sum(numeric) — Postgres devolve isso como string;
+    // sql<number> não converte nada em runtime, só no tipo declarado.
+    const produtos = rows.map(r => ({ ...r, receita: Number(r.receita) }));
+    return json({ produtos, kpis: { totalProdutos: produtos.length } });
   } catch (error) {
     console.error("[reports] produtos-mais-vendidos error:", error);
     return err("Erro ao buscar produtos mais vendidos", 500);
@@ -1420,9 +1441,12 @@ export async function getReceitasDespesasHistoricoHandler(request: Request, auth
         .orderBy(desc(sql`sum(cast(${financeiroLancamentos.valor} as numeric))`));
     });
 
-    const totalEntradas = rows.filter(r => r.tipo === "entrada").reduce((s, r) => s + r.total, 0);
-    const totalSaidas = rows.filter(r => r.tipo === "saida").reduce((s, r) => s + r.total, 0);
-    return json({ categorias: rows, kpis: { totalEntradas, totalSaidas, saldo: totalEntradas - totalSaidas } });
+    // total vem de sum(numeric) — Postgres devolve isso como string;
+    // sql<number> não converte nada em runtime, só no tipo declarado.
+    const categorias = rows.map(r => ({ ...r, total: Number(r.total) }));
+    const totalEntradas = categorias.filter(r => r.tipo === "entrada").reduce((s, r) => s + r.total, 0);
+    const totalSaidas = categorias.filter(r => r.tipo === "saida").reduce((s, r) => s + r.total, 0);
+    return json({ categorias, kpis: { totalEntradas, totalSaidas, saldo: totalEntradas - totalSaidas } });
   } catch (error) {
     console.error("[reports] receitas-despesas-historico error:", error);
     return err("Erro ao buscar receitas e despesas por histórico", 500);

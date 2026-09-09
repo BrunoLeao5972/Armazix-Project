@@ -57,7 +57,22 @@ export const RELATORIOS_IMPLEMENTADOS = [
 ] as const;
 
 // ─── Helpers de formatação ───────────────────────────────────────
-const fmtBRL = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+// Achado real: colunas NUMERIC/DECIMAL do Postgres voltam como STRING pelo
+// driver (o cast `sql<number>\`...\`` do drizzle é só type assertion — não
+// converte nada em runtime), mas as interfaces dos handlers abaixo
+// declaram esses campos como `number`. fmtBRL(v) chamava v.toFixed(2)
+// direto — TypeError ("v.toFixed is not a function") toda vez que um
+// relatório tinha PELO MENOS UM registro com valor monetário, derrubando a
+// renderização do modal inteiro (é por isso que os relatórios em destaque
+// só "funcionavam" quando vinham vazios). toNum() converte com segurança
+// em ambos os pontos de entrada (fmtBRL e fmtPct), então cobre tanto os
+// campos já corrigidos nos handlers quanto qualquer um que escape disso.
+export const toNum = (v: number | string | null | undefined): number => {
+  const n = typeof v === "string" ? parseFloat(v) : (v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+export const fmtBRL = (v: number | string) => `R$ ${toNum(v).toFixed(2).replace(".", ",")}`;
+export const fmtPct = (v: number | string, casas = 1) => `${toNum(v).toFixed(casas)}%`;
 const fmtData = (iso: string) => {
   const [y, m, d] = iso.split("-");
   return d && m && y ? `${d}/${m}/${y}` : iso;
@@ -79,7 +94,9 @@ function normalizarEstoqueBaixo(data: { produtos: { nome: string; sku: string | 
 }
 
 function normalizarClientesTop(data: { clientes: { nome: string; pedidos: number; totalGasto: number; ticketMedio: number }[] }): ResultadoRelatorio {
-  const totalGeral = data.clientes.reduce((s, c) => s + c.totalGasto, 0);
+  // toNum: totalGasto pode vir como string (NUMERIC do Postgres) — soma com
+  // "+" direto concatenava em vez de somar (0 + "30.00" + "25.00" = "030.0025.00").
+  const totalGeral = data.clientes.reduce((s, c) => s + toNum(c.totalGasto), 0);
   return {
     titulo: "Clientes que Mais Compram",
     kpis: [
@@ -111,7 +128,7 @@ function normalizarProdutosLucrativos(data: {
     ],
     linhas: data.comCusto.map(p => ({
       nome: p.nome, qtd: p.qtd, receita: fmtBRL(p.receita), custoTotal: fmtBRL(p.custoTotal),
-      margem: fmtBRL(p.margem), margemPct: `${p.margemPct.toFixed(1)}%`,
+      margem: fmtBRL(p.margem), margemPct: fmtPct(p.margemPct),
     })),
     secoesExtras: data.semCusto.length ? [{
       titulo: "Vendidos sem custo cadastrado (fora do ranking de margem)",
@@ -175,8 +192,8 @@ function normalizarLucroBrutoLiquido(data: {
   return {
     titulo: "Lucro Bruto e Líquido",
     kpis: [
-      { label: "Margem Bruta", value: `${data.margemBruta.toFixed(1)}%` },
-      { label: "Margem Líquida", value: `${data.margemLiquida.toFixed(1)}%` },
+      { label: "Margem Bruta", value: fmtPct(data.margemBruta) },
+      { label: "Margem Líquida", value: fmtPct(data.margemLiquida) },
     ],
     colunas: [{ key: "linha", label: "Demonstrativo" }, { key: "valor", label: "Valor", align: "right" }],
     linhas: [
@@ -363,7 +380,7 @@ function normalizarProdutosBaixaMargem(data: { produtos: { nome: string; preco: 
     titulo: "Produtos com Baixa Margem",
     kpis: [{ label: `Abaixo de ${data.kpis.limiteMargemPct}% de margem`, value: String(data.kpis.totalProdutos) }],
     colunas: [{ key: "nome", label: "Produto" }, { key: "preco", label: "Preço", align: "right" }, { key: "custo", label: "Custo", align: "right" }, { key: "margemPct", label: "Margem %", align: "right" }],
-    linhas: data.produtos.map(p => ({ nome: p.nome, preco: fmtBRL(p.preco), custo: fmtBRL(p.custo), margemPct: `${p.margemPct.toFixed(1)}%` })),
+    linhas: data.produtos.map(p => ({ nome: p.nome, preco: fmtBRL(p.preco), custo: fmtBRL(p.custo), margemPct: fmtPct(p.margemPct) })),
   };
 }
 
@@ -384,7 +401,7 @@ function normalizarProdutosMaiorGiro(data: { produtos: { nome: string; qtdVendid
       { key: "nome", label: "Produto" }, { key: "qtdVendida", label: "Qtd Vendida", align: "right" },
       { key: "estoqueAtual", label: "Estoque Atual", align: "right" }, { key: "giro", label: "Giro", align: "right" },
     ],
-    linhas: data.produtos.map(p => ({ nome: p.nome, qtdVendida: p.qtdVendida, estoqueAtual: p.estoqueAtual ?? "—", giro: p.giro != null ? p.giro.toFixed(2) : "—" })),
+    linhas: data.produtos.map(p => ({ nome: p.nome, qtdVendida: p.qtdVendida, estoqueAtual: p.estoqueAtual ?? "—", giro: p.giro != null ? toNum(p.giro).toFixed(2) : "—" })),
   };
 }
 
@@ -811,10 +828,31 @@ function TabelaResultado({ colunas, linhas }: { colunas: Coluna[]; linhas: Recor
         </tbody>
       </table>
       {linhas.length === 0 && (
-        <p className="text-center text-sm text-muted-foreground py-8">Nenhum dado encontrado para o período/filtros selecionados.</p>
+        <p className="text-center text-sm text-muted-foreground py-8">Sem movimentação no período selecionado.</p>
       )}
     </div>
   );
+}
+
+// Ícone + mensagem central pra quando o relatório inteiro (tabela principal
+// e qualquer seção extra) vem vazio — pedido explícito do usuário: antes,
+// um relatório sem dados no período só mostrava KPIs zerados (R$ 0,00 em
+// tudo) e uma linha pequena no rodapé da tabela, dando a impressão de que
+// o relatório tinha quebrado em vez de simplesmente não ter movimentação.
+function SemMovimentacao() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <FileText className="w-10 h-10 text-muted-foreground/40 mb-3" />
+      <p className="text-sm font-medium text-foreground">Sem movimentação no período selecionado</p>
+      <p className="text-xs text-muted-foreground mt-1">Tente ampliar o período ou revisar os filtros aplicados.</p>
+    </div>
+  );
+}
+
+// true quando a tabela principal E todas as seções extras vêm vazias —
+// nesse caso o modal mostra só a mensagem central em vez de KPIs zerados.
+function semTodoDado(resultado: ResultadoRelatorio): boolean {
+  return resultado.linhas.length === 0 && !(resultado.secoesExtras?.some(s => s.linhas.length > 0));
 }
 
 export function ResultadoRelatorioModal({
@@ -876,30 +914,34 @@ export function ResultadoRelatorioModal({
             </div>
           )}
           {resultado && !loading && (
-            <>
-              {resultado.kpis.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {resultado.kpis.map(k => (
-                    <div key={k.label} className="rounded-xl border border-border/50 bg-secondary/30 p-3">
-                      <p className="text-xs text-muted-foreground">{k.label}</p>
-                      <p className="text-lg font-bold tabular-nums">{k.value}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {resultado.avisos?.map((aviso, i) => (
-                <div key={i} className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{aviso}
-                </div>
-              ))}
-              <TabelaResultado colunas={resultado.colunas} linhas={resultado.linhas} />
-              {resultado.secoesExtras?.map(secao => (
-                <div key={secao.titulo} className="space-y-2 pt-4 border-t border-border">
-                  <h3 className="text-sm font-semibold">{secao.titulo}</h3>
-                  <TabelaResultado colunas={secao.colunas} linhas={secao.linhas} />
-                </div>
-              ))}
-            </>
+            semTodoDado(resultado) ? (
+              <SemMovimentacao />
+            ) : (
+              <>
+                {resultado.kpis.length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {resultado.kpis.map(k => (
+                      <div key={k.label} className="rounded-xl border border-border/50 bg-secondary/30 p-3">
+                        <p className="text-xs text-muted-foreground">{k.label}</p>
+                        <p className="text-lg font-bold tabular-nums">{k.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {resultado.avisos?.map((aviso, i) => (
+                  <div key={i} className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{aviso}
+                  </div>
+                ))}
+                <TabelaResultado colunas={resultado.colunas} linhas={resultado.linhas} />
+                {resultado.secoesExtras?.map(secao => (
+                  <div key={secao.titulo} className="space-y-2 pt-4 border-t border-border">
+                    <h3 className="text-sm font-semibold">{secao.titulo}</h3>
+                    <TabelaResultado colunas={secao.colunas} linhas={secao.linhas} />
+                  </div>
+                ))}
+              </>
+            )
           )}
         </div>
       </div>
