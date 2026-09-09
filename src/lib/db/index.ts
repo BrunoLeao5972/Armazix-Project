@@ -19,7 +19,30 @@ export function createDb(databaseUrl: string) {
 // variável única alternaria entre as duas a cada chamada, descartando o pool
 // anterior sem fechar as conexões.
 // max: 5 por pool — conservador para Workers de curta duração (evita open-connection storms).
+//
+// Achado real (relatórios intermitentes — "às vezes funciona, às vezes dá
+// erro"): um isolate de Worker pode ficar vivo minutos entre requests (o
+// runtime reaproveita isolates ativos), e o servidor Neon fecha o WebSocket
+// de uma conexão ociosa por conta própria depois de um tempo — o cliente
+// só descobre isso na PRÓXIMA query, que falha com "Connection terminated
+// unexpectedly" mesmo a conexão nunca tendo excedido `idleTimeoutMillis`
+// do lado de cá (a corrida é exatamente essa: servidor fecha antes do
+// cliente perceber). Sem handler de 'error' no pool, esse evento também
+// arriscava virar um unhandled error dentro do isolate. registerPool()
+// contorna isso descartando o pool inteiro assim que uma conexão dele
+// morre — a próxima chamada recria do zero — e withTransactionRetry()
+// abaixo (aplicado dentro de createDbTransactional/createTenantDbTransactional,
+// transparente pra todo handler que já usa esse padrão) tenta a operação
+// de novo uma vez depois de descartar, então o pedido do usuário não
+// precisa de um segundo clique manual pra "sorte" de pegar uma conexão viva.
 const _pools = new Map<string, Pool>();
+
+function registerPool(connectionString: string, pool: Pool): void {
+  pool.on("error", (err: Error) => {
+    console.warn(`[db] pool WebSocket teve erro de conexão, descartando pra recriar na próxima chamada: ${err.message}`);
+    if (_pools.get(connectionString) === pool) _pools.delete(connectionString);
+  });
+}
 
 function getPool(connectionString: string): Pool {
   let pool = _pools.get(connectionString);
@@ -30,14 +53,58 @@ function getPool(connectionString: string): Pool {
       idleTimeoutMillis:      20_000,
       connectionTimeoutMillis: 5_000,
     });
+    registerPool(connectionString, pool);
     _pools.set(connectionString, pool);
   }
   return pool;
 }
 
+// Reconhece a classe de erro que indica "a conexão morreu debaixo de nós"
+// (servidor fechou o socket, rede caiu no meio) — não erros de aplicação
+// (permissão negada, coluna inválida etc.), que devem propagar direto.
+// Exportada só pra teste unitário (ver src/lib/__tests__/db-retry.test.ts).
+export function isConnectionError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /connection.*(terminated|closed|reset|ended)|econnreset|socket.*(closed|hang up)|timeout.*connect|Connection terminated/i.test(msg);
+}
+
+function discardAllPools(): void {
+  for (const [key, pool] of _pools) {
+    _pools.delete(key);
+    pool.end().catch(() => { /* pool já pode estar morta — ignora */ });
+  }
+}
+
+// Envolve o objeto drizzle (WebSocket) devolvendo a MESMA interface — só
+// .transaction() muda: se a chamada falhar por conexão morta (ver comentário
+// acima de _pools), descarta as pools conhecidas e tenta de novo UMA vez com
+// uma pool nova, tudo transparente pro handler que chamou createDbTransactional/
+// createTenantDbTransactional — ele só vê `db.transaction(cb)` funcionar (ou
+// falhar por um motivo que não seja conexão, igual sempre foi). Nenhum dos
+// ~30+ handlers que já usam esse padrão precisou mudar uma linha.
+// Exportada só pra teste unitário (ver src/lib/__tests__/db-retry.test.ts).
+export function withTransactionRetry<T extends { transaction(cb: never): Promise<unknown> }>(db: T, recreate: () => T): T {
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop !== "transaction") return Reflect.get(target, prop, receiver);
+      return async (callback: never) => {
+        try {
+          return await target.transaction(callback);
+        } catch (err) {
+          if (!isConnectionError(err)) throw err;
+          console.warn("[db] transação falhou por conexão morta, recriando pool e tentando de novo:", err instanceof Error ? err.message : err);
+          discardAllPools();
+          return recreate().transaction(callback);
+        }
+      };
+    },
+  }) as T;
+}
+
 // WebSocket Pool driver — suporta db.transaction(). Use para writes multi-step.
 export function createDbTransactional(databaseUrl: string) {
-  return drizzleWs(getPool(databaseUrl), { schema });
+  const make = () => drizzleWs(getPool(databaseUrl), { schema });
+  return withTransactionRetry(make(), make);
 }
 
 // Conexão HTTP simples, SEM isolamento de tenant no nível do banco — a única
@@ -70,7 +137,8 @@ export async function createTenantDbTransactional(_databaseUrl: string, storeId:
   if (!storeId) {
     throw new Error("createTenantDbTransactional requer um storeId");
   }
-  return drizzleWs(getPool(tenantUrl), { schema });
+  const make = () => drizzleWs(getPool(tenantUrl), { schema });
+  return withTransactionRetry(make(), make);
 }
 
 /** Primeira instrução dentro de db.transaction() ao usar createTenantDbTransactional. */
