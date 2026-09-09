@@ -49,6 +49,7 @@ import {
 } from "./api/financeiro-receber-handler";
 import {
   getEstoqueBaixoHandler,
+  getReportsWarmupHandler,
   getClientesTopHandler,
   getProdutosLucrativosHandler,
   getVendasPeriodoHandler,
@@ -400,6 +401,7 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/dashboard/stats": (req, auth) => getDashboardStatsHandler(req, auth),
   "/api/stock/stats": getStockStatsHandler,
   "/api/reports/stats": getReportsStatsHandler,
+  "/api/reports/warmup": getReportsWarmupHandler,
   "/api/reports/estoque-baixo": getEstoqueBaixoHandler,
   "/api/reports/clientes-top": getClientesTopHandler,
   "/api/reports/produtos-lucrativos": getProdutosLucrativosHandler,

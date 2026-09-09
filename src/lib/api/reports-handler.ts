@@ -44,6 +44,38 @@ async function resolveStoreId(auth: AuthContext | undefined, reportId: string): 
   }
 }
 
+// ─── GET /api/reports/warmup ─────────────────────────────────────────────
+// "Acorda" o compute do Neon (scale-to-zero hiberna o banco depois de
+// alguns minutos sem uso, e o primeiro request depois disso paga o custo
+// de reconectar) ANTES do usuário efetivamente pedir o relatório — o
+// frontend dispara isso assim que o drawer de filtros abre ou o card é
+// clicado (relatorios.tsx), em paralelo enquanto o operador ainda está
+// escolhendo período/filtros, pra quando ele clicar em "Gerar Relatório"
+// a conexão já estar quente. Query trivial, sem ler dado nenhum — só
+// paga o custo do cold start fora do caminho crítico do clique real.
+// Falha aqui nunca vira erro visível: se não conseguir acordar com
+// antecedência, o clique real ainda tenta do zero (com o timeout de
+// conexão maior já configurado em db/index.ts).
+export async function getReportsWarmupHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    ({ storeId } = await requireStoreAccess(auth));
+  } catch (error) {
+    return err((error as Error).message, auth?.userId ? 403 : 401);
+  }
+  try {
+    const db = await createTenantDbTransactional(process.env.DATABASE_URL!, storeId);
+    await db.transaction(async (tx) => {
+      await tx.execute(setTenantContext(storeId));
+      await tx.execute(sql`SELECT 1`);
+    });
+    return json({ ok: true });
+  } catch (error) {
+    console.warn("[reports] warmup falhou (não crítico, clique real ainda vai tentar):", error);
+    return json({ ok: false });
+  }
+}
+
 // Período padrão (últimos 30 dias) quando o filtro não é informado — os
 // mesmos nomes de query param usados pelo drawer em relatorios.tsx.
 function parseDateRange(url: URL): { from: Date; to: Date; fromStr: string; toStr: string } {

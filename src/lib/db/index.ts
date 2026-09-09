@@ -51,7 +51,13 @@ function getPool(connectionString: string): Pool {
       connectionString,
       max:                    5,
       idleTimeoutMillis:      20_000,
-      connectionTimeoutMillis: 5_000,
+      // Neon "scale to zero": o compute hiberna depois de alguns minutos
+      // sem uso e o primeiro request depois disso precisa esperar ele
+      // acordar antes da conexão completar — 5s (valor anterior) era curto
+      // demais pra isso, e a query simplesmente falhava por timeout de
+      // conexão em vez de esperar. 15s dá margem sem deixar o usuário
+      // esperando indefinidamente se o banco estiver genuinamente fora do ar.
+      connectionTimeoutMillis: 15_000,
     });
     registerPool(connectionString, pool);
     _pools.set(connectionString, pool);

@@ -373,6 +373,13 @@ function ReportsPage() {
   // baixo), ou avisar que aquele relatório ainda não foi implementado (os
   // outros 21 do catálogo, fora de escopo por enquanto).
   const handleVisualizar = (report: ReportConfig) => {
+    // Dispara o quanto antes (antes de decidir se abre o drawer de filtros
+    // ou pula direto pro resultado) — "acorda" a conexão com o banco em
+    // paralelo enquanto o operador ainda escolhe período/filtros, pra ela
+    // já estar pronta no clique em "Gerar Relatório". Fire-and-forget: uma
+    // falha aqui não deve aparecer pro usuário, o clique real ainda tenta
+    // do zero normalmente.
+    fetch("/api/reports/warmup").catch(() => {});
     setUltimoRelatorio(report);
     if (!(RELATORIOS_IMPLEMENTADOS as readonly string[]).includes(report.id)) {
       setAvisoNaoImplementado(report);
