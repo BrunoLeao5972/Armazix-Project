@@ -1,60 +1,59 @@
 // Regressão: relatórios (e qualquer rota que use createDbTransactional/
 // createTenantDbTransactional) falhavam de forma intermitente — "às vezes
-// funciona, às vezes dá erro ao buscar" — porque a pool WebSocket é reusada
-// entre requests dentro do mesmo isolate de Worker, e o servidor Neon fecha
-// conexões ociosas por conta própria depois de um tempo; a primeira query
-// numa conexão morta falhava com "Connection terminated unexpectedly" sem
-// nenhuma segunda tentativa automática. withTransactionRetry cobre isso.
+// funciona, às vezes dá erro ao buscar", carregando indefinidamente até dar
+// erro. Causa raiz confirmada direto no log de produção (wrangler tail): a
+// versão anterior guardava a Pool WebSocket num Map global de módulo,
+// reaproveitada entre invocações do mesmo isolate de Worker — mas
+// Cloudflare Workers proíbe isso: um socket aberto durante o processamento
+// de uma requisição não pode ser usado por OUTRA requisição, mesmo no
+// mesmo isolate. A 2ª requisição a reusar a pool travava com
+// "Cannot perform I/O on behalf of a different request" e nunca resolvia —
+// o runtime cancelava o request por hang. withAutoClose garante que toda
+// conexão é single-use: criada, usada, fechada, dentro da mesma requisição.
 import { describe, it, expect, vi } from "vitest";
-import { isConnectionError, withTransactionRetry } from "@/lib/db";
+import { withAutoClose } from "@/lib/db";
 
-describe("isConnectionError", () => {
-  it("reconhece as mensagens típicas de conexão morta do driver Neon/pg", () => {
-    expect(isConnectionError(new Error("Connection terminated unexpectedly"))).toBe(true);
-    expect(isConnectionError(new Error("connection closed"))).toBe(true);
-    expect(isConnectionError(new Error("ECONNRESET"))).toBe(true);
-  });
-  it("não confunde erro de aplicação (permissão, SQL) com erro de conexão", () => {
-    expect(isConnectionError(new Error("Sem permissão para acessar este relatório"))).toBe(false);
-    expect(isConnectionError(new Error("column \"foo\" does not exist"))).toBe(false);
-  });
-});
+describe("withAutoClose", () => {
+  it("repassa o resultado da transação normalmente", async () => {
+    const client = { end: vi.fn().mockResolvedValue(undefined) };
+    const db = { transaction: vi.fn().mockResolvedValue("ok"), $client: client };
+    const wrapped = withAutoClose(db as any);
 
-describe("withTransactionRetry", () => {
-  it("repassa o resultado direto quando a transação funciona de primeira", async () => {
-    const db = { transaction: vi.fn().mockResolvedValue("ok") };
-    const wrapped = withTransactionRetry(db, () => db);
     const result = await wrapped.transaction(async () => "ok");
     expect(result).toBe("ok");
-    expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
-  it("tenta de novo com uma conexão nova quando a 1ª falha por conexão morta, e funciona", async () => {
-    const dead = { transaction: vi.fn().mockRejectedValue(new Error("Connection terminated unexpectedly")) };
-    const fresh = { transaction: vi.fn().mockResolvedValue("recuperado") };
-    const recreate = vi.fn().mockReturnValue(fresh);
+  it("fecha a conexão (aguardando) depois de uma transação bem-sucedida", async () => {
+    const client = { end: vi.fn().mockResolvedValue(undefined) };
+    const db = { transaction: vi.fn().mockResolvedValue("ok"), $client: client };
+    const wrapped = withAutoClose(db as any);
 
-    const wrapped = withTransactionRetry(dead, recreate);
-    const result = await wrapped.transaction(async () => "recuperado");
-
-    expect(result).toBe("recuperado");
-    expect(dead.transaction).toHaveBeenCalledTimes(1);
-    expect(recreate).toHaveBeenCalledTimes(1);
-    expect(fresh.transaction).toHaveBeenCalledTimes(1);
+    await wrapped.transaction(async () => "ok");
+    expect(client.end).toHaveBeenCalledTimes(1);
   });
 
-  it("propaga direto um erro que não é de conexão (não tenta de novo)", async () => {
-    const db = { transaction: vi.fn().mockRejectedValue(new Error("Sem permissão para acessar este relatório")) };
-    const recreate = vi.fn();
-    const wrapped = withTransactionRetry(db, recreate);
+  it("fecha a conexão mesmo quando a transação falha, e propaga o erro original", async () => {
+    const client = { end: vi.fn().mockResolvedValue(undefined) };
+    const db = { transaction: vi.fn().mockRejectedValue(new Error("erro de aplicação")), $client: client };
+    const wrapped = withAutoClose(db as any);
 
-    await expect(wrapped.transaction(async () => "x")).rejects.toThrow("Sem permissão");
-    expect(recreate).not.toHaveBeenCalled();
+    await expect(wrapped.transaction(async () => "x")).rejects.toThrow("erro de aplicação");
+    expect(client.end).toHaveBeenCalledTimes(1);
+  });
+
+  it("uma falha ao fechar a conexão (já estava morta) não mascara o resultado da transação", async () => {
+    const client = { end: vi.fn().mockRejectedValue(new Error("já fechada")) };
+    const db = { transaction: vi.fn().mockResolvedValue("ok"), $client: client };
+    const wrapped = withAutoClose(db as any);
+
+    const result = await wrapped.transaction(async () => "ok");
+    expect(result).toBe("ok");
   });
 
   it("outras propriedades do objeto original continuam acessíveis (só .transaction é interceptado)", () => {
-    const db = { transaction: vi.fn(), query: { orders: "tabela" } };
-    const wrapped = withTransactionRetry(db, () => db);
+    const client = { end: vi.fn() };
+    const db = { transaction: vi.fn(), $client: client, query: { orders: "tabela" } };
+    const wrapped = withAutoClose(db as any);
     expect(wrapped.query).toBe(db.query);
   });
 });
