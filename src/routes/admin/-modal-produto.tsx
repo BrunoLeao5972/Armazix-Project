@@ -65,20 +65,66 @@ function calcMargin(price: string, cost: string) {
   return (((p - c) / p) * 100).toFixed(1);
 }
 
+// ─── Compressão de imagem no navegador ──────────────────────────────
+// Sem isso, a foto ia pro banco do jeito que saiu da câmera/galeria — achado
+// real: produtos cadastrados assim chegavam a 1-1,5MB CADA (guardado como
+// texto base64, em duas colunas), e 43 produtos já tinham inflado a tabela
+// products pra ~80MB, estourando o limite de armazenamento do banco
+// (erro 507 do Neon). Redimensiona pro maior lado caber em MAX_DIM e
+// reexporta em WebP (ou JPEG se o navegador não gerar WebP em canvas) —
+// mesma técnica usada pra recomprimir as fotos que já estavam salvas,
+// testada em produção: ~95% de redução sem perda visível pra foto de
+// produto em card/carrinho.
+const MAX_DIM = 900;
+const IMG_QUALITY = 0.78;
+// GIF perderia a animação (createImageBitmap só pega 1 frame) e SVG é
+// vetor — já pequeno e redimensiona sem perda. Esses dois mantêm o
+// arquivo original.
+const SKIP_COMPRESS_TYPES = new Set(["image/gif", "image/svg+xml"]);
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = e => resolve(e.target?.result as string);
+    r.onerror = () => reject(r.error ?? new Error("Falha ao ler arquivo"));
+    r.readAsDataURL(file);
+  });
+}
+
+async function compressImage(file: File): Promise<string> {
+  if (SKIP_COMPRESS_TYPES.has(file.type)) return readAsDataUrl(file);
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_DIM / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D indisponível");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+
+    const webp = canvas.toDataURL("image/webp", IMG_QUALITY);
+    // Navegador sem suporte a WebP em canvas devolve um PNG (ou string
+    // vazia) em vez do formato pedido — cai pra JPEG nesse caso.
+    return webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/jpeg", IMG_QUALITY);
+  } catch {
+    // Arquivo que o navegador não conseguiu decodificar como imagem (raro)
+    // — mantém o comportamento antigo em vez de travar o cadastro.
+    return readAsDataUrl(file);
+  }
+}
+
 // ─── Image Gallery (multi-upload, primary selection) ──────────────
 function ImageGallery({ images, onChange }: { images: ProductImage[]; onChange: (imgs: ProductImage[]) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
 
-  const readFile = (file: File) => new Promise<string>(resolve => {
-    const r = new FileReader();
-    r.onload = e => resolve(e.target?.result as string);
-    r.readAsDataURL(file);
-  });
-
   const addFiles = async (files: FileList | File[]) => {
     const arr = Array.from(files);
-    const urls = await Promise.all(arr.map(readFile));
+    const urls = await Promise.all(arr.map(compressImage));
     const newImgs: ProductImage[] = urls.map(url => ({
       id: uid(), url, isPrimary: images.length === 0 && urls.indexOf(url) === 0,
     }));
@@ -164,9 +210,7 @@ function MiniImageGallery({ images, onChange }: { images: ProductImage[]; onChan
 
   const addFiles = async (files: FileList) => {
     const arr = Array.from(files);
-    const urls = await Promise.all(arr.map(f => new Promise<string>(resolve => {
-      const r = new FileReader(); r.onload = e => resolve(e.target?.result as string); r.readAsDataURL(f);
-    })));
+    const urls = await Promise.all(arr.map(compressImage));
     const newImgs: ProductImage[] = urls.map((url, i) => ({
       id: uid(), url, isPrimary: images.length === 0 && i === 0,
     }));
