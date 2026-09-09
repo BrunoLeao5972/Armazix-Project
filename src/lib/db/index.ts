@@ -27,10 +27,22 @@ export function createDb(databaseUrl: string) {
 // mesmo problema na requisição seguinte).
 //
 // Correção: cada chamada de createDbTransactional/createTenantDbTransactional
-// abre uma conexão NOVA (max: 1 — só essa requisição usa) e a fecha
-// automaticamente assim que a transação termina (sucesso ou erro) — nunca
-// sobrevive além do request que a criou. É exatamente o padrão que a Neon
-// recomenda pra ambientes serverless "connectionless" como Workers.
+// abre uma conexão NOVA (max: 1 — só essa requisição usa), nunca uma
+// reaproveitada de um Map global. É exatamente o padrão que a Neon recomenda
+// pra ambientes serverless "connectionless" como Workers.
+//
+// Fechamento automático foi tentado (withAutoClose, fechando a conexão ao
+// final de .transaction()) e revertido — achado real via wrangler tail:
+// vários handlers (ex.: updateOrderStatusHandler) reusam a MESMA variável
+// `db` depois da transação principal, fora dela, dentro de um
+// waitUntil() (notificação de WhatsApp em background) — fechar a conexão
+// no fim de .transaction() derrubava essa segunda consulta com
+// "Failed query" assim que o waitUntil rodava. Resolver o bug original
+// (pool compartilhada entre REQUESTS diferentes) não exigia fechar nada —
+// só parar de guardar a Pool num Map global já bastava — então o
+// fechamento explícito foi removido: cada Pool aqui é single-use (max: 1)
+// e fica pra trás quando o request (e seu waitUntil) termina, sem
+// sobreviver pro próximo request de qualquer forma.
 function makePool(connectionString: string): Pool {
   const pool = new Pool({
     connectionString,
@@ -50,36 +62,13 @@ function makePool(connectionString: string): Pool {
   return pool;
 }
 
-// Envolve o objeto drizzle (WebSocket) devolvendo a MESMA interface — só
-// .transaction() muda: fecha a conexão automaticamente ao final (sucesso ou
-// erro), já que ela é single-use e nunca deve sobreviver além do request que
-// a abriu. Transparente pra todo handler que já usa esse padrão — nenhum
-// dos ~30+ que chamam createDbTransactional/createTenantDbTransactional
-// precisou mudar uma linha.
-// Exportada só pra teste unitário (ver src/lib/__tests__/db-retry.test.ts).
-export function withAutoClose<T extends { transaction(cb: never): Promise<unknown>; $client: Pool }>(db: T): T {
-  return new Proxy(db, {
-    get(target, prop, receiver) {
-      if (prop !== "transaction") return Reflect.get(target, prop, receiver);
-      return async (callback: never) => {
-        try {
-          return await target.transaction(callback);
-        } finally {
-          // Aguardado (não fire-and-forget): fechar sem esperar deixaria o
-          // .end() rodando depois que o handler já retornou a resposta —
-          // fora do I/O context da requisição que abriu a conexão, o
-          // mesmo problema que essa função inteira existe pra evitar.
-          try { await target.$client.end(); } catch { /* já pode estar fechada — ignora */ }
-        }
-      };
-    },
-  }) as T;
-}
-
 // WebSocket driver — suporta db.transaction(). Use para writes multi-step.
-// Conexão nova a cada chamada (ver comentário de makePool acima).
+// Conexão nova a cada chamada (ver comentário de makePool acima) — nunca
+// fechada explicitamente aqui, porque handlers legitimamente reusam essa
+// mesma conexão depois de .transaction() (ex.: uma 2ª consulta solta
+// dentro de um waitUntil() para notificação em background).
 export function createDbTransactional(databaseUrl: string) {
-  return withAutoClose(drizzleWs(makePool(databaseUrl), { schema }));
+  return drizzleWs(makePool(databaseUrl), { schema });
 }
 
 // Conexão HTTP simples, SEM isolamento de tenant no nível do banco — a única
@@ -110,7 +99,7 @@ export async function createTenantDbTransactional(_databaseUrl: string, storeId:
   if (!storeId) {
     throw new Error("createTenantDbTransactional requer um storeId");
   }
-  return withAutoClose(drizzleWs(makePool(tenantUrl), { schema }));
+  return drizzleWs(makePool(tenantUrl), { schema });
 }
 
 /** Primeira instrução dentro de db.transaction() ao usar createTenantDbTransactional. */
