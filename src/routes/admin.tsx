@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 
 import { isStorePlanBlocked } from "@/lib/plans";
+import { OrderNotifier, useNotificationPermission } from "./admin/-order-notifier";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ThemeToggle } from "@/components/admin/ThemeToggle";
@@ -361,6 +362,7 @@ function AdminLayout() {
 
   const pathname  = useRouterState({ select: (s) => s.location.pathname });
   const navigate  = useNavigate();
+  const { perm: notifPerm, request: requestNotif } = useNotificationPermission();
 
   const [userName,     setUserName]     = useState("");
   const [userInitials, setUserInitials] = useState("");
@@ -643,9 +645,19 @@ function AdminLayout() {
               <span className="w-1.5 h-1.5 rounded-full bg-primary" />
               Loja ativa
             </Badge>
-            <button className="relative w-9 h-9 rounded-xl flex items-center justify-center hover:bg-secondary transition-colors">
+            <button
+              onClick={() => { requestNotif(); navigate({ to: "/admin/pedidos" }); }}
+              title={
+                notifPerm === "granted" ? "Notificações de novos pedidos ativas — ir para pedidos"
+                : notifPerm === "denied" ? "Notificações bloqueadas no navegador — ir para pedidos"
+                : "Ativar notificações de novos pedidos"
+              }
+              className="relative w-9 h-9 rounded-xl flex items-center justify-center hover:bg-secondary transition-colors"
+            >
               <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary" />
+              {notifPerm !== "granted" && notifPerm !== "unsupported" && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary" />
+              )}
             </button>
 
             <ThemeToggle />
@@ -774,6 +786,10 @@ function AdminLayout() {
       <Suspense fallback={null}>
         <WhatsAppModal open={wppModalOpen} onClose={() => setWppModalOpen(false)} />
       </Suspense>
+
+      {/* Vigia de novos pedidos — som + notificação do SO em qualquer tela do
+          admin, não só no quadro de pedidos. */}
+      <OrderNotifier />
     </div>
   );
 }
