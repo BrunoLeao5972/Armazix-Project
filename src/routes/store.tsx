@@ -815,10 +815,15 @@ function StoreLayout() {
               {/* Cart — oculto no mobile (acessível pelo Carrinho na bottom nav) */}
               <Sheet>
                 <SheetTrigger asChild>
-                  <button className="hidden md:flex w-9 h-9 rounded-xl items-center justify-center hover:bg-[var(--cor-primaria)]/10 transition-colors relative">
-                    <ShoppingCart className="w-4.5 h-4.5 text-[var(--cor-texto)]" />
+                  <button
+                    className={`hidden md:flex w-9 h-9 rounded-xl items-center justify-center transition-all relative ${
+                      cartCount > 0 ? "shadow-md scale-105" : "hover:bg-[var(--cor-primaria)]/10"
+                    }`}
+                    style={cartCount > 0 ? { backgroundColor: "var(--cor-primaria)" } : undefined}
+                  >
+                    <ShoppingCart className={`w-4.5 h-4.5 ${cartCount > 0 ? "text-white" : "text-[var(--cor-texto)]"}`} />
                     {cartCount > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 grid place-items-center min-w-[18px] h-[18px] rounded-full bg-[var(--cor-primaria)] text-white text-[10px] font-bold leading-none px-1">
+                      <span className="absolute -top-1 -right-1 grid place-items-center min-w-[18px] h-[18px] rounded-full bg-white text-[var(--cor-primaria)] text-[10px] font-extrabold leading-none px-1 shadow">
                         {cartCount}
                       </span>
                     )}
@@ -950,21 +955,29 @@ function StoreLayout() {
             <div className="flex items-center justify-around h-16 max-w-lg mx-auto px-4">
               {BOTTOM_ITEMS.map((item) => {
                 const active = item.href === "/store" ? pathname === "/store" : pathname.startsWith(item.href);
+                // Carrinho com itens fica em destaque forte (pílula cheia na
+                // cor da loja) mesmo sem ser a aba ativa — o cliente não
+                // perde de vista que tem produto pra finalizar.
+                const cartCheio = item.href === "/store/cart" && cartCount > 0;
                 return (
                   <Link
                     key={item.href}
                     to={item.href}
                     className="flex flex-col items-center gap-0.5 min-w-[56px] py-1"
                   >
-                    <div className={`relative flex items-center justify-center w-10 h-7 rounded-xl transition-all ${active ? "bg-primary/15" : ""}`}>
-                      <item.icon className={`w-5 h-5 ${active ? "text-primary" : "text-muted-foreground"}`} />
-                      {item.href === "/store/cart" && cartCount > 0 && (
-                        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold grid place-items-center">
+                    <div className={`relative flex items-center justify-center h-7 rounded-xl transition-all ${
+                      cartCheio ? "bg-primary px-3 shadow-sm" : active ? "bg-primary/15 w-10" : "w-10"
+                    }`}>
+                      <item.icon className={`w-5 h-5 ${cartCheio ? "text-primary-foreground" : active ? "text-primary" : "text-muted-foreground"}`} />
+                      {cartCheio && (
+                        <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-white text-primary text-[9px] font-extrabold grid place-items-center shadow">
                           {cartCount}
                         </span>
                       )}
                     </div>
-                    <span className={`text-[10px] font-medium ${active ? "text-primary" : "text-muted-foreground"}`}>
+                    <span className={`text-[10px] font-medium ${
+                      cartCheio ? "text-primary font-bold" : active ? "text-primary" : "text-muted-foreground"
+                    }`}>
                       {item.label}
                     </span>
                   </Link>

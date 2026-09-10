@@ -3,6 +3,13 @@ import { ShoppingCart, Minus, Plus, Trash2, Tag, Truck, MessageCircle } from "lu
 import { Button } from "@/components/ui/button";
 import { useStore } from "../store";
 
+// item.image pode ser: URL http(s), data:image/... (as fotos de produto
+// hoje são WebP em data URI), blob:, caminho relativo — ou nada. O check
+// antigo só aceitava /^https?:\/\//, então a data URI caía no ramo de
+// texto e a base64 inteira aparecia escrita na tela ("a ID da foto").
+const isImageSrc = (s: string | null | undefined): boolean =>
+  !!s && (/^(https?:|data:image\/|blob:)/i.test(s) || s.startsWith("/"));
+
 export const Route = createFileRoute("/store/cart")({
   component: CartPage,
   head: () => ({
@@ -39,9 +46,9 @@ function CartPage() {
         {cart.map((item) => (
           <div key={item.id} className="flex gap-3 p-3 rounded-2xl bg-surface border border-border/40">
             <div className="w-16 h-16 rounded-xl bg-secondary/30 flex items-center justify-center shrink-0 overflow-hidden">
-              {item.image && /^https?:\/\//i.test(item.image)
+              {item.image && isImageSrc(item.image)
                 ? <img src={item.image} alt={item.name} className="w-full h-full object-contain" />
-                : <span className="text-2xl">{item.image || "📦"}</span>
+                : <span className="text-2xl">{item.emoji || (item.image && item.image.length <= 8 ? item.image : "📦")}</span>
               }
             </div>
             <div className="flex-1 min-w-0">
