@@ -168,12 +168,15 @@ function NavLink({
   item,
   collapsed,
   active,
+  alert,
   onClose,
   onAction,
 }: {
   item: NavItem;
   collapsed: boolean;
   active: boolean;
+  /** Bolinha vermelha piscando (ex.: chegou pedido e o operador está noutra tela) */
+  alert?: boolean;
   onClose: () => void;
   onAction: (a: string) => void;
 }) {
@@ -187,8 +190,23 @@ function NavLink({
 
   const inner = (
     <>
-      <item.icon className={`w-5 h-5 shrink-0 ${active ? "text-primary" : ""}`} />
-      {!collapsed && <span className="truncate leading-tight">{item.label}</span>}
+      <span className="relative shrink-0">
+        <item.icon className={`w-5 h-5 ${active ? "text-primary" : ""}`} />
+        {alert && (
+          <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping motion-reduce:animate-none" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-surface" />
+          </span>
+        )}
+      </span>
+      {!collapsed && (
+        <span className="flex items-center gap-1.5 min-w-0 leading-tight">
+          <span className="truncate">{item.label}</span>
+          {alert && (
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500 animate-pulse motion-reduce:animate-none" />
+          )}
+        </span>
+      )}
     </>
   );
 
@@ -222,11 +240,14 @@ function NavLink({
 function SidebarNav({
   pathname,
   collapsed,
+  alertPedidos,
   onAction,
   onClose,
 }: {
   pathname: string;
   collapsed: boolean;
+  /** Liga a bolinha vermelha piscando no item "Pedidos" */
+  alertPedidos?: boolean;
   onAction: (a: string) => void;
   onClose: () => void;
 }) {
@@ -268,6 +289,7 @@ function SidebarNav({
             item={item}
             collapsed
             active={!!item.href && pathname === item.href}
+            alert={!!alertPedidos && item.href === "/admin/pedidos"}
             onClose={onClose}
             onAction={onAction}
           />
@@ -324,6 +346,7 @@ function SidebarNav({
                         item={item}
                         collapsed={false}
                         active={!!item.href && pathname === item.href}
+                        alert={!!alertPedidos && item.href === "/admin/pedidos"}
                         onClose={onClose}
                         onAction={onAction}
                       />
@@ -339,6 +362,7 @@ function SidebarNav({
                     item={item}
                     collapsed={false}
                     active={!!item.href && pathname === item.href}
+                    alert={!!alertPedidos && item.href === "/admin/pedidos"}
                     onClose={onClose}
                     onAction={onAction}
                   />
@@ -363,6 +387,14 @@ function AdminLayout() {
   const pathname  = useRouterState({ select: (s) => s.location.pathname });
   const navigate  = useNavigate();
   const { perm: notifPerm, request: requestNotif } = useNotificationPermission();
+
+  // Bolinha vermelha piscando no item "Pedidos" — ligada pelo vigia global
+  // quando chega pedido e o operador está noutra tela (PDV, Financeiro…),
+  // desligada assim que ele entra no quadro de pedidos.
+  const [alertaPedido, setAlertaPedido] = useState(false);
+  useEffect(() => {
+    if (pathname === "/admin/pedidos") setAlertaPedido(false);
+  }, [pathname]);
 
   const [userName,     setUserName]     = useState("");
   const [userInitials, setUserInitials] = useState("");
@@ -559,6 +591,7 @@ function AdminLayout() {
           <SidebarNav
             pathname={pathname}
             collapsed={collapsed}
+            alertPedidos={alertaPedido}
             onAction={handleSidebarAction}
             onClose={() => {}}
           />
@@ -601,6 +634,7 @@ function AdminLayout() {
               <SidebarNav
                 pathname={pathname}
                 collapsed={false}
+                alertPedidos={alertaPedido}
                 onAction={(a) => { setMobileOpen(false); handleSidebarAction(a); }}
                 onClose={() => setMobileOpen(false)}
               />
@@ -787,9 +821,10 @@ function AdminLayout() {
         <WhatsAppModal open={wppModalOpen} onClose={() => setWppModalOpen(false)} />
       </Suspense>
 
-      {/* Vigia de novos pedidos — som + notificação do SO em qualquer tela do
-          admin, não só no quadro de pedidos. */}
-      <OrderNotifier />
+      {/* Vigia de novos pedidos — som + notificação do SO + aceite automático
+          + bolinha piscando no menu, em qualquer tela do admin, não só no
+          quadro de pedidos. */}
+      <OrderNotifier onNovoPedido={() => setAlertaPedido(true)} />
     </div>
   );
 }

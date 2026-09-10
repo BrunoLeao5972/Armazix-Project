@@ -17,6 +17,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { imprimirComandaProducao, imprimirFichaEntrega } from "@/lib/print/print-order";
+import { reservarAceiteAutomatico, liberarAceiteAutomatico } from "@/lib/orders/auto-accept-lock";
 
 const PrintOrderDialog = lazy(() => import("./-modal-imprimir-pedido"));
 const EditOrderDialog  = lazy(() => import("./-modal-editar-pedido"));
@@ -617,6 +618,10 @@ function OrdersPage() {
   // sem exigir clique do operador. Falhas agora aparecem como toast — antes
   // eram engolidas em silêncio, dando a impressão de que o recurso não fazia nada.
   const advanceToPreparingQuiet = useCallback(async (order: Order) => {
+    // Trava compartilhada com o vigia global (-order-notifier): enquanto esta
+    // tela está aberta os dois rodam o aceite automático em paralelo — sem
+    // isto o mesmo pedido levava dois POST /update-status quase juntos.
+    if (!reservarAceiteAutomatico(order.orderId)) return;
     setAutoAccepting(prev => new Set(prev).add(order.orderId));
     try {
       const res = await api.post("/api/orders/update-status", { orderId: order.orderId, status: "preparing" });
@@ -633,6 +638,7 @@ function OrdersPage() {
     } catch {
       showToast(`Erro de conexão no aceite automático do pedido #${order.number}`, "error");
     } finally {
+      liberarAceiteAutomatico(order.orderId);
       setAutoAccepting(prev => {
         const next = new Set(prev);
         next.delete(order.orderId);
@@ -692,7 +698,14 @@ function OrdersPage() {
     fetchOrders(storeId);
     // Poll every 30 seconds for new orders
     const interval = setInterval(() => fetchOrders(storeId, true), 30_000);
-    return () => clearInterval(interval);
+    // O vigia global dispara isto quando aceita um pedido automaticamente
+    // noutra tela — recarrega na hora em vez de esperar o próximo polling.
+    const onOrdersChanged = () => fetchOrders(storeId, true);
+    window.addEventListener("armazix:orders-changed", onOrdersChanged);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("armazix:orders-changed", onOrdersChanged);
+    };
   }, [fetchOrders]);
 
   const handleAdvance = async (orderId: string, nextStatus: string, paymentMethod?: string) => {
