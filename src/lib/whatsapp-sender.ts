@@ -138,11 +138,35 @@ export async function sendWppText(
   const number = normalizePhone(phone);
   if (number.length < 10) return;
 
-  await fetch(`${EVO_URL}/message/sendText/${instance}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: EVO_KEY },
-    body: JSON.stringify({ number, text }),
-  }).catch((e) => console.error("[wpp] sendText error:", e));
+  const url = `${EVO_URL}/message/sendText/${instance}`;
+  const body = JSON.stringify({ number, text });
+
+  // Antes: um único fetch sem timeout e com .catch() que engolia TUDO em
+  // silêncio — um 5xx passageiro do gateway ou um pico de latência fazia a
+  // mensagem simplesmente não sair, sem retry. Isso é a maior fonte da
+  // "notificação intermitente" reportada. Agora: timeout de 8s (gateway
+  // travado não consome a janela inteira do waitUntil sem fazer nada) e
+  // 1 retry rápido em falha de rede ou resposta não-2xx.
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8_000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: EVO_KEY },
+        body,
+        signal: ctrl.signal,
+      });
+      if (res.ok) return;
+      // Resposta do gateway mas com erro — loga o status e tenta de novo.
+      console.error(`[wpp] sendText HTTP ${res.status} (tentativa ${tentativa}/2)`);
+    } catch (e) {
+      console.error(`[wpp] sendText falhou (tentativa ${tentativa}/2):`, e instanceof Error ? e.message : e);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (tentativa === 1) await new Promise(r => setTimeout(r, 1_200));
+  }
 }
 
 // ── Disparos de pedido ────────────────────────────────────────────────────────

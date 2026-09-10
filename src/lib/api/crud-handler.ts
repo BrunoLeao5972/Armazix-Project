@@ -1292,9 +1292,16 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
   const db = createDbTransactional(dbUrl);
 
   try {
-    // IDOR Fix: Verify order belongs to tenant before updating
+    // IDOR Fix: Verify order belongs to tenant before updating.
+    // customer + items carregados aqui de uma vez — são reusados na
+    // notificação de WhatsApp mais abaixo, evitando refazer essas queries
+    // dentro do waitUntil (ver comentário na seção de notificação).
     const existingOrder = await db.query.orders.findFirst({
-      where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId))
+      where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)),
+      with: {
+        customer: { columns: { name: true, phone: true } },
+        items: { columns: { productName: true, quantity: true } },
+      },
     });
 
     if (!existingOrder) {
@@ -1424,47 +1431,55 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
       }
     });
 
-    // ── WhatsApp notification — background via ctx.waitUntil ──────────────────
-    waitUntil(request, (async () => {
-      const [storeRow, orderWithCustomer] = await Promise.all([
-        db.select({ name: stores.name, wppConfig: stores.wppConfig, address: stores.address })
-          .from(stores).where(eq(stores.id, storeId)).limit(1)
-          .then(r => r[0] ?? null),
-        db.query.orders.findFirst({
-          where: and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)),
-          // Só usado pra montar um resumo de até 3 itens na mensagem de
-          // WhatsApp (nome+quantidade) — productImage nunca é lido aqui.
-          with: { customer: true, items: { columns: { productImage: false } } },
-        }),
-      ]);
+    // ── Notificação de WhatsApp pro cliente ──────────────────────────────────
+    // Antes, TUDO isto rodava dentro do waitUntil: 2 queries (stores +
+    // orders com customer/items) + montar o template + o fetch pro gateway.
+    // Essa cadeia estourava a janela de tempo do waitUntil de forma
+    // intermitente ("waitUntil() tasks did not complete within the allowed
+    // time" no log) e o cliente não recebia nada. Agora o preparo é
+    // SÍNCRONO — reaproveita existingOrder (customer + items já carregados
+    // lá em cima) e faz só 1 lookup pequeno pra config da loja — e só o
+    // envio em si (1 request HTTP, com timeout e retry no sendWppText) vai
+    // pro waitUntil, que quase sempre cabe na janela.
+    try {
+      const [storeRow] = await db
+        .select({ name: stores.name, wppConfig: stores.wppConfig, address: stores.address })
+        .from(stores).where(eq(stores.id, storeId)).limit(1);
 
       const wppCfg = storeRow?.wppConfig ? migrateWppConfig(storeRow.wppConfig) : null;
-      if (!wppCfg?.notifyCustomer) return;
-      if (!orderWithCustomer?.customer?.phone) return;
+      const customerPhone = existingOrder.customer?.phone ?? null;
+      // "ready" = cozinha terminou — para entrega, o cliente só é avisado
+      // em "delivering"; para retirada, "ready" significa "venha buscar".
+      const pularReady = body.status === "ready" && existingOrder.type !== "pickup";
 
-      // "ready" = cozinha terminou — para entrega, o cliente é notificado em "delivering";
-      // para retirada, "ready" significa "venha buscar", então notificamos.
-      if (body.status === "ready" && orderWithCustomer.type !== "pickup") return;
+      if (
+        wppCfg?.notifyCustomer &&
+        customerPhone &&
+        !pularReady &&
+        wppCfg.notifyStatuses.includes(body.status)
+      ) {
+        const itemsSummary = (existingOrder.items ?? [])
+          .slice(0, 3)
+          .map(i => `• ${i.productName} ×${i.quantity}`)
+          .join("\n");
 
-      const itemsSummary = (orderWithCustomer.items ?? [])
-        .slice(0, 3)
-        .map(i => `• ${i.productName} ×${i.quantity}`)
-        .join("\n");
-
-      await notifyCustomerStatus({
-        storeId,
-        storeName:     storeRow.name,
-        orderNumber:   orderWithCustomer.number,
-        customerName:  orderWithCustomer.customer.name,
-        customerPhone: orderWithCustomer.customer.phone,
-        total:         orderWithCustomer.total,
-        paymentMethod: orderWithCustomer.paymentMethod ?? null,
-        storeAddress:  storeRow.address ?? null,
-        items:         itemsSummary,
-        status:        body.status,
-        wppConfig:     wppCfg,
-      });
-    })());
+        waitUntil(request, notifyCustomerStatus({
+          storeId,
+          storeName:     storeRow!.name,
+          orderNumber:   existingOrder.number,
+          customerName:  existingOrder.customer?.name ?? "Cliente",
+          customerPhone,
+          total:         existingOrder.total,
+          paymentMethod: (body.paymentMethod || existingOrder.paymentMethod) ?? null,
+          storeAddress:  storeRow!.address ?? null,
+          items:         itemsSummary,
+          status:        body.status,
+          wppConfig:     wppCfg,
+        }).catch(e => console.error("[updateOrderStatus] envio de WhatsApp falhou:", e)));
+      }
+    } catch (e) {
+      console.error("[updateOrderStatus] preparo da notificação de WhatsApp falhou:", e);
+    }
     // ─────────────────────────────────────────────────────────────────────────
 
     return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
