@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useMemo, useEffect, type ElementType } from "react";
-import { CreditCard, ReceiptText, Landmark, Building2, Ban, CheckCircle, Plus, Search, X, AlertTriangle, Pencil, Trash2, Lock, ChevronDown, Loader2 } from "lucide-react";
+import { CreditCard, ReceiptText, Landmark, Building2, Ban, CheckCircle, Plus, Search, X, AlertTriangle, Pencil, Trash2, Lock, ChevronDown, Loader2, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,19 +8,28 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PaymentMethodConfig } from "@/lib/store-context";
 import type { PaymentPlanOption } from "@/components/admin/PaymentMethodEditor";
+import type { StoreData } from "@/components/admin/settings/types";
 import { api } from "@/lib/api-client";
 
 const LazyPaymentMethodEditor = lazy(() =>
   import("@/components/admin/PaymentMethodEditor").then(m => ({ default: m.PaymentMethodEditor }))
 );
 
+// Painel "Pagamento Online" — antes vivia em Configurações → Pagamento. Foi
+// trazido pra cá pra centralizar no Financeiro tudo que é pagamento: formas
+// do PDV, planos, e o que o cliente vê no checkout da loja online (este).
+const LazyPagamentoLojaTab = lazy(() =>
+  import("@/components/admin/settings/PagamentoTab").then(m => ({ default: m.PagamentoTab }))
+);
+
 // ─── Gerais ──────────────────────────────────────────────────────────────────
 
-type FinTabId = "formas-pagamento" | "planos-pagamento" | "contas-movimento" | "bancos";
+type FinTabId = "formas-pagamento" | "planos-pagamento" | "pagamento-online" | "contas-movimento" | "bancos";
 
 const FIN_GERAIS_TABS: { id: FinTabId; label: string; icon: ElementType }[] = [
   { id: "formas-pagamento", label: "Formas de Pagamento", icon: CreditCard  },
   { id: "planos-pagamento", label: "Planos de Pagamento", icon: ReceiptText  },
+  { id: "pagamento-online", label: "Pagamento Online",     icon: Wallet     },
   { id: "contas-movimento", label: "Contas de Movimento", icon: Landmark    },
   { id: "bancos",           label: "Bancos",              icon: Building2   },
 ];
@@ -94,6 +103,54 @@ function PainelFormasPagamento() {
         onDeliveryPaymentChange={setDeliveryEnabled}
         onSave={handleSave}
       />
+    </Suspense>
+  );
+}
+
+// ── Pagamento Online (checkout da loja) ──────────────────────────────────────
+// Wrapper que resolve a loja pela sessão e entrega store/setStore pro
+// PagamentoTab (o mesmo componente que antes ficava em Configurações).
+
+function PainelPagamentoOnline() {
+  const [store, setStore] = useState<StoreData | null>(null);
+  const [erro, setErro]   = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    api.get("/api/store/user")
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { store?: { id: string } } | null) => {
+        const id = d?.store?.id;
+        if (!id) { if (vivo) setErro(true); return null; }
+        return fetch(`/api/store/get?id=${id}`).then(r => r.json());
+      })
+      .then((d: { store?: StoreData } | null) => {
+        if (!vivo || !d) return;
+        if (d.store) setStore(d.store);
+        else setErro(true);
+      })
+      .catch(() => { if (vivo) setErro(true); });
+    return () => { vivo = false; };
+  }, []);
+
+  if (erro) {
+    return (
+      <p className="text-sm text-muted-foreground py-12 text-center">
+        Não foi possível carregar as configurações de pagamento da loja.
+      </p>
+    );
+  }
+  if (!store) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <Suspense fallback={<div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>}>
+      <LazyPagamentoLojaTab store={store} setStore={setStore} />
     </Suspense>
   );
 }
@@ -767,7 +824,7 @@ export function SecaoConfiguracoesGerais() {
       <div>
         <h2 className="text-xl font-bold tracking-tight">Gerais</h2>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Formas de pagamento, planos, contas e bancos
+          Formas de pagamento, planos, pagamento online, contas e bancos
         </p>
       </div>
 
@@ -813,6 +870,7 @@ export function SecaoConfiguracoesGerais() {
         <div className="flex-1 min-w-0">
           {activeTab === "formas-pagamento" && <PainelFormasPagamento />}
           {activeTab === "planos-pagamento"  && <PainelPlanosPagamento />}
+          {activeTab === "pagamento-online"  && <PainelPagamentoOnline />}
           {activeTab === "contas-movimento"  && <PainelContasMovimento />}
           {activeTab === "bancos"            && <PainelBancos />}
         </div>
