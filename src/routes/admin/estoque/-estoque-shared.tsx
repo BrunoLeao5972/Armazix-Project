@@ -81,6 +81,7 @@ export const fmtDate = (iso: string) =>
 export const dbTypeToKey = (type: string): string => {
   const map: Record<string, string> = {
     ENTRADA: "entrada", SAIDA: "saida", VENDA: "saida",
+    DEVOLUCAO: "devolucao",
     AJUSTE: "ajuste", RECONTAGEM: "ajuste",
     PERDA: "perda", AVARIA: "perda",
     TRANSFERENCIA: "transferencia",
@@ -90,6 +91,7 @@ export const dbTypeToKey = (type: string): string => {
 
 export const MOV_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
   entrada:      { label: "Entrada",      color: "text-emerald-600", bg: "bg-emerald-500/15", icon: ArrowUpCircle },
+  devolucao:    { label: "Devolução",    color: "text-amber-600",   bg: "bg-amber-500/15",   icon: ArrowUpCircle },
   saida:        { label: "Saída",        color: "text-blue-600",    bg: "bg-blue-500/15",    icon: ArrowDownCircle },
   ajuste:       { label: "Ajuste",       color: "text-violet-600",  bg: "bg-violet-500/15",  icon: Settings2 },
   inventario:   { label: "Inventário",   color: "text-primary",     bg: "bg-primary/15",     icon: ClipboardList },

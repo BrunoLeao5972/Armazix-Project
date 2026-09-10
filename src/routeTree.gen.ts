@@ -48,6 +48,7 @@ import { Route as AdminFinanceiroIndexRouteImport } from './routes/admin/finance
 import { Route as AdminEstoqueIndexRouteImport } from './routes/admin/estoque/index'
 import { Route as StoreProductProductIdRouteImport } from './routes/store/product.$productId'
 import { Route as StoreOrderOrderIdRouteImport } from './routes/store/order.$orderId'
+import { Route as AdminFinanceiroVendasRouteImport } from './routes/admin/financeiro/vendas'
 import { Route as AdminFinanceiroSessoesRouteImport } from './routes/admin/financeiro/sessoes'
 import { Route as AdminFinanceiroReceberRouteImport } from './routes/admin/financeiro/receber'
 import { Route as AdminFinanceiroPagarRouteImport } from './routes/admin/financeiro/pagar'
@@ -260,6 +261,11 @@ const StoreOrderOrderIdRoute = StoreOrderOrderIdRouteImport.update({
   path: '/order/$orderId',
   getParentRoute: () => StoreRoute,
 } as any)
+const AdminFinanceiroVendasRoute = AdminFinanceiroVendasRouteImport.update({
+  id: '/vendas',
+  path: '/vendas',
+  getParentRoute: () => AdminFinanceiroRoute,
+} as any)
 const AdminFinanceiroSessoesRoute = AdminFinanceiroSessoesRouteImport.update({
   id: '/sessoes',
   path: '/sessoes',
@@ -398,6 +404,7 @@ export interface FileRoutesByFullPath {
   '/admin/financeiro/pagar': typeof AdminFinanceiroPagarRoute
   '/admin/financeiro/receber': typeof AdminFinanceiroReceberRoute
   '/admin/financeiro/sessoes': typeof AdminFinanceiroSessoesRoute
+  '/admin/financeiro/vendas': typeof AdminFinanceiroVendasRoute
   '/store/order/$orderId': typeof StoreOrderOrderIdRoute
   '/store/product/$productId': typeof StoreProductProductIdRoute
   '/admin/estoque/': typeof AdminEstoqueIndexRoute
@@ -451,6 +458,7 @@ export interface FileRoutesByTo {
   '/admin/financeiro/pagar': typeof AdminFinanceiroPagarRoute
   '/admin/financeiro/receber': typeof AdminFinanceiroReceberRoute
   '/admin/financeiro/sessoes': typeof AdminFinanceiroSessoesRoute
+  '/admin/financeiro/vendas': typeof AdminFinanceiroVendasRoute
   '/store/order/$orderId': typeof StoreOrderOrderIdRoute
   '/store/product/$productId': typeof StoreProductProductIdRoute
   '/admin/estoque': typeof AdminEstoqueIndexRoute
@@ -509,6 +517,7 @@ export interface FileRoutesById {
   '/admin/financeiro/pagar': typeof AdminFinanceiroPagarRoute
   '/admin/financeiro/receber': typeof AdminFinanceiroReceberRoute
   '/admin/financeiro/sessoes': typeof AdminFinanceiroSessoesRoute
+  '/admin/financeiro/vendas': typeof AdminFinanceiroVendasRoute
   '/store/order/$orderId': typeof StoreOrderOrderIdRoute
   '/store/product/$productId': typeof StoreProductProductIdRoute
   '/admin/estoque/': typeof AdminEstoqueIndexRoute
@@ -568,6 +577,7 @@ export interface FileRouteTypes {
     | '/admin/financeiro/pagar'
     | '/admin/financeiro/receber'
     | '/admin/financeiro/sessoes'
+    | '/admin/financeiro/vendas'
     | '/store/order/$orderId'
     | '/store/product/$productId'
     | '/admin/estoque/'
@@ -621,6 +631,7 @@ export interface FileRouteTypes {
     | '/admin/financeiro/pagar'
     | '/admin/financeiro/receber'
     | '/admin/financeiro/sessoes'
+    | '/admin/financeiro/vendas'
     | '/store/order/$orderId'
     | '/store/product/$productId'
     | '/admin/estoque'
@@ -678,6 +689,7 @@ export interface FileRouteTypes {
     | '/admin/financeiro/pagar'
     | '/admin/financeiro/receber'
     | '/admin/financeiro/sessoes'
+    | '/admin/financeiro/vendas'
     | '/store/order/$orderId'
     | '/store/product/$productId'
     | '/admin/estoque/'
@@ -973,6 +985,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StoreOrderOrderIdRouteImport
       parentRoute: typeof StoreRoute
     }
+    '/admin/financeiro/vendas': {
+      id: '/admin/financeiro/vendas'
+      path: '/vendas'
+      fullPath: '/admin/financeiro/vendas'
+      preLoaderRoute: typeof AdminFinanceiroVendasRouteImport
+      parentRoute: typeof AdminFinanceiroRoute
+    }
     '/admin/financeiro/sessoes': {
       id: '/admin/financeiro/sessoes'
       path: '/sessoes'
@@ -1125,6 +1144,7 @@ interface AdminFinanceiroRouteChildren {
   AdminFinanceiroPagarRoute: typeof AdminFinanceiroPagarRoute
   AdminFinanceiroReceberRoute: typeof AdminFinanceiroReceberRoute
   AdminFinanceiroSessoesRoute: typeof AdminFinanceiroSessoesRoute
+  AdminFinanceiroVendasRoute: typeof AdminFinanceiroVendasRoute
   AdminFinanceiroIndexRoute: typeof AdminFinanceiroIndexRoute
 }
 
@@ -1137,6 +1157,7 @@ const AdminFinanceiroRouteChildren: AdminFinanceiroRouteChildren = {
   AdminFinanceiroPagarRoute: AdminFinanceiroPagarRoute,
   AdminFinanceiroReceberRoute: AdminFinanceiroReceberRoute,
   AdminFinanceiroSessoesRoute: AdminFinanceiroSessoesRoute,
+  AdminFinanceiroVendasRoute: AdminFinanceiroVendasRoute,
   AdminFinanceiroIndexRoute: AdminFinanceiroIndexRoute,
 }
 

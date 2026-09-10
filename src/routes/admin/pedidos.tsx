@@ -18,6 +18,9 @@ import {
 } from "@/components/ui/popover";
 import { imprimirComandaProducao, imprimirFichaEntrega } from "@/lib/print/print-order";
 import { reservarAceiteAutomatico, liberarAceiteAutomatico } from "@/lib/orders/auto-accept-lock";
+import { useStoreRole } from "@/hooks/use-store-role";
+import { temPermissao } from "@/lib/reports-permissions";
+import { ModalCancelarPedido, type CancelarPedidoAlvo } from "./-modal-cancelar-pedido";
 
 const PrintOrderDialog = lazy(() => import("./-modal-imprimir-pedido"));
 const EditOrderDialog  = lazy(() => import("./-modal-editar-pedido"));
@@ -41,6 +44,9 @@ export interface RawOrder {
   paymentMethod: string | null; total: string; date?: string;
   subtotal?: string; deliveryFee?: string; discount?: string;
   couponId?: string | null; concretizedAt?: string | null;
+  // Rastreio do ciclo de vida da venda: aberta | finalizada | cancelada | estornada
+  saleStatus?: string | null;
+  cancelReason?: string | null; cancelReasonCode?: string | null;
   customer: OrderCustomer | null; items: OrderItem[]; payments?: OrderPayment[];
   addressSnapshot: {
     street?: string; number?: string; neighborhood?: string;
@@ -225,16 +231,18 @@ function Toast({ msg, type }: { msg: string; type: "success" | "error" }) {
 // ── OrderCard ─────────────────────────────────────────────────────────────────
 
 function OrderCard({
-  order, onAdvance, onCancel, onUncancel, onPrint, onPrintFallback, onEdit, isAdvancing,
+  order, onAdvance, onCancel, onUncancel, onPrint, onPrintFallback, onEdit, isAdvancing, podeEstornar,
 }: {
   order: Order;
   onAdvance: (id: string, next: string, paymentMethod?: string) => void;
-  onCancel: (id: string) => void;
+  onCancel: (order: Order) => void;
   onUncancel: (id: string) => void;
   onPrint: (id: string) => void;
   onPrintFallback: (msg: string, type: "success" | "error") => void;
   onEdit: (order: Order) => void;
   isAdvancing: boolean;
+  /** Operador pode estornar venda já finalizada (admin/gerente/owner). */
+  podeEstornar: boolean;
 }) {
   const [reprintOpen, setReprintOpen] = useState(false);
   const reprintRef = useRef<HTMLDivElement>(null);
@@ -250,26 +258,9 @@ function OrderCard({
     return () => document.removeEventListener("mousedown", handler);
   }, [reprintOpen]);
 
-  // Cancelar exige 2 cliques — o 1º só arma o botão (vira "Confirmar?"),
-  // o 2º (dentro de 3s) de fato cancela. Some sozinho se o operador não
-  // confirmar, pra não ficar armado indefinidamente num clique perdido.
-  const [confirmCancel, setConfirmCancel] = useState(false);
-  const confirmCancelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (confirmCancelTimer.current) clearTimeout(confirmCancelTimer.current);
-  }, []);
-
-  const handleCancelClick = () => {
-    if (!confirmCancel) {
-      setConfirmCancel(true);
-      confirmCancelTimer.current = setTimeout(() => setConfirmCancel(false), 3000);
-      return;
-    }
-    if (confirmCancelTimer.current) clearTimeout(confirmCancelTimer.current);
-    setConfirmCancel(false);
-    onCancel(order.orderId);
-  };
+  // A confirmação do cancelamento agora vive no modal (motivo obrigatório +
+  // aviso de estorno pra venda já finalizada) — o clique só abre o modal.
+  const vendaFinalizada = order.raw.saleStatus === "finalizada";
 
   const action = order.status === "ready" && order.type === "pickup"
     ? { label: "Retirado", next: "delivered", icon: CheckCircle2 }
@@ -281,7 +272,12 @@ function OrderCard({
 
   const sCfg = STATUS_CFG[order.status];
   const PayIcon = PAY_ICON[order.payment] ?? Banknote;
-  const canCancel = !["delivered", "cancelled"].includes(order.status);
+  // Cancelar/estornar: bloqueado só quando já não há o que desfazer
+  // (pedido cancelado ou venda já estornada). Uma venda finalizada pode ser
+  // estornada — mas só por admin/gerente (podeEstornar).
+  const jaEncerrada = order.status === "cancelled"
+    || order.raw.saleStatus === "cancelada" || order.raw.saleStatus === "estornada";
+  const canCancel = !jaEncerrada && (!vendaFinalizada || podeEstornar);
   // Editar fica disponível em qualquer etapa do fluxo — inclusive pedido já
   // concretizado (acontece antes de "Entregue" quando o PDV expede a
   // encomenda, ver order-edit-handler.ts). Só trava mesmo em concluído/
@@ -412,17 +408,13 @@ function OrderCard({
 
           {canCancel && (
             <button
-              onClick={handleCancelClick}
+              onClick={() => onCancel(order)}
               disabled={isAdvancing}
-              title={confirmCancel ? "Clique de novo pra confirmar o cancelamento" : "Cancelar pedido"}
-              className={`flex items-center gap-1 text-[11px] font-medium transition-colors px-2 py-1 rounded-lg disabled:opacity-40 ${
-                confirmCancel
-                  ? "text-destructive-foreground bg-destructive hover:bg-destructive/90 animate-pulse"
-                  : "text-muted-foreground hover:text-destructive hover:bg-destructive/8"
-              }`}
+              title={vendaFinalizada ? "Estornar venda — desfaz recebimento e devolve o estoque" : "Cancelar pedido"}
+              className="flex items-center gap-1 text-[11px] font-medium transition-colors px-2 py-1 rounded-lg disabled:opacity-40 text-muted-foreground hover:text-destructive hover:bg-destructive/8"
             >
               <XCircle className="w-3 h-3" />
-              {confirmCancel && "Confirmar?"}
+              {vendaFinalizada && "Estornar"}
             </button>
           )}
           {canUncancel && (
@@ -484,18 +476,19 @@ function OrderCard({
 
 // ── KanbanColumn ──────────────────────────────────────────────────────────────
 function KanbanColumn({
-  column, orders, onAdvance, onCancel, onUncancel, onPrint, onPrintFallback, onEdit, advancing, autoAccepting,
+  column, orders, onAdvance, onCancel, onUncancel, onPrint, onPrintFallback, onEdit, advancing, autoAccepting, podeEstornar,
 }: {
   column: ColumnConfig;
   orders: Order[];
   onAdvance: (id: string, next: string, paymentMethod?: string) => void;
-  onCancel: (id: string) => void;
+  onCancel: (order: Order) => void;
   onUncancel: (id: string) => void;
   onPrint: (id: string) => void;
   onPrintFallback: (msg: string, type: "success" | "error") => void;
   onEdit: (order: Order) => void;
   advancing: string | null;
   autoAccepting: Set<string>;
+  podeEstornar: boolean;
 }) {
   return (
     <div className={`flex flex-col rounded-2xl border ${column.border} overflow-hidden`}>
@@ -533,6 +526,7 @@ function KanbanColumn({
               onPrintFallback={onPrintFallback}
               onEdit={onEdit}
               isAdvancing={advancing === order.orderId || autoAccepting.has(order.orderId)}
+              podeEstornar={podeEstornar}
             />
           ))
         )}
@@ -552,7 +546,12 @@ function OrdersPage() {
   const [printOrderId, setPrintOrderId] = useState<string | null>(null);
   const [hasOpenedPrint, setHasOpenedPrint] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [cancelAlvo, setCancelAlvo] = useState<CancelarPedidoAlvo | null>(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
   const storeIdRef = useRef<string | null>(null);
+
+  const storeRole = useStoreRole();
+  const podeEstornar = temPermissao(storeRole, ["admin", "gerente"]);
 
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const showToast = useCallback((msg: string, type: "success" | "error") => {
@@ -740,20 +739,51 @@ function OrdersPage() {
     finally { setAdvancing(null); }
   };
 
-  const handleCancel = async (orderId: string) => {
-    setAdvancing(orderId);
+  // Abre o modal de motivo (cancelamento simples ou estorno, decidido pelo
+  // saleStatus da venda). O modal chama confirmarCancelamento no submit.
+  const abrirCancelamento = (order: Order) => {
+    setCancelAlvo({
+      orderId:    order.orderId,
+      number:     order.number,
+      total:      order.raw.total,
+      saleStatus: order.raw.saleStatus,
+      itemCount:  (order.raw.items ?? []).reduce((s, i) => s + (i.quantity || 0), 0),
+    });
+  };
+
+  const confirmarCancelamento = async (motivoCode: string, motivoNote: string) => {
+    if (!cancelAlvo) return;
+    setCancelLoading(true);
     try {
-      const res = await api.post("/api/orders/update-status", { orderId, status: "cancelled" });
+      const res = await api.post("/api/orders/update-status", {
+        orderId:          cancelAlvo.orderId,
+        status:           "cancelled",
+        cancelReasonCode: motivoCode || undefined,
+        cancelReason:     motivoNote || undefined,
+      });
+      const data = await res.json().catch(() => ({} as {
+        error?: string; estorno?: boolean; valorEstornado?: number; itensDevolvidos?: number;
+      }));
       if (res.ok) {
-        setOrders(prev => prev.map(o => o.orderId === orderId ? { ...o, status: "cancelled" } : o));
+        setOrders(prev => prev.map(o => o.orderId === cancelAlvo.orderId
+          ? { ...o, status: "cancelled", raw: { ...o.raw, saleStatus: data.estorno ? "estornada" : "cancelada" } }
+          : o));
+        if (data.estorno) {
+          const v = `R$ ${(data.valorEstornado ?? 0).toFixed(2).replace(".", ",")}`;
+          const n = data.itensDevolvidos ?? 0;
+          showToast(`Venda #${cancelAlvo.number} estornada — ${v} devolvidos, ${n} iten${n === 1 ? "" : "s"} de volta ao estoque`, "success");
+        } else {
+          showToast(`Pedido #${cancelAlvo.number} cancelado`, "success");
+        }
+        setCancelAlvo(null);
       } else {
-        const data = await res.json().catch(() => ({} as { error?: string }));
         showToast(data.error || "Não foi possível cancelar o pedido", "error");
       }
     } catch {
       showToast("Erro de conexão ao cancelar o pedido", "error");
+    } finally {
+      setCancelLoading(false);
     }
-    finally { setAdvancing(null); }
   };
 
   // "Reverter cancelamento" — pra pedido cancelado sem querer. O servidor
@@ -1095,16 +1125,24 @@ function OrdersPage() {
             column={col}
             orders={colOrders(col.statuses)}
             onAdvance={handleAdvance}
-            onCancel={handleCancel}
+            onCancel={abrirCancelamento}
             onUncancel={handleUncancel}
             onPrint={id => { setPrintOrderId(id); setHasOpenedPrint(true); }}
             onPrintFallback={showToast}
             onEdit={setEditingOrder}
             advancing={advancing}
             autoAccepting={autoAccepting}
+            podeEstornar={podeEstornar}
           />
         ))}
       </div>
+
+      <ModalCancelarPedido
+        alvo={cancelAlvo}
+        loading={cancelLoading}
+        onClose={() => setCancelAlvo(null)}
+        onConfirm={confirmarCancelamento}
+      />
 
       {/* ── Print dialog ────────────────────────────────────────────────────── */}
       {hasOpenedPrint && (

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ReportItem, FiltroVisivel } from "@/config/reportsConfig";
+import { MOTIVOS_CANCELAMENTO } from "@/lib/orders/motivos";
 import {
   searchClientes,
   searchFornecedores,
@@ -128,14 +129,6 @@ const CANAIS = [
   { value: "ecommerce", label: "E-commerce" },
   { value: "telefone", label: "Telefone" },
   { value: "whatsapp", label: "WhatsApp" },
-];
-
-// Motivos de cancelamento
-const MOTIVOS_CANCELAMENTO = [
-  { value: "cliente", label: "Desistência do Cliente" },
-  { value: "estoque", label: "Sem Estoque" },
-  { value: "preco", label: "Preço Incompatível" },
-  { value: "erro", label: "Erro de Cadastro" },
 ];
 
 export function ReportFilterDrawer({ report, isOpen, onClose, onGenerate }: ReportFilterDrawerProps) {

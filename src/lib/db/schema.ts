@@ -399,6 +399,18 @@ export const orders = pgTable("orders", {
   deliveredAt: timestamp("delivered_at"),
   cancelledAt: timestamp("cancelled_at"),
   cancelReason: text("cancel_reason"),
+  /** Chave do motivo padrão de cancelamento/estorno (lista em src/lib/orders/estorno.ts);
+   *  o texto livre do operador continua em `cancelReason`. */
+  cancelReasonCode: varchar("cancel_reason_code", { length: 30 }),
+  /**
+   * Rastreio do ciclo de vida financeiro da venda, à parte do status de
+   * fulfillment (kanban): aberta → finalizada (concretizada) → cancelada
+   * (cancelada antes de concretizar) | estornada (concretizada e depois
+   * revertida — financeiro + estoque + caixa desfeitos, ver
+   * src/lib/orders/estorno.ts). É o "o que ocorreu com aquela venda".
+   */
+  saleStatus: varchar("sale_status", { length: 12 }).notNull().default("aberta"),
+  refundedAt: timestamp("refunded_at"),
   /**
    * Quando a venda foi de fato concretizada — baixa real de estoque +
    * lançamento financeiro feitos. Separado de `paymentStatus` porque um
@@ -420,6 +432,7 @@ export const orders = pgTable("orders", {
   index("orders_store_idx").on(t.storeId),
   index("orders_customer_idx").on(t.customerId),
   index("orders_status_idx").on(t.status),
+  index("orders_sale_status_idx").on(t.saleStatus),
   index("orders_number_idx").on(t.number),
   index("orders_created_idx").on(t.createdAt),
 ]);

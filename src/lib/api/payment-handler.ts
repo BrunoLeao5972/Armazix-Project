@@ -1,4 +1,4 @@
-import { createDb, createTenantDbTransactional, setTenantContext } from "@/lib/db";
+import { createDb, createDbTransactional, createTenantDbTransactional, setTenantContext } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { and, eq, sql } from "drizzle-orm";
 import { encrypt, decrypt } from "@/lib/crypto";
@@ -6,6 +6,7 @@ import { requireStoreOwner, type AuthContext } from "@/lib/auth/require-store-ac
 import { waitUntil } from "@/lib/execution-context";
 import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
 import { reserveStock, releaseReservation, StockReservationError } from "@/lib/inventory/stock-reservation";
+import { estornarVendaConcretizada } from "@/lib/orders/estorno";
 
 const { stores, orders, orderItems } = schema;
 
@@ -423,7 +424,11 @@ function mapPaymentStatus(status?: string): PaymentOutcome {
 
 async function applyPaymentOutcome(
   db: ReturnType<typeof createDb>,
-  order: { id: string; storeId: string; paymentStatus: string | null; gatewayPaymentId: string | null; concretizedAt: Date | null },
+  order: {
+    id: string; storeId: string; number: number; total: string;
+    paymentStatus: string | null; gatewayPaymentId: string | null;
+    concretizedAt: Date | null; saleStatus: string | null; cancelledAt: Date | null;
+  },
   paymentId: string,
   rawStatus: string | undefined,
   outcome: PaymentOutcome,
@@ -476,6 +481,30 @@ async function applyPaymentOutcome(
     await tenantDb.transaction(async (tx) => {
       await tx.execute(setTenantContext(order.storeId));
       await releaseReservation(tx, order.storeId, items);
+    });
+  }
+
+  // Estorno via gateway de uma venda JÁ finalizada — desfaz o lançamento
+  // financeiro, devolve os itens ao estoque e ajusta o caixa (se aberto).
+  // Antes, um refund do MP num pedido concretizado não mexia em nada.
+  // Conexão admin/BYPASSRLS: financeiro_lancamentos só tem policy de SELECT
+  // pra armazix_tenant (mesmo motivo do updateOrderStatusHandler).
+  if (outcome.paymentStatus === "refunded" && order.saleStatus === "finalizada") {
+    const adminDb = createDbTransactional(process.env.DATABASE_URL!);
+    await adminDb.transaction(async (tx) => {
+      await estornarVendaConcretizada(tx, {
+        storeId: order.storeId,
+        order: {
+          id:          order.id,
+          number:      order.number,
+          total:       order.total,
+          saleStatus:  order.saleStatus,
+          cancelledAt: order.cancelledAt,
+        },
+        motivoCode: "gateway",
+        motivoNote: "Estorno automático via Mercado Pago",
+        now: new Date(),
+      });
     });
   }
 }

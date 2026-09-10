@@ -48,6 +48,12 @@ import {
   deleteContaReceberHandler,
 } from "./api/financeiro-receber-handler";
 import {
+  listVendasHandler,
+  detalheVendaHandler,
+  estornarVendaHandler,
+  listMovimentacoesHandler,
+} from "./api/financeiro-vendas-handler";
+import {
   getEstoqueBaixoHandler,
   getReportsWarmupHandler,
   getClientesTopHandler,
@@ -327,6 +333,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/financeiro/contas-receber/efetivar": efetivarContaReceberHandler,
   "/api/financeiro/contas-receber/cancelar": cancelarContaReceberHandler,
   "/api/financeiro/contas-receber/delete":   deleteContaReceberHandler,
+  "/api/financeiro/vendas/estornar":         estornarVendaHandler,
   "/api/products/backfill-pdv-codes": backfillPdvCodesHandler,
   "/api/categories/create": createCategoryHandler,
   "/api/categories/update": updateCategoryHandler,
@@ -438,6 +445,9 @@ const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/reports/fechamento-caixa": getFechamentoCaixaHandler,
   "/api/financeiro/contas-pagar": listContasPagarHandler,
   "/api/financeiro/contas-receber": listContasReceberHandler,
+  "/api/financeiro/vendas": listVendasHandler,
+  "/api/financeiro/vendas/detalhe": detalheVendaHandler,
+  "/api/financeiro/movimentacoes": listMovimentacoesHandler,
   "/api/store/business-hours": getBusinessHoursHandler,
   "/api/user/get": getUserDataHandler,
   "/api/financial/stats": getFinancialStatsHandler,
@@ -535,6 +545,7 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/financeiro/contas-receber/efetivar": "sensitive",
   "/api/financeiro/contas-receber/cancelar": "sensitive",
   "/api/financeiro/contas-receber/delete":   "sensitive",
+  "/api/financeiro/vendas/estornar":         "sensitive",
   // Lança item na conta da mesa e registra pagamento parcial — mesmo
   // perfil de risco das rotas de financeiro acima.
   "/api/service-points/tab/add-items":   "sensitive",

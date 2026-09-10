@@ -11,6 +11,10 @@ import { canCreateProduct } from "@/lib/api/plan-limits";
 import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
 import { reserveStock, releaseReservation, concretizeReservation, StockReservationError } from "@/lib/inventory/stock-reservation";
 import { MAX_ADDRESSES } from "@/lib/api/customer-handler";
+import { estornarVendaConcretizada, motivoLabel } from "@/lib/orders/estorno";
+import type { EstornoResult } from "@/lib/orders/estorno";
+import { temPermissao, type StoreRole } from "@/lib/reports-permissions";
+import { logFinanceiro, AuditActions, AuditModulos, ResourceTypes } from "@/lib/audit";
 
 const { products, categories, orders, orderItems, orderPayments, coupons, customers, stores, productAdditions, stockMovements, addresses, financeiroLancamentos, orderTimeline } = schema;
 
@@ -1262,7 +1266,10 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     });
   }
 
-  const body = await request.json() as { orderId: string; status: string; paymentMethod?: string };
+  const body = await request.json() as {
+    orderId: string; status: string; paymentMethod?: string;
+    cancelReasonCode?: string; cancelReason?: string;
+  };
   if (!body.orderId || !body.status) return new Response(JSON.stringify({ error: "orderId e status obrigatórios" }), { status: 400, headers: { "content-type": "application/json" } });
 
   // SECURITY: Whitelist valid statuses to prevent arbitrary status injection
@@ -1321,6 +1328,16 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     const now = new Date();
     const finalPaymentMethod = body.paymentMethod || existingOrder.paymentMethod;
 
+    // Cancelar uma venda JÁ finalizada = estorno: desfaz o lançamento
+    // financeiro, devolve os itens ao estoque e ajusta o caixa aberto. Ação
+    // sensível — só admin/gerente/owner.
+    const isEstorno = body.status === "cancelled" && existingOrder.saleStatus === "finalizada";
+    if (isEstorno && !temPermissao(auth?.storeRole as StoreRole | undefined, ["admin", "gerente"])) {
+      return new Response(JSON.stringify({
+        error: "Só administrador ou gerente pode cancelar/estornar uma venda já finalizada.",
+      }), { status: 403, headers: { "content-type": "application/json" } });
+    }
+
     // Concretizar "delivered" por aqui (sem passar pelo PDV) já não é mais
     // bloqueado pra loja com PDV — a forma de pagamento passa a ser sempre
     // definida antes, pelo botão Editar (itens/pagamento centralizados lá,
@@ -1344,27 +1361,52 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
       ...(body.status === "delivered" && { deliveredAt: now }),
       ...(body.status === "cancelled" && { cancelledAt: now }),
       ...(body.paymentMethod && { paymentMethod: body.paymentMethod }),
+      // Estorno (venda já finalizada) tem seu próprio patch dentro do motor —
+      // aqui só o cancelamento simples (antes da concretização).
+      ...(body.status === "cancelled" && !isEstorno && {
+        saleStatus:       "cancelada",
+        cancelReasonCode: body.cancelReasonCode ?? null,
+        cancelReason:     body.cancelReason?.trim() || motivoLabel(body.cancelReasonCode, body.cancelReason),
+      }),
     };
 
     // Transação atômica: status + timeline + reserva de estoque + financeiro
     // (db admin/BYPASSRLS — ver nota acima; toda query já filtra
     // eq(storeId, ...) manualmente, então o isolamento continua garantido).
-    await db.transaction(async (tx) => {
+    const estornoResult = await db.transaction(async (tx): Promise<EstornoResult | null> => {
       await tx.update(orders)
         .set(statusPatch)
         .where(and(eq(orders.id, body.orderId), eq(orders.storeId, storeId)));
 
+      const cancelComMotivo = body.status === "cancelled" && !isEstorno && (body.cancelReasonCode || body.cancelReason);
       await tx.insert(orderTimeline).values({
         orderId: body.orderId,
         status:  body.status,
-        note:    statusLabels[body.status] || body.status,
+        note:    cancelComMotivo
+          ? `${statusLabels.cancelled} — ${motivoLabel(body.cancelReasonCode, body.cancelReason)}`
+          : (statusLabels[body.status] || body.status),
       });
 
-      if (body.status === "cancelled" && existingOrder.concretizedAt === null) {
+      let estorno: EstornoResult | null = null;
+      if (body.status === "cancelled" && isEstorno) {
+        // Venda já finalizada — desfaz financeiro + estoque + caixa e marca
+        // como `estornada`. O motor insere sua própria linha de timeline.
+        estorno = await estornarVendaConcretizada(tx, {
+          storeId,
+          order: {
+            id:          body.orderId,
+            number:      existingOrder.number,
+            total:       existingOrder.total,
+            saleStatus:  existingOrder.saleStatus,
+            cancelledAt: existingOrder.cancelledAt,
+          },
+          motivoCode: body.cancelReasonCode ?? null,
+          motivoNote: body.cancelReason ?? null,
+          now,
+        });
+      } else if (body.status === "cancelled" && existingOrder.concretizedAt === null) {
         // Pedido ainda não concretizado — libera a reserva sem nunca ter
-        // mexido no estoque físico. Cancelar uma venda já concretizada é um
-        // caso de estorno/devolução, fora de escopo aqui (não mexe em nada,
-        // igual já era antes dessa mudança).
+        // mexido no estoque físico.
         const items = await tx.query.orderItems.findMany({
           where: eq(orderItems.orderId, body.orderId),
           columns: { productId: true, productName: true, quantity: true },
@@ -1377,7 +1419,7 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
         // IS NULL) — evita concretizar estoque/financeiro duas vezes numa
         // corrida de clique duplo ou evento fora de ordem.
         const [claimed] = await tx.update(orders)
-          .set({ concretizedAt: now, paymentStatus: "paid" })
+          .set({ concretizedAt: now, paymentStatus: "paid", saleStatus: "finalizada" })
           .where(and(
             eq(orders.id, body.orderId),
             eq(orders.storeId, storeId),
@@ -1429,6 +1471,8 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
           }
         }
       }
+
+      return estorno;
     });
 
     // ── Notificação de WhatsApp pro cliente ──────────────────────────────────
@@ -1482,7 +1526,29 @@ export async function updateOrderStatusHandler(request: Request, auth?: AuthCont
     }
     // ─────────────────────────────────────────────────────────────────────────
 
-    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { "content-type": "application/json" } });
+    if (estornoResult && !estornoResult.jaEstornada) {
+      logFinanceiro({
+        action:       AuditActions.VENDA_ESTORNAR,
+        modulo:       AuditModulos.FINANCEIRO_VENDAS,
+        resourceType: ResourceTypes.ORDER,
+        resourceId:   body.orderId,
+        userId:       auth?.userId,
+        storeId,
+        dadosNovos: {
+          numero:          existingOrder.number,
+          motivo:          motivoLabel(body.cancelReasonCode, body.cancelReason),
+          valorEstornado:  estornoResult.valorEstornado,
+          itensDevolvidos: estornoResult.itensDevolvidos,
+        },
+      }, request);
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      ...(estornoResult
+        ? { estorno: true, valorEstornado: estornoResult.valorEstornado, itensDevolvidos: estornoResult.itensDevolvidos }
+        : {}),
+    }), { status: 200, headers: { "content-type": "application/json" } });
   } catch (error) {
     console.error("Update order status error:", error);
     return new Response(JSON.stringify({ error: "Failed to update order status" }), { status: 500, headers: { "content-type": "application/json" } });

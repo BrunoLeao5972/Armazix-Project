@@ -45,6 +45,7 @@ import {
   TrendingUp,
   ArrowUpDown,
   BarChart2,
+  Receipt,
   Mail,
   AlertTriangle,
   Clock,
@@ -140,6 +141,7 @@ const NAV_GROUPS: NavGroup[] = [
     collapsible: true,
     items: [
       { label: "Dashboard Financeiro", icon: BarChart3,   href: "/admin/financeiro"             },
+      { label: "Vendas",               icon: Receipt,     href: "/admin/financeiro/vendas"   },
       { label: "Contas a pagar",       icon: CreditCard,  href: "/admin/financeiro/pagar"    },
       { label: "Contas a receber",     icon: Banknote,    href: "/admin/financeiro/receber" },
       { label: "Fluxo de Caixa",       icon: TrendingUp,  href: "/admin/financeiro/fluxo-caixa"    },

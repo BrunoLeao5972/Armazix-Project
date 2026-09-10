@@ -157,7 +157,7 @@ export function SecaoBalanco() {
   const negativoKpi  = kpiProducts.filter(p => p.stock < 0).length;
   const semEstoque   = kpiProducts.filter(p => p.stock === 0).length;
   const baixo        = kpiProducts.filter(p => p.stock > 0 && p.stock <= p.minStock).length;
-  const entradas     = activeMovements.filter(m => m.type === "ENTRADA").reduce((s, m) => s + m.quantity, 0);
+  const entradas     = activeMovements.filter(m => ["ENTRADA", "DEVOLUCAO"].includes(m.type)).reduce((s, m) => s + m.quantity, 0);
   const saidas       = activeMovements.filter(m => ["SAIDA", "VENDA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0);
   const perdas       = activeMovements.filter(m => ["PERDA", "AVARIA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0);
   const movimentados = new Set(activeMovements.map(m => m.productId).filter(Boolean)).size;
@@ -176,7 +176,7 @@ export function SecaoBalanco() {
       const dayMovs = activeMovements.filter(m => { const d = new Date(m.createdAt); return d >= barStart && d < barEnd; });
       return {
         name:    label,
-        entrada: dayMovs.filter(m => m.type === "ENTRADA").reduce((s, m) => s + m.quantity, 0),
+        entrada: dayMovs.filter(m => ["ENTRADA", "DEVOLUCAO"].includes(m.type)).reduce((s, m) => s + m.quantity, 0),
         saida:   dayMovs.filter(m => ["SAIDA", "VENDA", "PERDA", "AVARIA"].includes(m.type)).reduce((s, m) => s + m.quantity, 0),
       };
     });

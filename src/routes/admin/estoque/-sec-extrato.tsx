@@ -49,7 +49,7 @@ export function SecaoExtrato() {
           <Input placeholder="Buscar produto" value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 rounded-xl" />
         </div>
         <div className="flex gap-2 flex-wrap">
-          {["todos", "entrada", "saida", "ajuste", "transferencia", "perda"].map(t => (
+          {["todos", "entrada", "devolucao", "saida", "ajuste", "transferencia", "perda"].map(t => (
             <button key={t} onClick={() => setFilterType(t)}
               className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${filterType === t ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
               {t === "todos" ? "Todos" : MOV_TYPE_CONFIG[t]?.label ?? t}

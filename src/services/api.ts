@@ -167,3 +167,24 @@ export async function deleteContaReceber(id: string) {
 export async function getFinanceiroMovimentacoes() {
   return http<any[]>(`/financeiro/movimentacoes`);
 }
+
+// ===== Financeiro / Vendas (histórico rastreável + estorno) =====
+export async function getFinanceiroVendas(params: { from?: string; to?: string; status?: string; metodo?: string; q?: string } = {}) {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v) as [string, string][],
+  ).toString();
+  return http<{ vendas: any[]; kpis: Record<string, number> }>(`/financeiro/vendas${qs ? `?${qs}` : ""}`);
+}
+
+export async function getFinanceiroVendaDetalhe(orderId: string) {
+  return http<{ venda: any; itens: any[]; timeline: any[]; lancamentos: any[] }>(
+    `/financeiro/vendas/detalhe?orderId=${encodeURIComponent(orderId)}`,
+  );
+}
+
+export async function estornarVenda(orderId: string, motivoCode: string, motivoNote: string) {
+  return postJson<{ success: boolean; valorEstornado: number; itensDevolvidos: number; jaEstornada: boolean }>(
+    `/financeiro/vendas/estornar`,
+    { orderId, motivoCode: motivoCode || undefined, motivoNote: motivoNote || undefined },
+  );
+}

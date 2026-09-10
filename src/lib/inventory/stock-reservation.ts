@@ -246,3 +246,47 @@ export async function concretizeReservation(
     });
   }
 }
+
+// ─── Reverter concretização — devolução por estorno ───────────────
+// Espelho de concretizeReservation: soma a quantidade de volta em
+// `products.stock` e registra o movimento tipo "DEVOLUCAO" (entrada). Usado
+// só quando uma venda JÁ finalizada é estornada (ver src/lib/orders/estorno.ts).
+// Não mexe em `reserved` (a reserva já tinha sido consumida na concretização).
+// Só afeta produtos com trackStock.
+export async function reverseConcretization(
+  tx: Tx,
+  storeId: string,
+  items: ReservationItem[],
+  orderId: string,
+  orderNumber: number,
+): Promise<void> {
+  for (const item of items) {
+    if (!item.productId || item.quantity <= 0) continue;
+
+    const [prod] = await tx
+      .select({ stock: products.stock, trackStock: products.trackStock })
+      .from(products)
+      .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)))
+      .limit(1);
+    if (!prod?.trackStock) continue;
+
+    const balanceBefore = prod.stock ?? 0;
+    const balanceAfter  = balanceBefore + item.quantity;
+
+    await tx.update(products)
+      .set({ stock: balanceAfter, updatedAt: new Date() })
+      .where(and(eq(products.id, item.productId), eq(products.storeId, storeId)));
+
+    await tx.insert(stockMovements).values({
+      storeId,
+      productId:   item.productId,
+      productName: item.productName,
+      type:        "DEVOLUCAO",
+      quantity:    item.quantity,
+      balanceBefore,
+      balanceAfter,
+      origem:      `Devolução — Pedido #${orderNumber} (estorno)`,
+      orderId,
+    });
+  }
+}

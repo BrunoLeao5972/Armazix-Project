@@ -129,6 +129,8 @@ export const AuditActions = {
   ORDER_UPDATE: "ORDER_UPDATE",
   ORDER_DELETE: "ORDER_DELETE",
   ORDER_STATUS_CHANGE: "ORDER_STATUS_CHANGE",
+  /** Venda já finalizada foi revertida — financeiro + estoque + caixa desfeitos */
+  VENDA_ESTORNAR: "VENDA_ESTORNAR",
   
   // Customers
   CUSTOMER_CREATE: "CUSTOMER_CREATE",
@@ -240,6 +242,7 @@ export const CRITICAL_AUDIT_ACTIONS: readonly string[] = [
   AuditActions.ORDER_DELETE,
   AuditActions.CUSTOMER_DELETE,
   AuditActions.PAYMENT_REFUNDED,
+  AuditActions.VENDA_ESTORNAR,
   AuditActions.STORE_DELETE,
   AuditActions.USER_DELETE,
   AuditActions.COUPON_DELETE,
@@ -273,6 +276,7 @@ export const AuditModulos = {
   FINANCEIRO_RECEBER:  "FINANCEIRO_RECEBER",
   FINANCEIRO_PAGAR:    "FINANCEIRO_PAGAR",
   FINANCEIRO_FLUXO:    "FINANCEIRO_FLUXO",
+  FINANCEIRO_VENDAS:   "FINANCEIRO_VENDAS",
   VENDAS_PDV:          "VENDAS_PDV",
   ESTOQUE:             "ESTOQUE",
   AUTENTICACAO:        "AUTENTICACAO",

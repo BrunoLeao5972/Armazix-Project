@@ -418,6 +418,10 @@ export async function finalizarVendaPdvHandler(
       type:          "pickup",
       paymentMethod: body.paymentMethod,
       paymentStatus: "paid",
+      // Venda do PDV nasce concretizada e finalizada — a baixa de estoque e o
+      // lançamento financeiro acontecem logo abaixo, na mesma transação.
+      saleStatus:    "finalizada",
+      concretizedAt: new Date(),
       installments:  body.installments && body.installments > 1 ? body.installments : 1,
       subtotal:      body.subtotal,
       deliveryFee:   "0",
