@@ -416,6 +416,7 @@ export async function finalizarVendaPdvHandler(
       number:        nextNumber,
       status:        "delivered",
       type:          "pickup",
+      channel:       "pdv",
       paymentMethod: body.paymentMethod,
       paymentStatus: "paid",
       // Venda do PDV nasce concretizada e finalizada — a baixa de estoque e o

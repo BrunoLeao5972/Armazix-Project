@@ -148,6 +148,7 @@ export async function createMpCheckoutHandler(request: Request): Promise<Respons
         number: nextNumber,
         status: "received",
         type: body.type || "delivery",
+        channel: "online",
         paymentMethod: "mercadopago",
         paymentStatus: "pending",
         subtotal: priced.subtotal,

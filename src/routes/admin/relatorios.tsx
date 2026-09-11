@@ -15,9 +15,9 @@ export const Route = createFileRoute("/admin/relatorios")({ component: ReportsPa
 
 type ModuloReport = "estoque" | "clientes" | "produtos" | "vendas" | "financeiro" | "fiscal" | "auditoria";
 type UsoReport = "operacional" | "gerencial" | "fiscal" | "auditoria";
-type TipoFiltro = "periodo" | "vendedor" | "cliente" | "fornecedor" | "produto" | "formaPagamento" | "status" | "canal" | "conta" | "historico";
+type TipoFiltro = "periodo" | "vendedor" | "cliente" | "fornecedor" | "produto" | "formaPagamento" | "status" | "canal" | "conta" | "historico" | "categoriaProduto" | "ordem" | "agrupamento";
 
-interface ReportConfig { id: string; nome: string; descricao: string; modulo: ModuloReport; uso: UsoReport; permissao: readonly Permissao[]; icone: React.ElementType; destaque?: boolean; filtrosDisponiveis?: TipoFiltro[]; }
+interface ReportConfig { id: string; nome: string; descricao: string; modulo: ModuloReport; uso: UsoReport; permissao: readonly Permissao[]; icone: React.ElementType; destaque?: boolean; filtrosDisponiveis?: TipoFiltro[]; /** Esconde o bloco de período (relatórios de estado atual, ex: estoque baixo) */ semPeriodo?: boolean; }
 
 // ============================================
 // CATALOGO EXPANSÍVEL DE RELATÓRIOS ARMAZIX
@@ -28,13 +28,13 @@ const CATALOGO_RELATORIOS: ReportConfig[] = [
   { id: "est-002", nome: "Saída de Produtos", descricao: "Histórico detalhado de todas as saídas de estoque", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-002"], icone: TrendingDown, filtrosDisponiveis: ["periodo", "vendedor", "produto"] },
   { id: "est-003", nome: "Extrato e Inventário", descricao: "Posição atual do estoque com valorização", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-003"], icone: FileText, filtrosDisponiveis: ["produto"] },
   { id: "est-004", nome: "Balanço de Estoque", descricao: "Comparativo teórico vs físico com ajustes", modulo: "estoque", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["est-004"], icone: BarChart3, filtrosDisponiveis: ["periodo"] },
-  { id: "est-005", nome: "Produtos com Estoque Baixo", descricao: "Alerta de produtos abaixo do ponto de reposição", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-005"], icone: AlertCircle, destaque: true },
+  { id: "est-005", nome: "Produtos com Estoque Baixo", descricao: "Alerta de produtos abaixo do ponto de reposição", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-005"], icone: AlertCircle, destaque: true, filtrosDisponiveis: ["categoriaProduto", "ordem", "agrupamento"], semPeriodo: true },
   { id: "est-006", nome: "Produtos sem Movimentação", descricao: "Itens sem entrada ou saída no período analisado", modulo: "estoque", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["est-006"], icone: Clock, filtrosDisponiveis: ["periodo", "produto"] },
   { id: "est-007", nome: "Histórico de Movimentações", descricao: "Rastreabilidade completa de todas as movimentações", modulo: "estoque", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["est-007"], icone: History, filtrosDisponiveis: ["periodo", "produto", "vendedor"] },
 
   // 👥 CLIENTES & COMPORTAMENTO
   { id: "cli-001", nome: "Clientes Cadastrados", descricao: "Base completa de clientes ativos e inativos", modulo: "clientes", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["cli-001"], icone: Users, filtrosDisponiveis: ["periodo", "status"] },
-  { id: "cli-002", nome: "Clientes que Mais Compram", descricao: "Ranking de clientes por volume de compras", modulo: "clientes", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["cli-002"], icone: TrendingUp, destaque: true, filtrosDisponiveis: ["periodo"] },
+  { id: "cli-002", nome: "Clientes que Mais Compram", descricao: "Ranking de clientes por volume de compras", modulo: "clientes", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["cli-002"], icone: TrendingUp, destaque: true, filtrosDisponiveis: ["periodo", "ordem", "canal"] },
   { id: "cli-003", nome: "Histórico de Compras por Cliente", descricao: "Detalhamento completo de compras individualizadas", modulo: "clientes", uso: "operacional", permissao: REPORT_REQUIRED_ROLES["cli-003"], icone: Receipt, filtrosDisponiveis: ["periodo", "cliente"] },
   { id: "cli-004", nome: "Clientes Inativos", descricao: "Clientes sem compras no período analisado", modulo: "clientes", uso: "gerencial", permissao: REPORT_REQUIRED_ROLES["cli-004"], icone: User, filtrosDisponiveis: ["periodo"] },
   // cli-005 (Aniversariantes) fica fora do catálogo visível — customers não
@@ -101,6 +101,31 @@ const STATUS_OPTIONS_POR_RELATORIO: Record<string, { key: string; label: string 
   "fin-002": LANCAMENTO_STATUS_OPTIONS,
   "fin-003": LANCAMENTO_STATUS_OPTIONS,
 };
+// Opções de ordenação — a chave é enviada como ?ordem= pro backend.
+const ORDEM_OPTIONS_POR_RELATORIO: Record<string, { key: string; label: string }[]> = {
+  "est-005": [
+    { key: "deficit-asc",  label: "Mais crítico primeiro" },
+    { key: "deficit-desc", label: "Menos crítico primeiro" },
+    { key: "nome-asc",     label: "Nome (A → Z)" },
+    { key: "nome-desc",    label: "Nome (Z → A)" },
+  ],
+  "cli-002": [
+    { key: "total-desc",   label: "Maior valor gasto" },
+    { key: "pedidos-desc", label: "Mais pedidos" },
+    { key: "nome-asc",     label: "Nome (A → Z)" },
+    { key: "nome-desc",    label: "Nome (Z → A)" },
+  ],
+};
+const CANAL_OPTIONS = [
+  { key: "todos",  label: "Todos os canais" },
+  { key: "pdv",    label: "PDV (frente de caixa)" },
+  { key: "online", label: "Loja Online" },
+];
+const AGRUPAMENTO_OPTIONS = [
+  { key: "nenhum",    label: "Sem agrupamento" },
+  { key: "categoria", label: "Por categoria" },
+  { key: "setor",     label: "Por setor" },
+];
 const MODULOS_LABEL: Record<ModuloReport, { label: string; cor: string }> = { estoque: { label: "Estoque", cor: "text-emerald-600 bg-emerald-500/10" }, clientes: { label: "Clientes", cor: "text-blue-600 bg-blue-500/10" }, produtos: { label: "Produtos", cor: "text-violet-600 bg-violet-500/10" }, vendas: { label: "Vendas", cor: "text-amber-600 bg-amber-500/10" }, financeiro: { label: "Financeiro", cor: "text-rose-600 bg-rose-500/10" }, fiscal: { label: "Fiscal", cor: "text-muted-foreground bg-slate-500/10" }, auditoria: { label: "Auditoria", cor: "text-red-600 bg-red-500/10" } };
 
 // Busca o papel real do usuário logado nesta loja (storeUsers.role) — antes
@@ -134,14 +159,24 @@ function hojeISO(offsetDias = 0): string {
   return d.toISOString().slice(0, 10);
 }
 
+// "YYYY-MM-DDTHH:mm" no fuso local — formato que o <input type="datetime-local">
+// exige no value. fimDoDia usa 23:59 pra o "Até" pegar o dia inteiro por padrão.
+function hojeHoraISO(offsetDias = 0, fimDoDia = false): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDias);
+  if (fimDoDia) d.setHours(23, 59, 0, 0); else d.setHours(0, 0, 0, 0);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function ReportFilterDrawer({
   report, isOpen, onClose, onGerar,
 }: {
   report: ReportConfig | null; isOpen: boolean; onClose: () => void;
   onGerar: (filtros: FiltrosDrawer) => void;
 }) {
-  const [dataDe, setDataDe] = useState(hojeISO(-30));
-  const [dataAte, setDataAte] = useState(hojeISO());
+  const [dataDe, setDataDe] = useState(hojeHoraISO(-30));
+  const [dataAte, setDataAte] = useState(hojeHoraISO(0, true));
   const [usuarioId, setUsuarioId] = useState("");
   const [cliente, setCliente] = useState("");
   const [fornecedor, setFornecedor] = useState("");
@@ -150,6 +185,10 @@ function ReportFilterDrawer({
   const [historico, setHistorico] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("");
   const [status, setStatus] = useState("");
+  const [categoriaProduto, setCategoriaProduto] = useState("");
+  const [ordem, setOrdem] = useState("");
+  const [agrupamento, setAgrupamento] = useState("");
+  const [canal, setCanal] = useState("");
   const [buscaUser, setBuscaUser] = useState("");
   const [buscaCli, setBuscaCli] = useState("");
   const [buscaForn, setBuscaForn] = useState("");
@@ -162,6 +201,7 @@ function ReportFilterDrawer({
   const [fornecedoresEncontrados, setFornecedoresEncontrados] = useState<{ id: string; name: string; phone: string | null }[]>([]);
   const [produtosEncontrados, setProdutosEncontrados] = useState<{ id: string; name: string; sku: string | null }[]>([]);
   const [categorias, setCategorias] = useState<string[]>([]);
+  const [categoriasProduto, setCategoriasProduto] = useState<{ id: string; name: string }[]>([]);
 
   const mostrarUsuario = report?.filtrosDisponiveis?.includes("vendedor") ?? false;
   const mostrarCliente = report?.filtrosDisponiveis?.includes("cliente") ?? false;
@@ -171,6 +211,11 @@ function ReportFilterDrawer({
   const mostrarFormaPagamento = report?.filtrosDisponiveis?.includes("formaPagamento") ?? false;
   const mostrarHistorico = report?.filtrosDisponiveis?.includes("historico") ?? false;
   const mostrarStatus = report?.filtrosDisponiveis?.includes("status") ?? false;
+  const mostrarCategoriaProduto = report?.filtrosDisponiveis?.includes("categoriaProduto") ?? false;
+  const mostrarOrdem = report?.filtrosDisponiveis?.includes("ordem") ?? false;
+  const mostrarAgrupamento = report?.filtrosDisponiveis?.includes("agrupamento") ?? false;
+  const mostrarCanal = report?.filtrosDisponiveis?.includes("canal") ?? false;
+  const ordemOptions = ORDEM_OPTIONS_POR_RELATORIO[report?.id ?? ""] ?? [];
   // "status" significa coisas diferentes conforme o relatório — não dá pra
   // inferir só pelo módulo (ex: "produtos" e "clientes" usam ativo/inativo,
   // "vendas" às vezes é pedido e às vezes é cancelado/devolvido).
@@ -189,6 +234,23 @@ function ReportFilterDrawer({
       .then((d: { categorias?: string[] }) => setCategorias(d.categorias ?? []))
       .catch(() => {});
   }, [isOpen, mostrarHistorico]);
+
+  useEffect(() => {
+    if (!isOpen || !mostrarCategoriaProduto) return;
+    fetch("/api/categories/list-admin").then(r => r.json())
+      .then((d: { categories?: { id: string; name: string }[] }) =>
+        setCategoriasProduto((d.categories ?? []).map(c => ({ id: c.id, name: c.name }))))
+      .catch(() => {});
+  }, [isOpen, mostrarCategoriaProduto]);
+
+  // Pré-seleciona a 1ª opção de ordenação do relatório pra o <select> refletir
+  // o que o backend faz por padrão. limpar() zera → volta pra 1ª opção aqui.
+  useEffect(() => {
+    if (isOpen && mostrarOrdem && !ordem) {
+      const opts = ORDEM_OPTIONS_POR_RELATORIO[report?.id ?? ""] ?? [];
+      if (opts.length) setOrdem(opts[0].key);
+    }
+  }, [isOpen, mostrarOrdem, ordem, report?.id]);
 
   useEffect(() => {
     if (!mostrarCliente || !buscaCli.trim()) { setClientesEncontrados([]); return; }
@@ -226,9 +288,10 @@ function ReportFilterDrawer({
   const produtoSelecionado = produtosEncontrados.find(p => p.id === produto);
 
   const limpar = () => {
-    setDataDe(hojeISO(-30)); setDataAte(hojeISO());
+    setDataDe(hojeHoraISO(-30)); setDataAte(hojeHoraISO(0, true));
     setUsuarioId(""); setCliente(""); setFornecedor(""); setProduto(""); setConta("");
     setHistorico(""); setFormaPagamento(""); setStatus("");
+    setCategoriaProduto(""); setOrdem(""); setAgrupamento(""); setCanal("");
     setBuscaUser(""); setBuscaCli(""); setBuscaForn(""); setBuscaProd("");
   };
 
@@ -240,13 +303,15 @@ function ReportFilterDrawer({
           <div className="flex items-center gap-2"><button onClick={limpar} className="text-xs px-3 py-1.5 rounded-lg border hover:bg-secondary">Limpar Filtros</button><button onClick={onClose} className="p-2 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button></div>
         </div>
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          <div className="space-y-4 p-4 bg-secondary rounded-2xl border">
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Calendar className="w-4 h-4" /> Período de Análise</div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">De</label><input type="date" value={dataDe} onChange={e => setDataDe(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card text-sm" /></div>
-              <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">Até</label><input type="date" value={dataAte} onChange={e => setDataAte(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card text-sm" /></div>
+          {!report.semPeriodo && (
+            <div className="space-y-4 p-4 bg-secondary rounded-2xl border">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground"><Calendar className="w-4 h-4" /> Período de Análise</div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">De</label><input type="datetime-local" value={dataDe} onChange={e => setDataDe(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card text-sm" /></div>
+                <div className="space-y-1.5"><label className="text-xs font-medium text-muted-foreground">Até</label><input type="datetime-local" value={dataAte} onChange={e => setDataAte(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card text-sm" /></div>
+              </div>
             </div>
-          </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {mostrarUsuario && (
               <div className="space-y-2">
@@ -316,6 +381,39 @@ function ReportFilterDrawer({
                 </select>
               </div>
             )}
+            {mostrarCategoriaProduto && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Tag className="w-3 h-3" /> Categoria do Produto</label>
+                <select value={categoriaProduto} onChange={e => setCategoriaProduto(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+                  <option value="">Todas</option>
+                  {categoriasProduto.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
+            {mostrarOrdem && ordemOptions.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><TrendingDown className="w-3 h-3" /> Ordenar por</label>
+                <select value={ordem} onChange={e => setOrdem(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+                  {ordemOptions.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
+            {mostrarAgrupamento && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><BarChart3 className="w-3 h-3" /> Agrupamento</label>
+                <select value={agrupamento || "nenhum"} onChange={e => setAgrupamento(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+                  {AGRUPAMENTO_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
+            {mostrarCanal && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground flex items-center gap-1"><Store className="w-3 h-3" /> Canal de Venda</label>
+                <select value={canal || "todos"} onChange={e => setCanal(e.target.value)} className="w-full h-10 px-3 rounded-xl border bg-card focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+                  {CANAL_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
           </div>
         </div>
         <div className="p-6 border-t bg-card">
@@ -323,6 +421,7 @@ function ReportFilterDrawer({
             onClick={() => onGerar({
               dataDe, dataAte, clienteId: cliente, usuarioId, usuarioNome: usuarioSelecionado?.name || "",
               formaPagamento, status, historico, produtoId: produto, fornecedorId: fornecedor,
+              categoriaId: categoriaProduto, ordem, agrupamento, canal,
             })}
             className="w-full h-12 rounded-2xl text-base font-semibold bg-gradient-primary text-primary-foreground"
           >

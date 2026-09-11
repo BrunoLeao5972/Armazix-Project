@@ -920,6 +920,7 @@ export async function createOrderHandler(request: Request): Promise<Response> {
           number:            seqNumber,
           status:            "received",
           type:              body.type || "delivery",
+          channel:           "online",
           paymentMethod:     body.paymentMethod || null,
           installments:      body.installments && body.installments > 1 ? body.installments : 1,
           cardFeeAmount:     body.cardFeeAmount || null,

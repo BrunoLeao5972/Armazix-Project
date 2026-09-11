@@ -35,11 +35,20 @@ export interface FiltrosDrawer {
   usuarioNome: string;
   formaPagamento: string; status: string; historico: string;
   produtoId: string; fornecedorId: string;
+  /** est-005: id da categoria de produto */
+  categoriaId: string;
+  /** est-005 / cli-002: chave de ordenação (varia por relatório) */
+  ordem: string;
+  /** est-005: "nenhum" | "categoria" | "setor" */
+  agrupamento: string;
+  /** cli-002: "todos" | "pdv" | "online" */
+  canal: string;
 }
 
 export const DEFAULT_FILTROS: FiltrosDrawer = {
   dataDe: "", dataAte: "", clienteId: "", usuarioId: "", usuarioNome: "", formaPagamento: "", status: "", historico: "",
   produtoId: "", fornecedorId: "",
+  categoriaId: "", ordem: "", agrupamento: "", canal: "",
 };
 
 // IDs do catálogo (relatorios.tsx) que já têm backend real — os 3 que
@@ -80,16 +89,43 @@ const fmtData = (iso: string) => {
 const fmtDataHora = (iso: string) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 // ─── Normalizadores — resposta da API → formato genérico de tabela ─
-function normalizarEstoqueBaixo(data: { produtos: { nome: string; sku: string | null; estoqueAtual: number; estoqueMinimo: number }[] }): ResultadoRelatorio {
+interface EstoqueBaixoItem { nome: string; sku: string | null; estoqueAtual: number; estoqueMinimo: number; categoria?: string }
+function normalizarEstoqueBaixo(data: {
+  produtos?: EstoqueBaixoItem[];
+  grupos?: { grupo: string; produtos: EstoqueBaixoItem[] }[];
+  total?: number;
+}): ResultadoRelatorio {
+  const colunas: Coluna[] = [
+    { key: "nome", label: "Produto" }, { key: "sku", label: "SKU" },
+    { key: "categoria", label: "Categoria" },
+    { key: "estoqueAtual", label: "Estoque Atual", align: "right" },
+    { key: "estoqueMinimo", label: "Estoque Mínimo", align: "right" },
+  ];
+  const linha = (p: EstoqueBaixoItem) => ({
+    nome: p.nome, sku: p.sku || "—", categoria: p.categoria || "—",
+    estoqueAtual: p.estoqueAtual, estoqueMinimo: p.estoqueMinimo,
+  });
+  const total = data.total ?? data.produtos?.length ?? 0;
+
+  // Resposta agrupada (agrupar=categoria|setor) → uma seção por grupo.
+  if (data.grupos) {
+    return {
+      titulo: "Produtos com Estoque Baixo",
+      kpis: [{ label: "Produtos abaixo do mínimo", value: String(total) }],
+      colunas, linhas: [],
+      secoesExtras: data.grupos.map(g => ({
+        titulo: `${g.grupo} (${g.produtos.length})`,
+        colunas,
+        linhas: g.produtos.map(linha),
+      })),
+    };
+  }
+
   return {
     titulo: "Produtos com Estoque Baixo",
-    kpis: [{ label: "Produtos abaixo do mínimo", value: String(data.produtos.length) }],
-    colunas: [
-      { key: "nome", label: "Produto" }, { key: "sku", label: "SKU" },
-      { key: "estoqueAtual", label: "Estoque Atual", align: "right" },
-      { key: "estoqueMinimo", label: "Estoque Mínimo", align: "right" },
-    ],
-    linhas: data.produtos.map(p => ({ nome: p.nome, sku: p.sku || "—", estoqueAtual: p.estoqueAtual, estoqueMinimo: p.estoqueMinimo })),
+    kpis: [{ label: "Produtos abaixo do mínimo", value: String(total) }],
+    colunas,
+    linhas: (data.produtos ?? []).map(linha),
   };
 }
 
@@ -568,10 +604,19 @@ export async function fetchReportData(reportId: string, filtros: FiltrosDrawer):
   };
 
   switch (reportId) {
-    case "est-005":
-      return normalizarEstoqueBaixo(await getJson("/api/reports/estoque-baixo"));
-    case "cli-002":
-      return normalizarClientesTop(await getJson(`/api/reports/clientes-top?${periodoQs}`));
+    case "est-005": {
+      const qs2 = new URLSearchParams();
+      if (filtros.categoriaId) qs2.set("categoria", filtros.categoriaId);
+      if (filtros.ordem) qs2.set("ordem", filtros.ordem);
+      if (filtros.agrupamento) qs2.set("agrupar", filtros.agrupamento);
+      return normalizarEstoqueBaixo(await getJson(`/api/reports/estoque-baixo?${qs2.toString()}`));
+    }
+    case "cli-002": {
+      const qs2 = new URLSearchParams(periodoQs);
+      if (filtros.ordem) qs2.set("ordem", filtros.ordem);
+      if (filtros.canal && filtros.canal !== "todos") qs2.set("canal", filtros.canal);
+      return normalizarClientesTop(await getJson(`/api/reports/clientes-top?${qs2.toString()}`));
+    }
     case "prod-003":
       return normalizarProdutosLucrativos(await getJson(`/api/reports/produtos-lucrativos?${periodoQs}`));
     case "vnd-001": {

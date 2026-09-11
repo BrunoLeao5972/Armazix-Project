@@ -384,6 +384,8 @@ export const orders = pgTable("orders", {
   number: integer("number").notNull(),
   status: varchar("status", { length: 20 }).notNull().default("received"), // received | preparing | ready | delivering | delivered | cancelled
   type: varchar("type", { length: 10 }).notNull().default("delivery"), // delivery | pickup
+  /** Canal de origem da venda — "pdv" (frente de caixa) ou "online" (loja/checkout). */
+  channel: varchar("channel", { length: 10 }).notNull().default("online"), // pdv | online
   paymentMethod: varchar("payment_method", { length: 20 }), // pix | card | cash
   paymentStatus: varchar("payment_status", { length: 20 }).default("pending"), // pending | paid | refunded
   subtotal: numeric("subtotal", { precision: 10, scale: 2 }).notNull(),
@@ -433,6 +435,7 @@ export const orders = pgTable("orders", {
   index("orders_customer_idx").on(t.customerId),
   index("orders_status_idx").on(t.status),
   index("orders_sale_status_idx").on(t.saleStatus),
+  index("orders_channel_idx").on(t.channel),
   index("orders_number_idx").on(t.number),
   index("orders_created_idx").on(t.createdAt),
 ]);

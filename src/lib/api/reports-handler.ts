@@ -19,7 +19,7 @@ import { REPORT_REQUIRED_ROLES, temPermissao, type StoreRole } from "@/lib/repor
 
 const {
   products, orders, orderItems, customers, financeiroLancamentos, auditLogs,
-  stockMovements, stockBalances, categories, caixaSessoes,
+  stockMovements, stockBalances, categories, caixaSessoes, sectors, productSectors,
 } = schema;
 
 const JSON_HDR = { "content-type": "application/json" };
@@ -81,8 +81,12 @@ export async function getReportsWarmupHandler(request: Request, auth?: AuthConte
 function parseDateRange(url: URL): { from: Date; to: Date; fromStr: string; toStr: string } {
   const di = url.searchParams.get("dataInicio");
   const df = url.searchParams.get("dataFim");
-  const to = df ? new Date(`${df}T23:59:59.999`) : new Date();
-  const from = di ? new Date(`${di}T00:00:00`) : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  // Aceita "YYYY-MM-DD" (dia inteiro) OU "YYYY-MM-DDTHH:mm" (com hora, vindo do
+  // datetime-local do drawer) — neste último o horário já vem no valor.
+  const mk = (s: string, fimDoDia: boolean) =>
+    s.includes("T") ? new Date(s) : new Date(`${s}${fimDoDia ? "T23:59:59.999" : "T00:00:00"}`);
+  const to = df ? mk(df, true) : new Date();
+  const from = di ? mk(di, false) : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
   return { from, to, fromStr: from.toISOString().slice(0, 10), toStr: to.toISOString().slice(0, 10) };
 }
 
@@ -95,29 +99,78 @@ export async function getEstoqueBaixoHandler(request: Request, auth?: AuthContex
   if (resolved instanceof Response) return resolved;
   const { storeId } = resolved;
 
+  const url = new URL(request.url);
+  const categoria = url.searchParams.get("categoria") || "";        // categoryId
+  const ordem     = url.searchParams.get("ordem") || "deficit-asc";  // deficit-asc | deficit-desc | nome-asc | nome-desc
+  const agrupar   = url.searchParams.get("agrupar") || "nenhum";     // nenhum | categoria | setor
+
+  const deficitExpr = sql`coalesce(${products.stock}, 0) - coalesce(${products.lowStockThreshold}, 5)`;
+  const orderByExpr =
+    ordem === "deficit-desc" ? sql`${deficitExpr} desc`
+    : ordem === "nome-asc"   ? asc(products.name)
+    : ordem === "nome-desc"  ? desc(products.name)
+    : sql`${deficitExpr} asc`;
+
   const db = await createTenantDbTransactional(process.env.DATABASE_URL!, storeId);
   try {
-    const rows = await db.transaction(async (tx) => {
+    const { rows, setoresPorProduto } = await db.transaction(async (tx) => {
       await tx.execute(setTenantContext(storeId));
-      return tx.select({
+      const rows = await tx.select({
         id: products.id, nome: products.name, sku: products.sku,
         estoqueAtual: products.stock, estoqueMinimo: products.lowStockThreshold,
+        categoria: categories.name,
       })
         .from(products)
+        .leftJoin(categories, eq(products.categoryId, categories.id))
         .where(and(
           eq(products.storeId, storeId),
           sql`coalesce(${products.active}, true) = true`,
           sql`coalesce(${products.stock}, 0) < coalesce(${products.lowStockThreshold}, 5)`,
+          ...(categoria ? [eq(products.categoryId, categoria)] : []),
         ))
-        .orderBy(sql`coalesce(${products.stock}, 0) - coalesce(${products.lowStockThreshold}, 5) asc`);
+        .orderBy(orderByExpr);
+
+      const setoresPorProduto = new Map<string, string[]>();
+      if (agrupar === "setor" && rows.length) {
+        const ps = await tx.select({ productId: productSectors.productId, setor: sectors.name })
+          .from(productSectors)
+          .innerJoin(sectors, eq(productSectors.sectorId, sectors.id))
+          .where(inArray(productSectors.productId, rows.map(r => r.id)));
+        for (const x of ps) {
+          const arr = setoresPorProduto.get(x.productId) ?? [];
+          arr.push(x.setor);
+          setoresPorProduto.set(x.productId, arr);
+        }
+      }
+      return { rows, setoresPorProduto };
     });
 
-    return json({
-      produtos: rows.map(p => ({
-        id: p.id, nome: p.nome, sku: p.sku,
-        estoqueAtual: p.estoqueAtual ?? 0, estoqueMinimo: p.estoqueMinimo ?? 5,
-      })),
+    const mapProduto = (p: typeof rows[number]) => ({
+      id: p.id, nome: p.nome, sku: p.sku,
+      estoqueAtual: p.estoqueAtual ?? 0, estoqueMinimo: p.estoqueMinimo ?? 5,
+      categoria: p.categoria || "Sem categoria",
     });
+
+    if (agrupar === "nenhum") {
+      return json({ produtos: rows.map(mapProduto), total: rows.length });
+    }
+
+    const grupos = new Map<string, ReturnType<typeof mapProduto>[]>();
+    for (const p of rows) {
+      const chaves = agrupar === "setor"
+        ? (setoresPorProduto.get(p.id)?.length ? setoresPorProduto.get(p.id)! : ["Sem setor"])
+        : [p.categoria || "Sem categoria"];
+      for (const k of chaves) {
+        const arr = grupos.get(k) ?? [];
+        arr.push(mapProduto(p));
+        grupos.set(k, arr);
+      }
+    }
+    const gruposArr = [...grupos.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "pt-BR"))
+      .map(([grupo, produtos]) => ({ grupo, produtos }));
+
+    return json({ grupos: gruposArr, total: rows.length });
   } catch (error) {
     console.error("[reports] estoque-baixo error:", error);
     return err("Erro ao buscar produtos com estoque baixo", 500);
@@ -130,7 +183,17 @@ export async function getClientesTopHandler(request: Request, auth?: AuthContext
   if (resolved instanceof Response) return resolved;
   const { storeId } = resolved;
 
-  const { from, to } = parseDateRange(new URL(request.url));
+  const url = new URL(request.url);
+  const { from, to } = parseDateRange(url);
+  const ordem = url.searchParams.get("ordem") || "total-desc"; // total-desc | nome-asc | nome-desc | pedidos-desc
+  const canal = url.searchParams.get("canal") || "todos";      // todos | pdv | online
+
+  const orderByExpr =
+    ordem === "nome-asc"     ? asc(customers.name)
+    : ordem === "nome-desc"  ? desc(customers.name)
+    : ordem === "pedidos-desc" ? desc(sql`count(*)`)
+    : desc(sql`sum(cast(${orders.total} as numeric))`);
+
   const db = await createTenantDbTransactional(process.env.DATABASE_URL!, storeId);
   try {
     const rows = await db.transaction(async (tx) => {
@@ -148,9 +211,10 @@ export async function getClientesTopHandler(request: Request, auth?: AuthContext
           ne(orders.status, "cancelled"),
           gte(orders.createdAt, from),
           lte(orders.createdAt, to),
+          ...(canal === "pdv" || canal === "online" ? [eq(orders.channel, canal)] : []),
         ))
         .groupBy(orders.customerId, customers.name)
-        .orderBy(desc(sql`sum(cast(${orders.total} as numeric))`))
+        .orderBy(orderByExpr)
         .limit(50);
     });
 
