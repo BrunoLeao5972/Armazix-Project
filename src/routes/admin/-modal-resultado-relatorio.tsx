@@ -821,27 +821,35 @@ function exportarPDF(resultado: ResultadoRelatorio, storeName: string) {
     startY += 8;
   }
 
-  autoTable(doc, {
-    head: [resultado.colunas.map(c => c.label.toUpperCase())],
-    body: resultado.linhas.map(l => resultado.colunas.map(c => String(l[c.key] ?? ""))),
-    startY,
-    theme: "striped",
-    headStyles: { fillColor: [16, 185, 129], textColor: 255 },
-    styles: { fontSize: 9, cellPadding: 2 },
-  });
+  // Pula a tabela principal quando ela está vazia e há seções (relatório
+  // agrupado) — senão sai um cabeçalho de tabela solto sem linhas.
+  const temMainTable = resultado.linhas.length > 0 || !resultado.secoesExtras?.length;
+  if (temMainTable) {
+    autoTable(doc, {
+      head: [resultado.colunas.map(c => c.label.toUpperCase())],
+      body: resultado.linhas.map(l => resultado.colunas.map(c => String(l[c.key] ?? ""))),
+      startY,
+      theme: "striped",
+      headStyles: { fillColor: [16, 185, 129], textColor: 255 },
+      styles: { fontSize: 9, cellPadding: 2 },
+    });
+  }
 
+  let cursorY = temMainTable
+    ? (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
+    : startY;
   for (const secao of resultado.secoesExtras ?? []) {
-    const prevY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
     doc.setFontSize(11);
-    doc.text(secao.titulo, 14, prevY + 10);
+    doc.text(secao.titulo, 14, cursorY + 10);
     autoTable(doc, {
       head: [secao.colunas.map(c => c.label.toUpperCase())],
       body: secao.linhas.map(l => secao.colunas.map(c => String(l[c.key] ?? ""))),
-      startY: prevY + 14,
+      startY: cursorY + 14,
       theme: "striped",
       headStyles: { fillColor: [100, 116, 139], textColor: 255 },
       styles: { fontSize: 9, cellPadding: 2 },
     });
+    cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
   }
 
   // Rodapé: paginação à esquerda (como já era), marca do sistema à direita —
@@ -863,12 +871,16 @@ function exportarPDF(resultado: ResultadoRelatorio, storeName: string) {
 
 function exportarExcel(resultado: ResultadoRelatorio) {
   const wb = XLSX.utils.book_new();
-  const rows = resultado.linhas.map(l => {
-    const row: Record<string, string | number> = {};
-    resultado.colunas.forEach(c => { row[c.label] = l[c.key]; });
-    return row;
-  });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Dados");
+  // Aba "Dados" só quando a tabela principal tem linhas (ou não há seções) —
+  // relatório agrupado abre direto nas abas de cada grupo.
+  if (resultado.linhas.length > 0 || !resultado.secoesExtras?.length) {
+    const rows = resultado.linhas.map(l => {
+      const row: Record<string, string | number> = {};
+      resultado.colunas.forEach(c => { row[c.label] = l[c.key]; });
+      return row;
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Dados");
+  }
   for (const secao of resultado.secoesExtras ?? []) {
     const secaoRows = secao.linhas.map(l => {
       const row: Record<string, string | number> = {};
@@ -1012,7 +1024,13 @@ export function ResultadoRelatorioModal({
                     <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{aviso}
                   </div>
                 ))}
-                <TabelaResultado colunas={resultado.colunas} linhas={resultado.linhas} />
+                {/* Só mostra a tabela principal quando ela tem linhas, OU quando
+                    não há seções extras (aí a própria tabela exibe o "sem
+                    movimentação"). Sem isso, um relatório agrupado mostrava uma
+                    tabela principal vazia por cima das seções. */}
+                {(resultado.linhas.length > 0 || !resultado.secoesExtras?.length) && (
+                  <TabelaResultado colunas={resultado.colunas} linhas={resultado.linhas} />
+                )}
                 {resultado.secoesExtras?.map(secao => (
                   <div key={secao.titulo} className="space-y-2 pt-4 border-t border-border">
                     <h3 className="text-sm font-semibold">{secao.titulo}</h3>
