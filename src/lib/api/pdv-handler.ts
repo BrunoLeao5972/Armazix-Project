@@ -1,14 +1,20 @@
-import { createDb, createDbTransactional } from "@/lib/db";
+import { createDb, createDbTransactional, type Database } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { eq, and, desc, sql, gte, lte, isNull } from "drizzle-orm";
 import { requireStoreAccess, type AuthContext } from "@/lib/auth/require-store-access";
 import { hasPdvAccess } from "@/lib/plans";
 import { concretizeReservation } from "@/lib/inventory/stock-reservation";
+import { getPasswordFailures, recordPasswordFailure, clearPasswordFailures } from "@/lib/cache/redis";
+
+// 5 senhas erradas seguidas em 15min travam aquela conta pra abrir/fechar
+// caixa — mesmo teto do login ("auth" em rate-limit.ts), só que por conta.
+const SENHA_FALHAS_MAX  = 5;
+const SENHA_JANELA_SEG  = 15 * 60;
 
 const {
   caixaSessoes, caixaMovimentos, financeiroLancamentos,
   mesas, orders, orderItems, orderTimeline, products, stockMovements, stores,
-  servicePointSessions, servicePointAdvances,
+  servicePointSessions, servicePointAdvances, users, storeUsers,
 } = schema;
 
 const JSON_HDR = { "content-type": "application/json" };
@@ -19,6 +25,22 @@ const err      = (msg: string, status = 400) => json({ error: msg }, status);
 // ─── helpers ─────────────────────────────────────────────────────
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Alfabeto sem caracteres ambíguos (0/O, 1/I/L) — o código de sessão é lido
+// e digitado por humano (ex: conferência de caixa por telefone com o
+// suporte), não é segredo nem token de segurança, então não precisa da
+// mesma amostragem sem viés de generateCode() (auth/index.ts).
+const CODIGO_SESSAO_ALFABETO = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+function gerarCodigoSessao(): string {
+  const buf = new Uint8Array(5);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, b => CODIGO_SESSAO_ALFABETO[b % CODIGO_SESSAO_ALFABETO.length]).join("");
+}
+
+// Postgres unique_violation — mesmo padrão de service-points-handler.ts.
+function isUniqueViolation(e: unknown): boolean {
+  return !!e && typeof e === "object" && "code" in e && (e as { code?: string }).code === "23505";
 }
 
 /**
@@ -41,6 +63,79 @@ async function requirePdvAccess(storeId: string): Promise<Response | null> {
     return err("PDV não contratado para esta loja. Ative o add-on em Configurações → Planos.", 402);
   }
   return null;
+}
+
+// ─── Núcleo da reautenticação — confirma que a senha informada é de fato a
+// senha do usuário indicado, DENTRO desta loja (qualquer membro, não só
+// quem está logado no navegador agora — um gerente pode confirmar o
+// fechamento de outro operador do turno). Usado tanto pelo endpoint de
+// pré-checagem abaixo (feedback imediato no formulário) quanto DENTRO de
+// abrirCaixaHandler/fecharCaixaHandler — a senha é conferida de novo no
+// momento real da ação, não só numa etapa "de aviso" que um client
+// modificado poderia pular mandando abertoPor/encerradoPor livre. ──
+async function verificarSenhaOperador(
+  db: Database, storeId: string, userId: string, password: string,
+): Promise<{ ok: true; name: string } | { ok: false; error: string; status: number }> {
+  // O usuário precisa pertencer a ESTA loja — nunca confia num userId vindo
+  // do body sem esse cross-check de tenant (mesmo princípio de
+  // requireStoreAccess: o body nunca decide sozinho "de qual loja" algo é).
+  const [membro] = await db
+    .select({ userId: storeUsers.userId })
+    .from(storeUsers)
+    .where(and(eq(storeUsers.storeId, storeId), eq(storeUsers.userId, userId)))
+    .limit(1);
+  if (!membro) return { ok: false, error: "Usuário não encontrado nesta loja", status: 403 };
+
+  const [user] = await db
+    .select({ passwordHash: users.passwordHash, name: users.name, active: users.active })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!user || user.active === false) return { ok: false, error: "Usuário não encontrado", status: 404 };
+
+  // Força bruta: bloqueia a CONTA-alvo depois de FALHAS_MAX senhas erradas
+  // seguidas na janela. Não usa o rate limit por IP+tier do api-handler (ali
+  // o balde é compartilhado com o login e conta requisições com sucesso, o
+  // que travava a abertura de caixa) — aqui só senha errada conta, e uma
+  // senha certa zera o contador.
+  const lockKey = `pwdfail:pdv:${storeId}:${userId}`;
+  const { count, ttlSeconds } = await getPasswordFailures(lockKey, SENHA_JANELA_SEG);
+  if (count >= SENHA_FALHAS_MAX) {
+    const min = Math.max(1, Math.ceil(ttlSeconds / 60));
+    return { ok: false, error: `Muitas tentativas com senha incorreta para este usuário. Tente novamente em ${min} min.`, status: 429 };
+  }
+
+  const { verifyPassword } = await import("@/lib/auth");
+  const valid = await verifyPassword(password, user.passwordHash);
+  if (!valid) {
+    await recordPasswordFailure(lockKey, SENHA_JANELA_SEG);
+    return { ok: false, error: "Senha incorreta", status: 401 };
+  }
+
+  await clearPasswordFailures(lockKey);
+  return { ok: true, name: user.name };
+}
+
+// ─── POST /api/pdv/caixa/verificar-operador ───────────────────────
+// Pré-checagem chamada pelo formulário ANTES do popup "tem certeza?" —
+// feedback imediato de senha errada sem precisar abrir o popup pra nada.
+// Registrada em rateLimitConfigs (api-handler.ts) com o mesmo tier "auth"
+// do login — sem isso, viraria um oráculo de força bruta.
+export async function verificarOperadorHandler(
+  request: Request, auth?: AuthContext,
+): Promise<Response> {
+  let storeId: string;
+  try { ({ storeId } = await requireStoreAccess(auth)); }
+  catch (e) { return err((e as Error).message, auth?.userId ? 403 : 401); }
+
+  const body = await request.json() as { userId?: string; password?: string };
+  if (!body.userId || !body.password) return err("Usuário e senha obrigatórios");
+
+  const db = createDb(process.env.DATABASE_URL!);
+  const r  = await verificarSenhaOperador(db, storeId, body.userId, body.password);
+  if (!r.ok) return err(r.error, r.status);
+
+  return json({ success: true, name: r.name });
 }
 
 // ─── GET /api/pdv/caixa — sessão aberta atual ─────────────────────
@@ -84,13 +179,21 @@ export async function abrirCaixaHandler(
 
   const body = await request.json() as {
     saldoInicial: string;
-    abertoPor?: string;
+    operadorId?: string;
+    senha?: string;
     /** De onde a abertura está sendo pedida — cada cliente manda o seu. */
     origem?: "web" | "desktop";
   };
+  if (!body.operadorId || !body.senha) return err("Usuário e senha obrigatórios");
   const origem = body.origem === "desktop" ? "desktop" : "web";
 
   const db = createDb(process.env.DATABASE_URL!);
+
+  // Confere a senha do responsável AQUI, não só numa etapa "de aviso" no
+  // client — ver verificarSenhaOperador acima.
+  const verificacao = await verificarSenhaOperador(db, storeId, body.operadorId, body.senha);
+  if (!verificacao.ok) return err(verificacao.error, verificacao.status);
+  const abertoPor = verificacao.name;
 
   // Verifica se já existe caixa aberto — em QUALQUER canal, o turno é único
   // por loja. Se foi aberto por outro canal, a mensagem diz isso
@@ -110,18 +213,74 @@ export async function abrirCaixaHandler(
     return err(mensagem, 409);
   }
 
-  const [sessao] = await db.insert(caixaSessoes).values({
-    storeId,
-    saldoInicial: body.saldoInicial || "0",
-    abertoPor:    body.abertoPor   || null,
-    status:       "aberta",
-    origem,
-  }).returning();
+  // Retry em cima de colisão de código (23505 na uniqueIndex por loja) —
+  // com 31^5 combinações por loja, na prática só serve de rede de segurança,
+  // igual isUniqueViolation() já é usado em service-points-handler.ts.
+  let sessao: typeof caixaSessoes.$inferSelect | undefined;
+  for (let tentativa = 0; !sessao; tentativa++) {
+    try {
+      [sessao] = await db.insert(caixaSessoes).values({
+        storeId,
+        codigo:       gerarCodigoSessao(),
+        saldoInicial: body.saldoInicial || "0",
+        abertoPor,
+        status:       "aberta",
+        origem,
+      }).returning();
+    } catch (error) {
+      if (!isUniqueViolation(error) || tentativa >= 4) throw error;
+    }
+  }
 
   return json({ success: true, sessao }, 201);
 }
 
 // ─── POST /api/pdv/caixa/fechar ───────────────────────────────────
+// ─── Núcleo do fechamento de caixa — única fonte de verdade da regra,
+// reaproveitada pelo fechamento manual (fecharCaixaHandler, logo abaixo) E
+// pelo encerramento automático diário (src/lib/jobs/caixa-auto-close.ts).
+// Nunca duplicar este UPDATE em outro lugar — qualquer ajuste na regra de
+// fechamento (o que acontece com saldoFinal, o que fica registrado em
+// encerradoPor, etc.) precisa valer pros dois caminhos ao mesmo tempo. ───
+export async function closeCaixaSessao(
+  db: Database,
+  params: {
+    sessaoId: string; storeId: string;
+    saldoFinal?: string | null; encerradoPor?: string | null; observations?: string | null;
+    conferencia?: Array<{ metodo: string; label: string; sistema: string; informado: string; diferenca: string }> | null;
+  },
+): Promise<
+  | { ok: true; sessao: typeof caixaSessoes.$inferSelect; movimentos: (typeof caixaMovimentos.$inferSelect)[] }
+  | { ok: false; error: string; status: number }
+> {
+  const [sessao] = await db
+    .select()
+    .from(caixaSessoes)
+    .where(and(eq(caixaSessoes.id, params.sessaoId), eq(caixaSessoes.storeId, params.storeId)))
+    .limit(1);
+  if (!sessao) return { ok: false, error: "Sessão não encontrada", status: 404 };
+  if (sessao.status === "encerrada") return { ok: false, error: "Sessão já encerrada", status: 409 };
+
+  const [fechada] = await db
+    .update(caixaSessoes)
+    .set({
+      status:       "encerrada",
+      saldoFinal:   params.saldoFinal   ?? null,
+      encerradoPor: params.encerradoPor ?? null,
+      observations: params.observations ?? null,
+      conferencia:  params.conferencia  ?? null,
+      closedAt:     new Date(),
+    })
+    .where(and(eq(caixaSessoes.id, params.sessaoId), eq(caixaSessoes.storeId, params.storeId)))
+    .returning();
+
+  // Totais de movimentações (para resumo)
+  const movimentos = await db.select().from(caixaMovimentos)
+    .where(eq(caixaMovimentos.sessaoId, params.sessaoId));
+
+  return { ok: true, sessao: fechada, movimentos };
+}
+
 export async function fecharCaixaHandler(
   request: Request, auth?: AuthContext,
 ): Promise<Response> {
@@ -135,38 +294,29 @@ export async function fecharCaixaHandler(
   const body = await request.json() as {
     sessaoId: string;
     saldoFinal?: string;
-    encerradoPor?: string;
+    operadorId?: string;
+    senha?: string;
     observations?: string;
+    conferencia?: Array<{ metodo: string; label: string; sistema: string; informado: string; diferenca: string }>;
   };
   if (!body.sessaoId) return err("sessaoId obrigatório");
+  if (!body.operadorId || !body.senha) return err("Usuário e senha obrigatórios");
 
   const db = createDb(process.env.DATABASE_URL!);
 
-  const [sessao] = await db
-    .select()
-    .from(caixaSessoes)
-    .where(and(eq(caixaSessoes.id, body.sessaoId), eq(caixaSessoes.storeId, storeId)))
-    .limit(1);
-  if (!sessao) return err("Sessão não encontrada", 404);
-  if (sessao.status === "encerrada") return err("Sessão já encerrada", 409);
+  // Confere a senha do responsável AQUI, não só numa etapa "de aviso" no
+  // client — ver verificarSenhaOperador acima.
+  const verificacao = await verificarSenhaOperador(db, storeId, body.operadorId, body.senha);
+  if (!verificacao.ok) return err(verificacao.error, verificacao.status);
 
-  const [fechada] = await db
-    .update(caixaSessoes)
-    .set({
-      status:       "encerrada",
-      saldoFinal:   body.saldoFinal  || null,
-      encerradoPor: body.encerradoPor || null,
-      observations: body.observations || null,
-      closedAt:     new Date(),
-    })
-    .where(and(eq(caixaSessoes.id, body.sessaoId), eq(caixaSessoes.storeId, storeId)))
-    .returning();
+  const result = await closeCaixaSessao(db, {
+    sessaoId: body.sessaoId, storeId,
+    saldoFinal: body.saldoFinal, encerradoPor: verificacao.name, observations: body.observations,
+    conferencia: body.conferencia,
+  });
+  if (!result.ok) return err(result.error, result.status);
 
-  // Totais de movimentações (para resumo)
-  const movimentos = await db.select().from(caixaMovimentos)
-    .where(eq(caixaMovimentos.sessaoId, body.sessaoId));
-
-  return json({ success: true, sessao: fechada, movimentos });
+  return json({ success: true, sessao: result.sessao, movimentos: result.movimentos });
 }
 
 // ─── POST /api/pdv/caixa/movimentar — Sangria / Suprimento ───────

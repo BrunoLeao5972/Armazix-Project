@@ -34,6 +34,11 @@ const LABELS = new Map<string, string>(
 export function motivoLabel(code?: string | null, note?: string | null): string {
   const base = code ? (LABELS.get(code) ?? code) : null;
   const obs = note?.trim() || null;
+  // O estorno grava o próprio rótulo em cancel_reason quando o operador não
+  // escreve observação — sem essa checagem o motivo voltava duplicado
+  // ("Outro motivo — Outro motivo").
+  if (base && obs && obs.toLowerCase() === base.toLowerCase()) return base;
+  if (base && obs && obs.toLowerCase().startsWith(`${base.toLowerCase()} — `)) return obs;
   if (base && obs) return `${base} — ${obs}`;
   return base || obs || "Sem motivo informado";
 }

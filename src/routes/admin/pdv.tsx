@@ -13,6 +13,9 @@ import { Input } from "@/components/ui/input";
 import { type PromoConfig, getEffectivePrice } from "@/lib/promo-engine";
 import { MesaTableIcon } from "./-icon-mesa";
 import type { ServicePoint } from "./-modal-pontos-atendimento";
+import { useStoreRole } from "@/hooks/use-store-role";
+import { temPermissao } from "@/lib/reports-permissions";
+import { useOperadores, verificarOperador, CampoOperador, ModalConfirmarAcao } from "./-caixa-operador";
 
 const ModalPagamento = lazy(() => import("./-modal-pagamento-pdv"));
 const ModalAbrirCaixa = lazy(() =>
@@ -38,6 +41,9 @@ const ModalPosicaoCaixa = lazy(() =>
 );
 const ModalApontamento = lazy(() =>
   import("./-menu-funcoes-pdv").then(m => ({ default: m.ModalApontamento }))
+);
+const ModalFechamentoAutomatico = lazy(() =>
+  import("./-menu-funcoes-pdv").then(m => ({ default: m.ModalFechamentoAutomatico }))
 );
 const ModalEncerrarEncomenda = lazy(() => import("./-modal-encerrar-encomenda-pdv"));
 const ModalPontosAtendimento = lazy(() =>
@@ -77,12 +83,15 @@ interface SessaoEncerrada {
   orderId: string | null; orderNumber: number | null; orderTotal: string | null; paymentMethod: string | null;
 }
 export interface CaixaSessao {
-  id: string; saldoInicial: string; saldoFinal: string | null;
+  id: string; codigo: string; saldoInicial: string; saldoFinal: string | null;
   totalDinheiro: string; totalPix: string; totalCartao: string;
   totalDebito: string; totalOutros: string; totalVendas: number;
   status: string; abertoPor: string | null; openedAt: string; closedAt: string | null;
   /** "web" (painel admin) ou "desktop" (app PDV Electron/Flutter). */
   origem?: "web" | "desktop";
+  /** Conferência de fechamento por forma de pagamento — só presente em
+   *  sessões encerradas manualmente com conferência preenchida. */
+  conferencia?: Array<{ metodo: string; label: string; sistema: string; informado: string; diferenca: string }> | null;
 }
 export interface CaixaMovimento {
   id: string; tipo: string; valor: string; motivo: string | null;
@@ -91,7 +100,7 @@ export interface CaixaMovimento {
 type ModalType =
   | "payment" | "abrir-caixa" | "fechar-caixa" | "movimentar" | "sessoes"
   | "funcoes" | "caixa-info" | "posicao" | "apontamento" | "encerrar-encomenda"
-  | "pontos-atendimento" | "conferencia" | "adiantamento" | null;
+  | "pontos-atendimento" | "conferencia" | "adiantamento" | "fechamento-automatico" | null;
 type PdvMode  = "catalog" | "map" | "delivery";
 
 // ─── Conta em aberto da mesa/comanda (painel de resumo do Mapa de
@@ -166,19 +175,38 @@ const naturalSort = (a: Ponto, b: Ponto) =>
 
 // ─── Painel de Abertura de Caixa (coluna direita, sem modal) ────────
 function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) {
+  const operadores = useOperadores();
   const [saldo,   setSaldo]   = useState("");
-  const [resp,    setResp]    = useState("");
+  const [operadorId, setOperadorId] = useState("");
+  const [senha,   setSenha]   = useState("");
   const [loading, setLoading] = useState(false);
   const [erro,    setErro]    = useState("");
+  const [nomeConfirmado, setNomeConfirmado] = useState<string | null>(null);
 
+  // 1) Responsável vem do cadastro de usuários e precisa provar a senha —
+  // mesma regra do ModalAbrirCaixa (-modais-caixa-pdv.tsx). Só depois disso
+  // o popup de confirmação aparece.
+  const handleValidar = async () => {
+    setErro("");
+    if (!operadorId)   { setErro("Selecione o responsável"); return; }
+    if (!senha.trim()) { setErro("Informe a senha"); return; }
+    setLoading(true);
+    const r = await verificarOperador(operadorId, senha);
+    setLoading(false);
+    if (!r.ok) { setErro(r.error); return; }
+    setNomeConfirmado(r.name);
+  };
+
+  // 2) Só executa de verdade depois do "Confirmar" no popup — o backend
+  // confere a senha de novo (abrirCaixaHandler), não confia só no passo 1.
   const handleAbrir = async () => {
-    setErro(""); setLoading(true);
+    setLoading(true);
     try {
-      const res  = await api.post("/api/pdv/caixa/abrir", { saldoInicial: saldo || "0", abertoPor: resp || undefined });
+      const res  = await api.post("/api/pdv/caixa/abrir", { saldoInicial: saldo || "0", operadorId, senha, origem: "web" });
       const data = await res.json() as { success?: boolean; sessao?: CaixaSessao; error?: string };
-      if (!res.ok || !data.success) { setErro(data.error || "Erro ao abrir caixa"); return; }
+      if (!res.ok || !data.success) { setErro(data.error || "Erro ao abrir caixa"); setNomeConfirmado(null); return; }
       onAberto(data.sessao!);
-    } catch { setErro("Erro de rede. Verifique sua conexão."); }
+    } catch { setErro("Erro de rede. Verifique sua conexão."); setNomeConfirmado(null); }
     finally { setLoading(false); }
   };
 
@@ -200,7 +228,7 @@ function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) 
         {/* Título + subtítulo */}
         <h3 className="text-base font-bold text-foreground text-center">Abrir Caixa</h3>
         <p className="text-xs text-muted-foreground text-center mt-1 leading-relaxed max-w-[220px]">
-          Informe o saldo inicial em espécie e o nome do operador para liberar as vendas.
+          Informe o saldo inicial em espécie, selecione o responsável e confirme com a senha para liberar as vendas.
         </p>
 
         {/* Formulário */}
@@ -221,17 +249,10 @@ function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) 
               className="mt-1 h-11 rounded-xl text-base font-semibold text-center"
             />
           </div>
-          <div>
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Responsável
-            </label>
-            <Input
-              value={resp}
-              onChange={e => setResp(e.target.value)}
-              placeholder="Nome do operador"
-              className="mt-1 h-10 rounded-xl text-sm"
-            />
-          </div>
+          <CampoOperador
+            operadores={operadores} operadorId={operadorId} setOperadorId={setOperadorId}
+            senha={senha} setSenha={setSenha}
+          />
 
           {erro && (
             <p className="flex items-center gap-1.5 text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">
@@ -240,7 +261,7 @@ function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) 
           )}
 
           <button
-            onClick={handleAbrir}
+            onClick={handleValidar}
             disabled={loading}
             className="w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 disabled:opacity-60 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-100 mt-1"
           >
@@ -255,6 +276,17 @@ function PainelAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) 
           Você pode navegar pelo catálogo e mesas enquanto prepara a abertura.
         </p>
       </div>
+
+      {nomeConfirmado !== null && (
+        <ModalConfirmarAcao
+          titulo="Confirmar abertura de caixa"
+          mensagem={`Você deseja abrir o caixa com as informações inseridas? Responsável: ${nomeConfirmado}.`}
+          corBtn="bg-emerald-500 hover:bg-emerald-600"
+          loading={loading}
+          onCancelar={() => setNomeConfirmado(null)}
+          onConfirmar={handleAbrir}
+        />
+      )}
     </div>
   );
 }
@@ -932,6 +964,12 @@ function CartPanel({
 
 // ─── PDVPage ──────────────────────────────────────────────────────
 function PDVPage() {
+  const storeRole = useStoreRole();
+  // "Posição" mostra o saldo esperado por forma de pagamento — quem fecha o
+  // caixa faz contagem cega, então precisa ficar fora do alcance de quem
+  // opera o caixa (mesmo raciocínio da aba Posição do Caixa em
+  // Configurações). Ver -menu-funcoes-pdv.tsx.
+  const podeVerPosicao = temPermissao(storeRole, ["admin", "gerente"]);
   const [products, setProducts]           = useState<Product[]>([]);
   const [categories, setCategories]       = useState<Category[]>([]);
   const [points, setPoints]               = useState<Ponto[]>([]);
@@ -950,6 +988,7 @@ function PDVPage() {
   const [showCart, setShowCart]           = useState(false); // mobile cart drawer
   const [submitting, setSubmitting]       = useState(false);
   const [orderNumber, setOrderNumber]     = useState<number | null>(null);
+  const [finalizedTotal, setFinalizedTotal] = useState<number | null>(null);
   const [lancando, setLancando]           = useState(false);
   const [lancadoOk, setLancadoOk]        = useState(false);
   const [paymentConfig, setPaymentConfig] = useState<PdvPaymentMethod[]>(DEFAULT_PDV_METHODS);
@@ -1224,6 +1263,7 @@ function PDVPage() {
       const data = await res.json() as { success?: boolean; order?: { number: number }; error?: string };
       if (res.ok && data.success && data.order) {
         setOrderNumber(data.order.number);
+        setFinalizedTotal(total);
         // Atualiza sessão local
         setSessao(prev => prev ? { ...prev, totalVendas: prev.totalVendas + 1 } : prev);
         // Libera o ponto de atendimento no mapa (a sessão dele já foi
@@ -1237,7 +1277,7 @@ function PDVPage() {
 
   const handleNovaNota = () => {
     setModal(null); setCart([]); setDiscount(0); setDiscountType("pct");
-    setOrderNumber(null); setActivePonto(null); setShowCart(false); setCatalogOverlay(false);
+    setOrderNumber(null); setFinalizedTotal(null); setActivePonto(null); setShowCart(false); setCatalogOverlay(false);
     setTimeout(() => searchRef.current?.focus(), 100);
   };
 
@@ -1276,7 +1316,7 @@ function PDVPage() {
       if (e.key === "Escape") { e.preventDefault(); setModal(null); setShowCart(false); }
       // Menu de Funções (Caixa) — atalhos Alt+ do menu de referência
       if (e.altKey && e.key.toLowerCase() === "a") { e.preventDefault(); setModal(sessao ? "caixa-info" : "abrir-caixa"); }
-      if (e.altKey && e.key.toLowerCase() === "p") { e.preventDefault(); if (sessao) setModal("posicao"); }
+      if (e.altKey && e.key.toLowerCase() === "p") { e.preventDefault(); if (sessao && podeVerPosicao) setModal("posicao"); }
       if (e.altKey && e.key.toLowerCase() === "o") { e.preventDefault(); if (sessao) setModal("apontamento"); }
       if (e.altKey && e.key.toLowerCase() === "s") { e.preventDefault(); if (sessao) { setMovTipo("suprimento"); setModal("movimentar"); } }
       if (e.altKey && e.key.toLowerCase() === "r") { e.preventDefault(); if (sessao) { setMovTipo("sangria"); setModal("movimentar"); } }
@@ -1285,7 +1325,7 @@ function PDVPage() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [cart, sessao, handleLancarPedido, totalQty, activePonto]);
+  }, [cart, sessao, handleLancarPedido, totalQty, activePonto, podeVerPosicao]);
 
   const cartProps = {
     cart, activePonto, discount, discountType, total, subtotal, discountValue, totalQty,
@@ -1675,7 +1715,7 @@ function PDVPage() {
 
       {/* ── Modais ── */}
       <Suspense fallback={null}>
-        {modal === "abrir-caixa" && <ModalAbrirCaixa onAberto={handleCaixaAberto} />}
+        {modal === "abrir-caixa" && <ModalAbrirCaixa onAberto={handleCaixaAberto} onClose={() => setModal(null)} />}
         {modal === "fechar-caixa" && sessao && (
           <ModalFecharCaixa sessao={sessao} movimentos={movimentos}
             onFechado={handleCaixaFechado} onClose={() => setModal(null)} />
@@ -1693,19 +1733,21 @@ function PDVPage() {
             caixaAberto={!!sessao}
             onClose={() => setModal(null)}
             onCaixaAberto={() => setModal(sessao ? "caixa-info" : "abrir-caixa")}
-            onPosicao={() => sessao && setModal("posicao")}
+            podeVerPosicao={podeVerPosicao}
+            onPosicao={() => sessao && podeVerPosicao && setModal("posicao")}
             onApontamento={() => sessao && setModal("apontamento")}
             onSuprimento={() => { if (sessao) { setMovTipo("suprimento"); setModal("movimentar"); } }}
             onSangria={() => { if (sessao) { setMovTipo("sangria"); setModal("movimentar"); } }}
             onAnalise={() => setModal("sessoes")}
             onFechamento={() => sessao && setModal("fechar-caixa")}
             onPontosAtendimento={() => setModal("pontos-atendimento")}
+            onFechamentoAutomatico={() => setModal("fechamento-automatico")}
           />
         )}
         {modal === "caixa-info" && sessao && (
           <ModalCaixaInfo sessao={sessao} onClose={() => setModal(null)} />
         )}
-        {modal === "posicao" && sessao && (
+        {modal === "posicao" && sessao && podeVerPosicao && (
           <ModalPosicaoCaixa sessao={sessao} movimentos={movimentos} onClose={() => setModal(null)} />
         )}
         {modal === "apontamento" && (
@@ -1726,6 +1768,9 @@ function PDVPage() {
           // (ex: uma "Mesa 12" nova) aparecem sem precisar sair do PDV.
           <ModalPontosAtendimento onClose={() => { setModal(null); fetchPoints(); }} />
         )}
+        {modal === "fechamento-automatico" && storeId && (
+          <ModalFechamentoAutomatico storeId={storeId} onClose={() => setModal(null)} />
+        )}
         {modal === "conferencia" && activePonto?.openSessionId && (
           <ModalConferencia
             sessionId={activePonto.openSessionId} mesaLabel={activePonto.nameOrNumber}
@@ -1742,7 +1787,8 @@ function PDVPage() {
         )}
         {modal === "payment" && (
           <ModalPagamento
-            total={total} subtotal={subtotal} discountValue={discountValue} discount={discount}
+            total={orderNumber !== null && finalizedTotal !== null ? finalizedTotal : total}
+            subtotal={subtotal} discountValue={discountValue} discount={discount}
             submitting={submitting} orderNumber={orderNumber} paymentConfig={paymentConfig}
             mesaLabel={activePonto?.nameOrNumber ?? null}
             onClose={() => { setModal(null); if (orderNumber !== null) handleNovaNota(); }}

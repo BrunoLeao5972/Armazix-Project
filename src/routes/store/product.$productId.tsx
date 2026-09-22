@@ -6,6 +6,7 @@ import {
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useStore } from "../store";
+import { galeriaDoProduto } from "@/lib/product-images";
 import { type StoreProduct, formatPrice, getBaseDeliveryFee, getMadeToOrderMessage, buildProductInquiryWhatsAppUrl, productShowsPrice } from "@/lib/store-context";
 import { getEffectivePrice, type PromoConfig } from "@/lib/promo-engine";
 
@@ -173,10 +174,8 @@ function ProductPage() {
 
   // ── Galeria de imagens ────────────────────────────────────────────────────
   // Imagens base do produto (filtragem estrita: sem nulos, strings vazias ou inválidas)
-  const baseImages: string[] = [
-    ...(product.imageUrl ? [product.imageUrl] : []),
-    ...(product.images ?? []),
-  ].filter(isValidImg);
+  // (capa primeiro, até 6 — o banco guarda [{ url, isPrimary }], não texto solto)
+  const baseImages: string[] = galeriaDoProduto(product);
 
   // Imagens da(s) opção(ões) atualmente selecionadas, em ordem (primária primeiro)
   const selectedOptionImages: string[] = variationGroups.flatMap(g => {

@@ -8,8 +8,11 @@ import { getCached, deleteKey, storeCacheKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
 import { geocodeAddress } from "@/lib/geocoding";
 import { sanitizeString } from "@/lib/validation/schemas";
+import { deriveDeliveryPickupFlags } from "@/lib/store/delivery-modalidade";
+import { verificarDocumentoLoja, MENSAGEM_REJEICAO_DOCUMENTO_LOJA } from "@/lib/store/documento-loja";
+import { mascararCpfCnpj } from "@/lib/customer/cpf-cnpj";
 
-const { stores, storeUsers, orders, orderItems, products, customers } = schema;
+const { stores, storeUsers, orders, orderItems, products, customers, users } = schema;
 
 // ─── Get Store by ID or Slug ─────────────────────────────────────
 //
@@ -73,6 +76,8 @@ function toPublicStoreFields(store: typeof stores.$inferSelect & { banners?: unk
     longitude:              store.longitude,
     rating:                 store.rating,
     active:                 store.active,
+    caixaAutoCloseEnabled:  store.caixaAutoCloseEnabled,
+    caixaAutoCloseTime:     store.caixaAutoCloseTime,
   };
 }
 
@@ -119,10 +124,15 @@ export async function getStoreHandler(request: Request): Promise<Response> {
       });
     }
 
-    // Anexa ownerName só para quem prova, pelo cookie de sessão, ser membro
-    // desta loja. Nunca passa pelo cache acima — se passasse, a primeira
-    // resposta autenticada ficaria gravada e vazaria para o próximo visitante
-    // anônimo que batesse no mesmo cacheKey.
+    // Anexa ownerName + o documento (CNPJ/CPF) só para quem prova, pelo
+    // cookie de sessão, ser membro desta loja — a tela de Configurações
+    // precisa saber se já está vinculado (documentoTipo) pra travar o campo,
+    // mas o CPF é sensível (LGPD) e o CNPJ só deve sair por inteiro através
+    // do endpoint dedicado de revelar (getStoreDocumentHandler). Por isso o
+    // valor cru NUNCA sai daqui, nem no owner-view — só o mascarado.
+    // Nunca passa pelo cache acima — se passasse, a primeira resposta
+    // autenticada ficaria gravada e vazaria para o próximo visitante anônimo
+    // que batesse no mesmo cacheKey.
     let responseBody: Record<string, unknown> = publicStoreData;
     let isOwnerView = false;
     if (storeId) {
@@ -130,11 +140,19 @@ export async function getStoreHandler(request: Request): Promise<Response> {
       if (!(auth instanceof Response) && auth.storeId === storeId) {
         isOwnerView = true;
         const [ownerRow] = await db
-          .select({ ownerName: stores.ownerName })
+          .select({ ownerName: stores.ownerName, cnpj: stores.cnpj, cpf: stores.cpf })
           .from(stores)
           .where(eq(stores.id, storeId))
           .limit(1);
-        if (ownerRow) responseBody = { ...publicStoreData, ownerName: ownerRow.ownerName };
+        if (ownerRow) {
+          const documento = ownerRow.cnpj || ownerRow.cpf || null;
+          responseBody = {
+            ...publicStoreData,
+            ownerName: ownerRow.ownerName,
+            documentoTipo: documento ? (ownerRow.cnpj ? "cnpj" : "cpf") : null,
+            documentoMascarado: documento ? mascararCpfCnpj(documento) : null,
+          };
+        }
       }
     }
 
@@ -159,6 +177,46 @@ export async function getStoreHandler(request: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: "Serviço temporariamente indisponível" }), {
       status: 503,
       headers: { "content-type": "application/json", "Retry-After": "3" },
+    });
+  }
+}
+
+// ─── Revelar CNPJ da loja ─────────────────────────────────────────
+// Único jeito de o valor cru do documento sair do servidor pra tela de
+// Configurações — sob demanda (botão "visualizar"), nunca junto da carga
+// normal da página. Só para CNPJ: é registro público (Receita Federal), CPF
+// é dado sensível (LGPD) e nunca é revelado por aqui, mesmo que o lojista
+// peça — fica mascarado pra sempre na tela.
+export async function revealStoreDocumentHandler(request: Request, auth?: AuthContext): Promise<Response> {
+  let storeId: string;
+  try {
+    const access = await requireStoreAccess(auth);
+    storeId = access.storeId;
+  } catch (error) {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
+      status: auth?.userId ? 403 : 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const dbUrl = process.env.DATABASE_URL!;
+  const db = await createUnscopedDb(dbUrl, storeId);
+
+  try {
+    const [row] = await db.select({ cnpj: stores.cnpj }).from(stores).where(eq(stores.id, storeId)).limit(1);
+    if (!row?.cnpj) {
+      return new Response(JSON.stringify({ error: "Esta loja não tem CNPJ cadastrado" }), {
+        status: 404, headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ cnpj: row.cnpj }), {
+      status: 200,
+      headers: { "content-type": "application/json", "Cache-Control": "private, no-store" },
+    });
+  } catch (error) {
+    console.error("Error revealing store document:", error);
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500, headers: { "content-type": "application/json" },
     });
   }
 }
@@ -229,6 +287,8 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
   const body = await request.json() as {
     name?: string;
     ownerName?: string;
+    /** CNPJ ou CPF do titular da loja — opcional, mas validado e imutável uma vez vinculado. Ver src/lib/store/documento-loja.ts. */
+    documentoTitular?: string;
     description?: string;
     phone?: string;
     email?: string;
@@ -259,6 +319,8 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
     /** Localização física da loja — referência única pros modelos de frete por distância. */
     latitude?: number | null;
     longitude?: number | null;
+    caixaAutoCloseEnabled?: boolean;
+    caixaAutoCloseTime?: string;
   };
 
   const dbUrl = process.env.DATABASE_URL!;
@@ -272,6 +334,15 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
   const nextSlug = body.name ? generateCleanSlug(body.name) : null;
   if (body.name && (!nextSlug || nextSlug.length < 3)) {
     return new Response(JSON.stringify({ error: "Nome da loja gera um slug inválido (mínimo 3 caracteres alfanuméricos)" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  // "HH:mm" alinhado a slots de 15min — é o que o Cron Trigger de
+  // encerramento automático (a cada 15min) consegue casar exatamente.
+  if (body.caixaAutoCloseTime !== undefined && !/^([01]\d|2[0-3]):(00|15|30|45)$/.test(body.caixaAutoCloseTime)) {
+    return new Response(JSON.stringify({ error: "Horário de encerramento automático inválido" }), {
       status: 400,
       headers: { "content-type": "application/json" },
     });
@@ -303,6 +374,56 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
     }
 
     const legacyDelivery = body.deliveryConfig !== undefined ? deriveLegacyDelivery(body.deliveryConfig) : null;
+    // Modalidade (Todas/Apenas Delivery/Apenas Retirada) → deliveryEnabled/
+    // pickupEnabled, os campos que o checkout e a home da loja realmente lêem
+    // (ver src/lib/store/delivery-modalidade.ts — sem isso a escolha da aba
+    // Entrega não tinha nenhum efeito).
+    const deliveryPickupFlags = body.deliveryConfig !== undefined
+      ? deriveDeliveryPickupFlags((body.deliveryConfig as Record<string, unknown>).modalidade)
+      : null;
+
+    // CNPJ/CPF do titular da loja — opcional, mas validado quando informado,
+    // e imutável uma vez vinculado (ver src/lib/store/documento-loja.ts). Só
+    // avaliado quando a tela de Configurações realmente envia o campo; outras
+    // abas salvam por esta mesma rota sem tocar em documento nenhum.
+    let documentoLoja: { cnpj: string | null; cpf: string | null } | null = null;
+    if (body.documentoTitular !== undefined) {
+      const [atualDoc] = await db.select({ cnpj: stores.cnpj, cpf: stores.cpf }).from(stores).where(eq(stores.id, storeId)).limit(1);
+      const resultadoDoc = verificarDocumentoLoja(atualDoc?.cnpj || atualDoc?.cpf, body.documentoTitular);
+      if (!resultadoDoc.ok) {
+        return new Response(JSON.stringify({ error: MENSAGEM_REJEICAO_DOCUMENTO_LOJA[resultadoDoc.motivo] }), {
+          status: 400, headers: { "content-type": "application/json" },
+        });
+      }
+      if (!resultadoDoc.jaEstavaVinculado && resultadoDoc.documento) {
+        // Uma conta por CNPJ/CPF: barra se esse documento já identifica OUTRA
+        // loja (stores.cnpj/stores.cpf com índice único, ver migração 0057) ou
+        // OUTRA pessoa (users.cpf, único desde o cadastro) — exclui a própria
+        // loja e o próprio usuário logado, senão o backfill/reenvio do que já
+        // é seu seria barrado como "duplicado".
+        const [outraLoja] = await db
+          .select({ id: stores.id })
+          .from(stores)
+          .where(and(
+            ne(stores.id, storeId),
+            sql`(${stores.cnpj} = ${resultadoDoc.documento} OR ${stores.cpf} = ${resultadoDoc.documento})`,
+          ))
+          .limit(1);
+        const [outraPessoa] = resultadoDoc.tipo === "cpf"
+          ? await db.select({ id: users.id }).from(users)
+              .where(and(eq(users.cpf, resultadoDoc.documento), auth?.userId ? ne(users.id, auth.userId) : sql`true`))
+              .limit(1)
+          : [];
+        if (outraLoja || outraPessoa) {
+          return new Response(JSON.stringify({ error: "Este CNPJ/CPF já está cadastrado em outra conta Armazix." }), {
+            status: 409, headers: { "content-type": "application/json" },
+          });
+        }
+        documentoLoja = resultadoDoc.tipo === "cpf"
+          ? { cpf: resultadoDoc.documento, cnpj: null }
+          : { cnpj: resultadoDoc.documento, cpf: null };
+      }
+    }
 
     const [updated] = await db
       .update(stores)
@@ -310,6 +431,7 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
         name: body.name,
         ...(nextSlug ? { slug: nextSlug } : {}),
         ownerName: body.ownerName,
+        ...(documentoLoja ? documentoLoja : {}),
         description: body.description,
         phone: body.phone,
         email: body.email,
@@ -331,10 +453,13 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
         ...(body.freeShippingAbove !== undefined ? { freeShippingAbove: body.freeShippingAbove } : {}),
         ...(body.latitude !== undefined ? { latitude: body.latitude !== null ? body.latitude.toFixed(7) : null } : {}),
         ...(body.longitude !== undefined ? { longitude: body.longitude !== null ? body.longitude.toFixed(7) : null } : {}),
+        ...(body.caixaAutoCloseEnabled !== undefined ? { caixaAutoCloseEnabled: body.caixaAutoCloseEnabled } : {}),
+        ...(body.caixaAutoCloseTime !== undefined ? { caixaAutoCloseTime: body.caixaAutoCloseTime } : {}),
         // Mantém deliveryFee/deliveryRules (o que o checkout de fato usa) em
         // sincronia com o que foi configurado na aba Entrega — ver
         // deriveLegacyDelivery() acima.
         ...(legacyDelivery ? { deliveryFee: legacyDelivery.deliveryFee, deliveryRules: legacyDelivery.deliveryRules } : {}),
+        ...(deliveryPickupFlags ? { deliveryEnabled: deliveryPickupFlags.deliveryEnabled, pickupEnabled: deliveryPickupFlags.pickupEnabled } : {}),
         updatedAt: new Date(),
       })
       .where(eq(stores.id, storeId))
@@ -362,7 +487,21 @@ export async function updateStoreHandler(request: Request, auth?: AuthContext): 
       waitUntil(request, geocodeAndSaveAddressCoords(db, storeId, body.address));
     }
 
-    return new Response(JSON.stringify({ success: true, store: updated }), {
+    // Mesma proteção do GET: o valor cru de cnpj/cpf nunca volta na resposta,
+    // nem pra tela que acabou de salvá-lo — devolve só o tipo + mascarado, e
+    // a tela já tem localmente o que o lojista digitou pra confirmar visualmente.
+    let storeResponse: unknown = updated;
+    if (updated) {
+      const { cnpj, cpf, ...updatedSemDocumento } = updated;
+      const documento = cnpj || cpf || null;
+      storeResponse = {
+        ...updatedSemDocumento,
+        documentoTipo: documento ? (cnpj ? "cnpj" : "cpf") : null,
+        documentoMascarado: documento ? mascararCpfCnpj(documento) : null,
+      };
+    }
+
+    return new Response(JSON.stringify({ success: true, store: storeResponse }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });

@@ -1,10 +1,12 @@
-import type { ComponentType } from "react";
+import { useState, useEffect, type ComponentType } from "react";
 import {
   X, MapPin, Grid3x3, ClipboardCheck, Ban, ArrowRightLeft, Unlock,
   Bike, CircleDollarSign, Undo2, IdCard, BadgePercent, RotateCcw,
   Lock, List, ClipboardEdit, ArrowUpCircle, ArrowDownCircle, ClipboardList,
-  LockKeyhole, Users, Tag, Star, Settings,
+  LockKeyhole, Users, Tag, Star, Settings, Clock, Loader2, AlertTriangle,
 } from "lucide-react";
+import { api } from "@/lib/api-client";
+import { Switch } from "@/components/ui/switch";
 import { fmtBRL, fmtDate } from "./pdv";
 import type { CaixaSessao, CaixaMovimento } from "./pdv";
 import { MesaTableIcon } from "./-icon-mesa";
@@ -21,6 +23,7 @@ interface SecaoDef { title: string; items: FuncaoDef[] }
 
 function buildSecoes(actions: {
   caixaAberto: boolean;
+  podeVerPosicao: boolean;
   onCaixaAberto: () => void;
   onPosicao: () => void;
   onApontamento: () => void;
@@ -29,8 +32,25 @@ function buildSecoes(actions: {
   onAnalise: () => void;
   onFechamento: () => void;
   onPontosAtendimento: () => void;
+  onFechamentoAutomatico: () => void;
 }): SecaoDef[] {
   const seSessao = (fn: () => void) => (actions.caixaAberto ? fn : undefined);
+  // "Posição" mostra o saldo esperado por forma de pagamento — some do menu
+  // pra quem não tem permissão (não fica só desabilitado, some mesmo, pra
+  // não sugerir "em breve" numa restrição que é de permissão, não de
+  // disponibilidade). Quem fecha o caixa faz contagem cega e não deveria
+  // conseguir ver isso nem por aqui.
+  const itensCaixa: FuncaoDef[] = [
+    { label: "Caixa aberto", icon: Lock,           shortcut: "Alt+A", onClick: actions.onCaixaAberto },
+    ...(actions.podeVerPosicao
+      ? [{ label: "Posição", icon: List, shortcut: "Alt+P", onClick: seSessao(actions.onPosicao) }]
+      : []),
+    { label: "Apontamento",  icon: ClipboardEdit,   shortcut: "Alt+O", onClick: seSessao(actions.onApontamento) },
+    { label: "Suprimento",   icon: ArrowUpCircle,   shortcut: "Alt+S", favorite: true, onClick: seSessao(actions.onSuprimento) },
+    { label: "Sangria",      icon: ArrowDownCircle, shortcut: "Alt+R", favorite: true, onClick: seSessao(actions.onSangria) },
+    { label: "Análise",      icon: ClipboardList,   shortcut: "Alt+L", onClick: actions.onAnalise },
+    { label: "Fechamento",   icon: LockKeyhole,     shortcut: "Alt+F", onClick: seSessao(actions.onFechamento) },
+  ];
   return [
     {
       title: "Atendimento",
@@ -56,15 +76,7 @@ function buildSecoes(actions: {
     },
     {
       title: "Caixa",
-      items: [
-        { label: "Caixa aberto", icon: Lock,           shortcut: "Alt+A", onClick: actions.onCaixaAberto },
-        { label: "Posição",      icon: List,            shortcut: "Alt+P", onClick: seSessao(actions.onPosicao) },
-        { label: "Apontamento",  icon: ClipboardEdit,   shortcut: "Alt+O", onClick: seSessao(actions.onApontamento) },
-        { label: "Suprimento",   icon: ArrowUpCircle,   shortcut: "Alt+S", favorite: true, onClick: seSessao(actions.onSuprimento) },
-        { label: "Sangria",      icon: ArrowDownCircle, shortcut: "Alt+R", favorite: true, onClick: seSessao(actions.onSangria) },
-        { label: "Análise",      icon: ClipboardList,   shortcut: "Alt+L", onClick: actions.onAnalise },
-        { label: "Fechamento",   icon: LockKeyhole,     shortcut: "Alt+F", onClick: seSessao(actions.onFechamento) },
-      ],
+      items: itensCaixa,
     },
     {
       title: "Consultas",
@@ -77,6 +89,7 @@ function buildSecoes(actions: {
       title: "Configurações",
       items: [
         { label: "Pontos de Atendimento", icon: MesaTableIcon, shortcut: "", onClick: actions.onPontosAtendimento },
+        { label: "Fechamento Automático", icon: Clock,         shortcut: "", onClick: actions.onFechamentoAutomatico },
       ],
     },
   ];
@@ -123,18 +136,19 @@ function SecaoGrid({ secao, cols }: { secao: SecaoDef; cols?: string }) {
 
 // ─── Tela cheia: Menu de Funções ──────────────────────────────────
 export function MenuFuncoesPDV({
-  caixaAberto, onClose, onCaixaAberto, onPosicao, onApontamento, onSuprimento, onSangria, onAnalise, onFechamento,
-  onPontosAtendimento,
+  caixaAberto, podeVerPosicao, onClose, onCaixaAberto, onPosicao, onApontamento, onSuprimento, onSangria, onAnalise, onFechamento,
+  onPontosAtendimento, onFechamentoAutomatico,
 }: {
   caixaAberto: boolean;
+  podeVerPosicao: boolean;
   onClose: () => void;
   onCaixaAberto: () => void; onPosicao: () => void; onApontamento: () => void;
   onSuprimento: () => void; onSangria: () => void; onAnalise: () => void; onFechamento: () => void;
-  onPontosAtendimento: () => void;
+  onPontosAtendimento: () => void; onFechamentoAutomatico: () => void;
 }) {
   const secoes = buildSecoes({
-    caixaAberto, onCaixaAberto, onPosicao, onApontamento, onSuprimento, onSangria, onAnalise, onFechamento,
-    onPontosAtendimento,
+    caixaAberto, podeVerPosicao, onCaixaAberto, onPosicao, onApontamento, onSuprimento, onSangria, onAnalise, onFechamento,
+    onPontosAtendimento, onFechamentoAutomatico,
   });
 
   return (
@@ -177,13 +191,17 @@ export function ModalCaixaInfo({ sessao, onClose }: { sessao: CaixaSessao; onClo
           </div>
           <div className="flex-1">
             <h3 className="text-sm font-bold text-foreground">Caixa Aberto</h3>
-            <p className="text-xs text-muted-foreground">Sessão em andamento</p>
+            <p className="text-xs text-muted-foreground">Sessão {sessao.codigo}</p>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
             <X className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
         <div className="bg-secondary border border-border rounded-xl divide-y divide-border">
+          <div className="flex justify-between items-center px-4 py-2.5 text-xs">
+            <span className="text-muted-foreground">Código da sessão</span>
+            <span className="font-mono font-bold text-foreground tracking-wider">{sessao.codigo}</span>
+          </div>
           <div className="flex justify-between items-center px-4 py-2.5 text-xs">
             <span className="text-muted-foreground">Aberto em</span>
             <span className="font-semibold text-foreground">{fmtDate(sessao.openedAt)}</span>
@@ -299,6 +317,102 @@ export function ModalApontamento({ movimentos, onClose }: { movimentos: CaixaMov
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Opções de horário — slots de 15min, mesmo grão do Cron Trigger que
+// executa o encerramento (wrangler.jsonc), pra sempre existir um horário
+// que "bate" exatamente todo dia. ──
+const HORARIOS_15MIN = Array.from({ length: 96 }, (_, i) => {
+  const h = Math.floor(i / 4);
+  const m = (i % 4) * 15;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+});
+
+// ─── Modal: Fechamento Automático (configura o encerramento diário do
+// caixa — Configurações → Fechamento Automático) ──────────────────
+export function ModalFechamentoAutomatico({ storeId, onClose }: { storeId: string; onClose: () => void }) {
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
+  const [enabled, setEnabled]   = useState(true);
+  const [horario, setHorario]   = useState("00:00");
+
+  useEffect(() => {
+    let ativo = true;
+    api.get(`/api/store/get?id=${storeId}`).then(async (res) => {
+      const data = await res.json() as { store?: { caixaAutoCloseEnabled?: boolean; caixaAutoCloseTime?: string } };
+      if (!ativo || !data.store) return;
+      setEnabled(data.store.caixaAutoCloseEnabled ?? true);
+      setHorario(data.store.caixaAutoCloseTime ?? "00:00");
+    }).finally(() => ativo && setLoading(false));
+    return () => { ativo = false; };
+  }, [storeId]);
+
+  const handleSalvar = async () => {
+    setSaving(true);
+    try {
+      const res = await api.post("/api/store/update", { caixaAutoCloseEnabled: enabled, caixaAutoCloseTime: horario });
+      if (res.ok) onClose();
+      else alert("Erro ao salvar configuração");
+    } catch { alert("Erro de conexão"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-xl bg-secondary border border-border flex items-center justify-center">
+            <Clock className="w-5 h-5 text-muted-foreground" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-foreground">Fechamento Automático</h3>
+            <p className="text-xs text-muted-foreground">Encerramento diário do caixa</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="py-10 flex items-center justify-center">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between px-4 py-3 bg-secondary border border-border rounded-xl">
+              <div>
+                <p className="text-xs font-semibold text-foreground">Encerrar caixa automaticamente</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Todo dia, no horário abaixo</p>
+              </div>
+              <Switch checked={enabled} onCheckedChange={setEnabled} />
+            </div>
+
+            <div className="mt-4">
+              <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Horário</label>
+              <select value={horario} onChange={e => setHorario(e.target.value)} disabled={!enabled}
+                className="mt-1 w-full h-10 rounded-xl border border-border bg-card px-3 text-sm font-semibold text-foreground disabled:opacity-40 disabled:cursor-not-allowed">
+                {HORARIOS_15MIN.map(h => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+
+            <div className="mt-4 flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Se o caixa estiver em uso nesse horário (uma venda em andamento, por exemplo), ele será encerrado
+                mesmo assim e será preciso abrir um novo caixa pra continuar vendendo. Lojas que operam de
+                madrugada devem ajustar o horário ou desligar.
+              </p>
+            </div>
+
+            <button onClick={handleSalvar} disabled={saving}
+              className="mt-5 w-full h-11 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

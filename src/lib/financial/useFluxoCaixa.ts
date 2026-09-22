@@ -7,7 +7,7 @@
  *
  * Contém:
  *  1. Tipagem completa (LancamentoFinanceiro, enums, filtros)
- *  2. Mock data com dados realistas
+ *  2. Filtros padrão
  *  3. getLancamentos() — busca + filtragem avançada dinâmica
  *  4. agruparPor()     — agrupamento dinâmico por qualquer chave
  *  5. calcularTotais() — sumário automático de receitas/despesas/saldos
@@ -144,106 +144,6 @@ export interface ResultadoFluxo {
 
 /** Estrutura de agrupamento: chave → lista de lançamentos */
 export type GrupoFluxo = Record<string, LancamentoFinanceiro[]>;
-
-// ─── 5. MOCK DATA ─────────────────────────────────────────────────
-
-export const LANCAMENTOS_MOCK: LancamentoFinanceiro[] = [
-  // RECEITAS
-  {
-    id_lancamento: "L-0001", natureza: "RECEITA",  status: "EM_ABERTO",
-    conta_contabil: "1.1.01 - Caixa",       unidade: "Loja Principal",  favorecido: "Ana Oliveira",
-    historico_1: "Venda #1042", historico_2: "Entrega balcao", historico_3: "",
-    num_nota_fiscal: "NF-1042", num_documento: "DOC-001", num_cheque: "", nsu: "NSU-0001",
-    data_inclusao: "2026-05-25", data_emissao: "2026-05-25", data_vencimento: "2026-05-30",
-    data_previsao: "2026-05-30", data_pagamento: null,
-    valor_nominal: 450.00, acrescimo: 0,  desconto: 0,    valor_total: 450.00,
-    forma_pagamento: "PIX",           conta_corrente: "CC-001", centro_custo: "LOJA", memorando: "",
-  },
-  {
-    id_lancamento: "L-0002", natureza: "RECEITA",  status: "EFETIVADO",
-    conta_contabil: "1.1.01 - Caixa",       unidade: "Loja Principal",  favorecido: "Carlos Silva",
-    historico_1: "Venda #1038", historico_2: "Cartao credito", historico_3: "",
-    num_nota_fiscal: "NF-1038", num_documento: "DOC-002", num_cheque: "", nsu: "NSU-0002",
-    data_inclusao: "2026-05-20", data_emissao: "2026-05-20", data_vencimento: "2026-05-20",
-    data_previsao: "2026-05-20", data_pagamento: "2026-05-20",
-    valor_nominal: 180.50, acrescimo: 0,   desconto: 10.00, valor_total: 170.50,
-    forma_pagamento: "Cartao",            conta_corrente: "CC-001", centro_custo: "LOJA", memorando: "",
-  },
-  {
-    id_lancamento: "L-0003", natureza: "RECEITA",  status: "EM_ABERTO",
-    conta_contabil: "1.1.02 - Bancos",      unidade: "Loja Principal",  favorecido: "Pedro Costa",
-    historico_1: "Venda #1031", historico_2: "Boleto vencido", historico_3: "",
-    num_nota_fiscal: "NF-1031", num_documento: "DOC-003", num_cheque: "", nsu: "",
-    data_inclusao: "2026-05-01", data_emissao: "2026-05-01", data_vencimento: "2026-05-10",
-    data_previsao: "2026-05-10", data_pagamento: null,
-    valor_nominal: 320.00, acrescimo: 16.00, desconto: 0,    valor_total: 336.00,
-    forma_pagamento: "Boleto",            conta_corrente: "CC-002", centro_custo: "LOJA", memorando: "Vencido",
-  },
-  {
-    id_lancamento: "L-0004", natureza: "RECEITA",  status: "EM_ABERTO",
-    conta_contabil: "1.1.02 - Bancos",      unidade: "Filial Norte",    favorecido: "Fernanda Lima",
-    historico_1: "Servico especial", historico_2: "Parcela 1/3", historico_3: "",
-    num_nota_fiscal: "", num_documento: "SERV-001", num_cheque: "", nsu: "",
-    data_inclusao: "2026-05-15", data_emissao: "2026-05-15", data_vencimento: "2026-06-15",
-    data_previsao: "2026-06-15", data_pagamento: null,
-    valor_nominal: 750.00, acrescimo: 0,   desconto: 0,    valor_total: 750.00,
-    forma_pagamento: "Transferencia",     conta_corrente: "CC-002", centro_custo: "SERVICOS", memorando: "",
-  },
-
-  // DESPESAS
-  {
-    id_lancamento: "L-0005", natureza: "DESPESA",  status: "EM_ABERTO",
-    conta_contabil: "2.1.01 - Fornecedores", unidade: "Loja Principal", favorecido: "Distribuidora ABC",
-    historico_1: "Compra estoque mai/26", historico_2: "Parcela 1/3", historico_3: "",
-    num_nota_fiscal: "NF-4521", num_documento: "NF-4521", num_cheque: "", nsu: "",
-    data_inclusao: "2026-05-10", data_emissao: "2026-05-10", data_vencimento: "2026-05-31",
-    data_previsao: "2026-05-31", data_pagamento: null,
-    valor_nominal: 1200.00, acrescimo: 0, desconto: 50.00, valor_total: 1150.00,
-    forma_pagamento: "Boleto",           conta_corrente: "CC-001", centro_custo: "ESTOQUE", memorando: "",
-  },
-  {
-    id_lancamento: "L-0006", natureza: "DESPESA",  status: "EFETIVADO",
-    conta_contabil: "2.1.01 - Fornecedores", unidade: "Loja Principal", favorecido: "Fornecedor XYZ",
-    historico_1: "Reposicao produto A", historico_2: "", historico_3: "",
-    num_nota_fiscal: "NF-3310", num_documento: "NF-3310", num_cheque: "", nsu: "",
-    data_inclusao: "2026-05-14", data_emissao: "2026-05-14", data_vencimento: "2026-05-15",
-    data_previsao: "2026-05-15", data_pagamento: "2026-05-15",
-    valor_nominal: 560.00, acrescimo: 0, desconto: 0,   valor_total: 560.00,
-    forma_pagamento: "PIX",              conta_corrente: "CC-001", centro_custo: "ESTOQUE", memorando: "",
-  },
-  {
-    id_lancamento: "L-0007", natureza: "DESPESA",  status: "EM_ABERTO",
-    conta_contabil: "2.1.02 - Alugueis",     unidade: "Loja Principal", favorecido: "Imobiliaria Central",
-    historico_1: "Aluguel maio/2026", historico_2: "", historico_3: "",
-    num_nota_fiscal: "", num_documento: "REC-05/26", num_cheque: "", nsu: "",
-    data_inclusao: "2026-04-30", data_emissao: "2026-04-30", data_vencimento: "2026-05-05",
-    data_previsao: "2026-05-05", data_pagamento: null,
-    valor_nominal: 2500.00, acrescimo: 125.00, desconto: 0, valor_total: 2625.00,
-    forma_pagamento: "Transferencia",    conta_corrente: "CC-002", centro_custo: "ADMIN", memorando: "VENCIDO",
-  },
-  {
-    id_lancamento: "L-0008", natureza: "DESPESA",  status: "EM_ABERTO",
-    conta_contabil: "2.1.03 - Utilidades",   unidade: "Filial Norte",   favorecido: "CPFL Energia",
-    historico_1: "Energia eletrica jun/26", historico_2: "", historico_3: "",
-    num_nota_fiscal: "FAT-2605", num_documento: "FAT-2605", num_cheque: "", nsu: "",
-    data_inclusao: "2026-05-25", data_emissao: "2026-05-25", data_vencimento: "2026-06-10",
-    data_previsao: "2026-06-10", data_pagamento: null,
-    valor_nominal: 380.00, acrescimo: 0, desconto: 0, valor_total: 380.00,
-    forma_pagamento: "Debito",           conta_corrente: "CC-002", centro_custo: "ADMIN", memorando: "",
-  },
-
-  // TRANSFERENCIA
-  {
-    id_lancamento: "L-0009", natureza: "TRANSFERENCIA", status: "EFETIVADO",
-    conta_contabil: "1.1.02 - Bancos",      unidade: "Loja Principal",  favorecido: "Transferencia interna",
-    historico_1: "Sangria caixa para banco", historico_2: "", historico_3: "",
-    num_nota_fiscal: "", num_documento: "TRANSF-001", num_cheque: "", nsu: "",
-    data_inclusao: "2026-05-22", data_emissao: "2026-05-22", data_vencimento: "2026-05-22",
-    data_previsao: "2026-05-22", data_pagamento: "2026-05-22",
-    valor_nominal: 1000.00, acrescimo: 0, desconto: 0, valor_total: 1000.00,
-    forma_pagamento: "Transferencia",    conta_corrente: "CC-001", centro_custo: "ADMIN", memorando: "",
-  },
-];
 
 // ─── 6. FILTROS DEFAULT ──────────────────────────────────────────
 
@@ -472,7 +372,7 @@ export function agruparComTotais(
  * Uso no componente:
  *   const { filtros, setFiltro, resultado, grupos } = useFluxoCaixa(lancamentos);
  */
-export function useFluxoCaixa(source: LancamentoFinanceiro[] = LANCAMENTOS_MOCK) {
+export function useFluxoCaixa(source: LancamentoFinanceiro[]) {
   const [filtros, setFiltros] = useState<FiltrosFluxo>(FILTROS_DEFAULT);
   const [chaveAgrupamento, setChaveAgrupamento] = useState<keyof LancamentoFinanceiro | null>(null);
 

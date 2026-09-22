@@ -7,10 +7,14 @@ export const Route = createFileRoute("/store/payment")({
   head: () => ({
     meta: [{ title: "Pagamento — ARMAZIX" }],
   }),
+  validateSearch: (search: Record<string, string>): { status?: string; order?: string } => ({
+    status: search.status,
+    order: search.order,
+  }),
 });
 
 function PaymentResultPage() {
-  const { status, order } = Route.useSearch<{ status?: string; order?: string }>();
+  const { status, order } = Route.useSearch();
 
   if (status === "success") {
     return (

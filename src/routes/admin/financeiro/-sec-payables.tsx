@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { StatCard } from "@/components/ui/stat-card";
 import { ChevronDown, Check, X, AlertTriangle, Plus, Search, RefreshCw, CreditCard, Clock, TrendingUp, Pencil } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -550,15 +551,8 @@ export function SecaoPagar() {
           { label: "Vencem Hoje",    value: String(kpis.hoje),     icon: Clock,         bg: "bg-amber-500/15",   fg: "text-amber-600",   hl: false },
           { label: "Juros Acum.",    value: fmt(kpis.totalJuros),  icon: TrendingUp,    bg: "bg-rose-500/10",    fg: "text-rose-500",    hl: false },
         ].map(k => (
-          <Card key={k.label} className="rounded-2xl border-border/50 shadow-soft">
-            <CardContent className="p-3">
-              <div className={`w-8 h-8 rounded-xl ${k.bg} grid place-items-center mb-2`}>
-                <k.icon className={`w-4 h-4 ${k.fg}`} />
-              </div>
-              <div className={`text-xl font-bold tracking-tight ${k.hl ? "text-indigo-600" : ""}`}>{k.value}</div>
-              <div className="text-[11px] text-muted-foreground mt-0.5">{k.label}</div>
-            </CardContent>
-          </Card>
+          <StatCard key={k.label} icon={k.icon} label={k.label} value={k.value} iconBg={k.bg} iconColor={k.fg}
+            valueClassName={k.hl ? "text-indigo-600" : ""} />
         ))}
       </div>
 

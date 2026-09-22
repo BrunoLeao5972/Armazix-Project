@@ -272,6 +272,48 @@ export async function redisRateLimit(
   }
 }
 
+// Bloqueio por conta pra checagens de senha fora do login (ex: abrir/fechar
+// caixa no PDV). Diferente de redisRateLimit: conta só tentativas ERRADAS
+// (sucesso não consome nada) e o balde é da conta-alvo, não do IP — o IP de
+// uma loja é compartilhado por todos os operadores. Sem Redis, cai num Map
+// por isolate (mesmo fallback do rate limiter, protege menos mas não fica
+// aberto).
+const pwdFailMemory = new Map<string, { count: number; resetTime: number }>();
+
+export async function getPasswordFailures(
+  key: string, windowSeconds: number,
+): Promise<{ count: number; ttlSeconds: number }> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const [count, ttl] = await redis.pipeline().get(key).ttl(key).exec() as [number | null, number];
+      return { count: Number(count ?? 0), ttlSeconds: ttl > 0 ? ttl : windowSeconds };
+    } catch { /* cai no fallback em memória */ }
+  }
+  const entry = pwdFailMemory.get(key);
+  if (!entry || Date.now() > entry.resetTime) return { count: 0, ttlSeconds: windowSeconds };
+  return { count: entry.count, ttlSeconds: Math.ceil((entry.resetTime - Date.now()) / 1000) };
+}
+
+export async function recordPasswordFailure(key: string, windowSeconds: number): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.pipeline().incr(key).expire(key, windowSeconds, "NX").exec();
+      return;
+    } catch { /* cai no fallback em memória */ }
+  }
+  const now = Date.now();
+  const entry = pwdFailMemory.get(key);
+  if (!entry || now > entry.resetTime) pwdFailMemory.set(key, { count: 1, resetTime: now + windowSeconds * 1000 });
+  else entry.count++;
+}
+
+export async function clearPasswordFailures(key: string): Promise<void> {
+  pwdFailMemory.delete(key);
+  await deleteKey(key);
+}
+
 // OTP — armazena/verifica/consome códigos temporários por telefone+store.
 const OTP_TTL = 300;
 // Tentativas erradas antes de queimar o código e exigir reenvio — mesmo teto

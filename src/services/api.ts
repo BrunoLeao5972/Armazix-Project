@@ -1,12 +1,19 @@
 // ARMAZIX - Camada de serviços (API)
 // Nota: Configure VITE_API_URL no .env para apontar para o backend do Armazix
 
+import { apiFetch } from "@/lib/api-client";
+
 export type Option = { value: string; label: string };
 
 const API_URL = (import.meta as any).env?.VITE_API_URL || "/api";
 
+// Usa apiFetch (e não fetch puro) de propósito: é ele que manda o cabeçalho
+// x-csrf-token nas escritas (POST/PUT/DELETE), renova o token se o cookie
+// sumiu e envia os cookies de sessão. Com fetch puro, toda escrita daqui
+// (contas a pagar/receber, estorno de venda...) era barrada com "CSRF token
+// inválido ou ausente".
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`,(init || {}) as RequestInit);
+  const res = await apiFetch(`${API_URL}${path}`, (init || {}) as RequestInit);
   if (!res.ok) {
     // Tenta ler mensagem de erro se existir
     let message = res.statusText;
@@ -177,7 +184,7 @@ export async function getFinanceiroVendas(params: { from?: string; to?: string; 
 }
 
 export async function getFinanceiroVendaDetalhe(orderId: string) {
-  return http<{ venda: any; itens: any[]; timeline: any[]; lancamentos: any[] }>(
+  return http<{ venda: any; itens: any[]; timeline: any[]; lancamentos: any[]; pagamentos: any[]; caixa: any[]; historico: any[] }>(
     `/financeiro/vendas/detalhe?orderId=${encodeURIComponent(orderId)}`,
   );
 }

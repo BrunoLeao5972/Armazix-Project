@@ -1,4 +1,5 @@
 import { Component, lazy, Suspense, useEffect, useState } from "react";
+import { StatCard } from "@/components/ui/stat-card";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { api } from "@/lib/api-client";
 import {
@@ -300,7 +301,7 @@ function KpiCard({
   value,
   change,
   up,
-  icon: Icon,
+  icon,
   alert,
 }: {
   title: string;
@@ -311,26 +312,16 @@ function KpiCard({
   alert?: boolean;
 }) {
   return (
-    <Card className="rounded-2xl border-border/50 shadow-soft hover:shadow-ambient transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <span className="grid place-items-center w-9 h-9 rounded-xl bg-secondary text-muted-foreground">
-            <Icon className={`w-4.5 h-4.5 ${alert ? "text-amber-500" : ""}`} />
-          </span>
-          {change && (
-            <span
-              className={`flex items-center gap-0.5 text-xs font-semibold ${
-                up ? "text-primary" : "text-destructive"
-              }`}
-            >
-              {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-              {change}
-            </span>
-          )}
-        </div>
-        <div className="text-xl font-bold tracking-tight">{value}</div>
-        <div className="text-xs text-muted-foreground mt-0.5">{title}</div>
-      </CardContent>
-    </Card>
+    <StatCard
+      icon={icon} label={title} value={value}
+      iconBg="bg-secondary" iconColor={alert ? "text-amber-500" : "text-muted-foreground"}
+      className="hover:shadow-ambient transition-shadow"
+      badge={change ? (
+        <span className={`flex items-center gap-0.5 text-[11px] font-semibold shrink-0 ${up ? "text-primary" : "text-destructive"}`}>
+          {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+          {change}
+        </span>
+      ) : undefined}
+    />
   );
 }

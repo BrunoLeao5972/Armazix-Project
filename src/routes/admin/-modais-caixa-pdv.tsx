@@ -7,22 +7,41 @@ import {
 import { Input } from "@/components/ui/input";
 import { fmtBRL, fmtDate } from "./pdv";
 import type { CaixaSessao, CaixaMovimento } from "./pdv";
+import { useOperadores, verificarOperador, CampoOperador, ModalConfirmarAcao } from "./-caixa-operador";
 
 // ─── Modal Abertura de Caixa ─────────────────────────────────────
-export function ModalAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => void }) {
-  const [saldo, setSaldo]   = useState("");
-  const [resp, setResp]     = useState("");
-  const [loading, setLoading] = useState(false);
-  const [erro, setErro]     = useState("");
+export function ModalAbrirCaixa({ onAberto, onClose }: { onAberto: (s: CaixaSessao) => void; onClose: () => void }) {
+  const operadores = useOperadores();
+  const [saldo, setSaldo]       = useState("");
+  const [operadorId, setOperadorId] = useState("");
+  const [senha, setSenha]       = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [erro, setErro]         = useState("");
+  const [nomeConfirmado, setNomeConfirmado] = useState<string | null>(null);
 
+  // 1) Confere usuário + senha. Só then é que o popup de confirmação aparece.
+  const handleValidar = async () => {
+    setErro("");
+    if (!operadorId)   { setErro("Selecione o responsável"); return; }
+    if (!senha.trim()) { setErro("Informe a senha"); return; }
+    setLoading(true);
+    const r = await verificarOperador(operadorId, senha);
+    setLoading(false);
+    if (!r.ok) { setErro(r.error); return; }
+    setNomeConfirmado(r.name);
+  };
+
+  // 2) Só executa de verdade depois do "Confirmar" no popup — o backend
+  // confere a senha de novo aqui dentro (abrirCaixaHandler), não confia só
+  // na pré-checagem do passo 1.
   const handleAbrir = async () => {
-    setErro(""); setLoading(true);
+    setLoading(true);
     try {
-      const res  = await api.post("/api/pdv/caixa/abrir", { saldoInicial: saldo || "0", abertoPor: resp || undefined, origem: "web" });
+      const res  = await api.post("/api/pdv/caixa/abrir", { saldoInicial: saldo || "0", operadorId, senha, origem: "web" });
       const data = await res.json() as { success?: boolean; sessao?: CaixaSessao; error?: string };
-      if (!res.ok || !data.success) { setErro(data.error || "Erro ao abrir caixa"); return; }
+      if (!res.ok || !data.success) { setErro(data.error || "Erro ao abrir caixa"); setNomeConfirmado(null); return; }
       onAberto(data.sessao!);
-    } catch { setErro("Erro de rede"); }
+    } catch { setErro("Erro de rede"); setNomeConfirmado(null); }
     finally { setLoading(false); }
   };
 
@@ -45,18 +64,28 @@ export function ModalAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => vo
               onChange={e => setSaldo(e.target.value)} placeholder="0,00" autoFocus
               className="mt-1 h-11 rounded-xl text-base font-semibold" />
           </div>
-          <div>
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Responsável</label>
-            <Input value={resp} onChange={e => setResp(e.target.value)}
-              placeholder="Nome do operador" className="mt-1 h-10 rounded-xl text-sm" />
-          </div>
+          <CampoOperador operadores={operadores} operadorId={operadorId} setOperadorId={setOperadorId} senha={senha} setSenha={setSenha} />
           {erro && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{erro}</p>}
         </div>
-        <button onClick={handleAbrir} disabled={loading}
+        <button onClick={handleValidar} disabled={loading}
           className="mt-5 w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-md shadow-emerald-100">
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Unlock className="w-4 h-4" />Abrir Caixa</>}
         </button>
+        <button onClick={onClose} disabled={loading}
+          className="mt-2 w-full h-11 rounded-xl bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors">
+          <X className="w-4 h-4" />Cancelar
+        </button>
       </div>
+      {nomeConfirmado !== null && (
+        <ModalConfirmarAcao
+          titulo="Confirmar abertura de caixa"
+          mensagem={`Você deseja abrir o caixa com as informações inseridas? Responsável: ${nomeConfirmado}.`}
+          corBtn="bg-emerald-500 hover:bg-emerald-600"
+          loading={loading}
+          onCancelar={() => setNomeConfirmado(null)}
+          onConfirmar={handleAbrir}
+        />
+      )}
     </div>
   );
 }
@@ -65,10 +94,14 @@ export function ModalAbrirCaixa({ onAberto }: { onAberto: (s: CaixaSessao) => vo
 export function ModalFecharCaixa({
   sessao, movimentos, onFechado, onClose,
 }: { sessao: CaixaSessao; movimentos: CaixaMovimento[]; onFechado: () => void; onClose: () => void }) {
-  const [saldoFinal, setSaldoFinal] = useState("");
-  const [resp, setResp]             = useState("");
+  const operadores = useOperadores();
+  const [informados, setInformados] = useState<Record<string, string>>({});
+  const [operadorId, setOperadorId] = useState("");
+  const [senha, setSenha]           = useState("");
   const [obs, setObs]               = useState("");
   const [loading, setLoading]       = useState(false);
+  const [erro, setErro]             = useState("");
+  const [nomeConfirmado, setNomeConfirmado] = useState<string | null>(null);
 
   const totalSangria    = movimentos.filter(m => m.tipo === "sangria")   .reduce((s, m) => s + parseFloat(m.valor), 0);
   const totalSuprimento = movimentos.filter(m => m.tipo === "suprimento").reduce((s, m) => s + parseFloat(m.valor), 0);
@@ -77,34 +110,65 @@ export function ModalFecharCaixa({
     parseFloat(sessao.totalDinheiro) +
     totalSuprimento - totalSangria;
 
+  // Conferência por forma de pagamento — valor do sistema x valor contado
+  // pelo operador, lado a lado (antes só existia um único "saldo contado",
+  // comparado só contra o dinheiro). "Dinheiro" sempre aparece (é o que
+  // precisa de contagem física mesmo quando zerado); as demais só entram
+  // quando tiveram movimento na sessão.
+  const METODOS = [
+    { key: "dinheiro",      label: "Dinheiro",        sistema: saldoEsperado },
+    { key: "pix",           label: "PIX",              sistema: parseFloat(sessao.totalPix) },
+    { key: "cartaoCredito", label: "Cartão Crédito",   sistema: parseFloat(sessao.totalCartao) },
+    { key: "cartaoDebito",  label: "Cartão Débito",    sistema: parseFloat(sessao.totalDebito) },
+    { key: "outros",        label: "Outros",           sistema: parseFloat(sessao.totalOutros) },
+  ].filter(m => m.key === "dinheiro" || Math.abs(m.sistema) > 0.001);
+
+  // Campo em branco = contado como R$ 0,00 (não "bate sozinho" com o
+  // esperado, como seria se o fallback fosse pro valor do sistema — aquilo
+  // sim mascararia uma quebra de caixa). Deixar em branco vira uma
+  // diferença de verdade, visível depois em Posição do Caixa, então não
+  // precisa travar o fechamento exigindo que preencha todas as formas.
+  const linhasConferencia = METODOS.map(m => {
+    const bruto     = informados[m.key];
+    const informado = bruto ? parseFloat(bruto.replace(",", ".")) || 0 : 0;
+    return { ...m, informadoStr: bruto ?? "", informado, diferenca: informado - m.sistema };
+  });
+
+  // 1) Confere usuário + senha. Só então o popup de confirmação aparece.
+  const handleValidar = async () => {
+    setErro("");
+    if (!operadorId)    { setErro("Selecione o responsável"); return; }
+    if (!senha.trim())  { setErro("Informe a senha"); return; }
+    setLoading(true);
+    const r = await verificarOperador(operadorId, senha);
+    setLoading(false);
+    if (!r.ok) { setErro(r.error); return; }
+    setNomeConfirmado(r.name);
+  };
+
+  // 2) Só executa de verdade depois do "Confirmar" no popup — o backend
+  // confere a senha de novo aqui dentro (fecharCaixaHandler), não confia só
+  // na pré-checagem do passo 1.
   const handleFechar = async () => {
     setLoading(true);
     try {
+      const dinheiro = linhasConferencia.find(l => l.key === "dinheiro")!;
       await api.post("/api/pdv/caixa/fechar", {
         sessaoId: sessao.id,
-        saldoFinal: saldoFinal || saldoEsperado.toFixed(2),
-        encerradoPor: resp || undefined,
+        saldoFinal: dinheiro.informado.toFixed(2),
+        operadorId, senha,
         observations: obs || undefined,
+        conferencia: linhasConferencia.map(l => ({
+          metodo: l.key, label: l.label,
+          sistema: l.sistema.toFixed(2), informado: l.informado.toFixed(2), diferenca: l.diferenca.toFixed(2),
+        })),
       });
       onFechado();
-    } catch {}
+    } catch {
+      setNomeConfirmado(null);
+    }
     finally { setLoading(false); }
   };
-
-  const LINHAS = [
-    { label: "Saldo inicial",     val: parseFloat(sessao.saldoInicial),  cor: "text-foreground" },
-    { label: "Dinheiro vendas",   val: parseFloat(sessao.totalDinheiro), cor: "text-emerald-600" },
-    { label: "PIX",               val: parseFloat(sessao.totalPix),      cor: "text-emerald-600" },
-    { label: "Cartão Crédito",    val: parseFloat(sessao.totalCartao),   cor: "text-emerald-600" },
-    { label: "Cartão Débito",     val: parseFloat(sessao.totalDebito),   cor: "text-emerald-600" },
-    { label: "Outros",            val: parseFloat(sessao.totalOutros),   cor: "text-emerald-600" },
-    { label: "Sangrias",          val: -totalSangria,                    cor: "text-red-500" },
-    { label: "Suprimentos",       val: totalSuprimento,                  cor: "text-blue-600" },
-  ];
-  const totalVendasValor =
-    parseFloat(sessao.totalDinheiro) + parseFloat(sessao.totalPix) +
-    parseFloat(sessao.totalCartao)   + parseFloat(sessao.totalDebito) +
-    parseFloat(sessao.totalOutros);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
@@ -112,7 +176,10 @@ export function ModalFecharCaixa({
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             <LockKeyhole className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-bold text-foreground">Fechar Caixa</h3>
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Fechar Caixa</h3>
+              <p className="text-[11px] text-muted-foreground font-mono tracking-wider">Sessão {sessao.codigo}</p>
+            </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
             <X className="w-4 h-4 text-muted-foreground" />
@@ -120,53 +187,56 @@ export function ModalFecharCaixa({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {/* Resumo */}
-          <div className="bg-secondary rounded-xl border border-border overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-border">
-              <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Resumo da Sessão</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Aberto em {fmtDate(sessao.openedAt)} · {sessao.totalVendas} vendas</p>
+          {/* Ficha da sessão — identificação, no lugar do "Computador" de um
+              PDV tradicional (a gente não tem terminal físico nomeado, o
+              código da sessão já cumpre esse papel). */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-secondary rounded-xl border border-border px-3 py-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Sessão</p>
+              <p className="text-xs font-bold text-foreground font-mono tracking-wider mt-0.5">{sessao.codigo}</p>
             </div>
-            <div className="divide-y divide-border">
-              {LINHAS.map(l => Math.abs(l.val) > 0.001 && (
-                <div key={l.label} className="flex justify-between items-center px-4 py-2 text-xs">
-                  <span className="text-muted-foreground">{l.label}</span>
-                  <span className={`font-semibold tabular-nums ${l.cor}`}>{fmtBRL(l.val)}</span>
-                </div>
-              ))}
+            <div className="bg-secondary rounded-xl border border-border px-3 py-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Canal</p>
+              <p className="text-xs font-bold text-foreground mt-0.5">{sessao.origem === "desktop" ? "App Desktop" : "Painel Web"}</p>
             </div>
-            <div className="flex justify-between items-center px-4 py-3 bg-secondary border-t border-border">
-              <span className="text-xs font-bold text-foreground">Total de Vendas</span>
-              <span className="text-sm font-black text-emerald-600 tabular-nums">{fmtBRL(totalVendasValor)}</span>
+            <div className="bg-secondary rounded-xl border border-border px-3 py-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Aberto por</p>
+              <p className="text-xs font-bold text-foreground mt-0.5 truncate">{sessao.abertoPor || "—"}</p>
             </div>
-            <div className="flex justify-between items-center px-4 py-3 bg-emerald-50 border-t border-emerald-100">
-              <span className="text-xs font-bold text-emerald-700">Saldo Esperado no Caixa</span>
-              <span className="text-sm font-black text-emerald-700 tabular-nums">{fmtBRL(saldoEsperado)}</span>
+            <div className="bg-secondary rounded-xl border border-border px-3 py-2">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Aberto em</p>
+              <p className="text-xs font-bold text-foreground mt-0.5">{fmtDate(sessao.openedAt)}</p>
             </div>
           </div>
 
-          {/* Saldo conferência */}
+          {/* Conferência — contagem cega: o operador informa o que contou,
+              sem ver o valor esperado pelo sistema nem a diferença (isso é
+              proposital, pra não virar um "copia o número da tela" e mascarar
+              uma quebra de caixa). A comparação some daqui e só fica visível
+              depois, pra quem tiver permissão, em Configurações → Posição do
+              Caixa e no histórico de sessões. */}
           <div>
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Saldo Contado (R$)</label>
-            <Input type="number" min="0" step="0.01" value={saldoFinal}
-              onChange={e => setSaldoFinal(e.target.value)}
-              placeholder={saldoEsperado.toFixed(2).replace(".", ",")}
-              className="mt-1 h-11 rounded-xl text-base font-semibold" />
-            {saldoFinal && Math.abs(parseFloat(saldoFinal) - saldoEsperado) > 0.01 && (
-              <p className={`text-xs font-semibold mt-1 ${parseFloat(saldoFinal) > saldoEsperado ? "text-blue-600" : "text-red-500"}`}>
-                Diferença: {fmtBRL(parseFloat(saldoFinal) - saldoEsperado)}
-              </p>
-            )}
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Conferência (contagem cega)</label>
+            <p className="text-[11px] text-muted-foreground mt-0.5 mb-2">Informe o que você contou em cada forma de pagamento.</p>
+            <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
+              {linhasConferencia.map(l => (
+                <div key={l.key} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="text-xs text-foreground font-medium">{l.label}</span>
+                  <input type="number" step="0.01" value={l.informadoStr}
+                    onChange={e => setInformados(prev => ({ ...prev, [l.key]: e.target.value }))}
+                    placeholder="0,00"
+                    className="h-9 w-28 rounded-lg border border-border px-2 text-sm text-right tabular-nums font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-400" />
+                </div>
+              ))}
+            </div>
           </div>
-          <div>
-            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Encerrado por</label>
-            <Input value={resp} onChange={e => setResp(e.target.value)}
-              placeholder="Nome do operador" className="mt-1 h-10 rounded-xl text-sm" />
-          </div>
+          <CampoOperador operadores={operadores} operadorId={operadorId} setOperadorId={setOperadorId} senha={senha} setSenha={setSenha} />
           <div>
             <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Observações</label>
             <Input value={obs} onChange={e => setObs(e.target.value)}
               placeholder="Opcional" className="mt-1 h-10 rounded-xl text-sm" />
           </div>
+          {erro && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" />{erro}</p>}
         </div>
 
         <div className="px-5 pb-5 shrink-0 flex gap-2">
@@ -174,12 +244,22 @@ export function ModalFecharCaixa({
             className="flex-1 h-11 rounded-xl bg-secondary hover:bg-secondary text-muted-foreground font-semibold text-sm transition-colors">
             Cancelar
           </button>
-          <button onClick={handleFechar} disabled={loading}
+          <button onClick={handleValidar} disabled={loading}
             className="flex-1 h-11 rounded-xl bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><LockKeyhole className="w-4 h-4" />Fechar Caixa</>}
           </button>
         </div>
       </div>
+      {nomeConfirmado !== null && (
+        <ModalConfirmarAcao
+          titulo="Confirmar fechamento de caixa"
+          mensagem={`Você deseja encerrar o caixa com as informações inseridas? Responsável: ${nomeConfirmado}.`}
+          corBtn="bg-red-500 hover:bg-red-600"
+          loading={loading}
+          onCancelar={() => setNomeConfirmado(null)}
+          onConfirmar={handleFechar}
+        />
+      )}
     </div>
   );
 }
@@ -336,6 +416,7 @@ export function ModalSessoes({ storeId, onClose }: { storeId: string; onClose: (
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full shrink-0 ${isAberta ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+                      <span className="text-[10px] font-mono font-bold text-muted-foreground tracking-wider">{s.codigo}</span>
                       <span className="text-xs font-bold text-foreground">{fmtDate(s.openedAt)}</span>
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
                         isAberta ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-secondary text-muted-foreground border-border"

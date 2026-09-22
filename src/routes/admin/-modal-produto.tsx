@@ -8,6 +8,7 @@ import {
   Building2, Package, Loader2, MoreVertical,
 } from "lucide-react";
 import { type PromoConfig, DEFAULT_PROMO_CONFIG, isPromoActive } from "@/lib/promo-engine";
+import { MAX_PRODUCT_IMAGES, normalizarImagensProduto } from "@/lib/product-images";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -121,20 +122,34 @@ async function compressImage(file: File): Promise<string> {
 function ImageGallery({ images, onChange }: { images: ProductImage[]; onChange: (imgs: ProductImage[]) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [drag, setDrag] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const cheia = images.length >= MAX_PRODUCT_IMAGES;
 
   const addFiles = async (files: FileList | File[]) => {
-    const arr = Array.from(files);
-    const urls = await Promise.all(arr.map(compressImage));
-    const newImgs: ProductImage[] = urls.map(url => ({
-      id: uid(), url, isPrimary: images.length === 0 && urls.indexOf(url) === 0,
+    const vagas = MAX_PRODUCT_IMAGES - images.length;
+    const arr = Array.from(files).filter(f => f.type.startsWith("image/"));
+    if (vagas <= 0 || arr.length === 0) {
+      setAviso(vagas <= 0 ? `Limite de ${MAX_PRODUCT_IMAGES} fotos por produto. Remova uma para adicionar outra.` : null);
+      return;
+    }
+    const aceitas = arr.slice(0, vagas);
+    setAviso(arr.length > vagas
+      ? `Limite de ${MAX_PRODUCT_IMAGES} fotos: só ${aceitas.length === 1 ? "a 1ª foto foi adicionada" : `as ${aceitas.length} primeiras foram adicionadas`}.`
+      : null);
+    const urls = await Promise.all(aceitas.map(compressImage));
+    const newImgs: ProductImage[] = urls.map((url, i) => ({
+      id: uid(), url, isPrimary: images.length === 0 && i === 0,
     }));
     onChange([...images, ...newImgs]);
   };
 
-  const setPrimary = (id: string) =>
+  const setPrimary = (id: string) => {
+    setAviso(null);
     onChange(images.map(img => ({ ...img, isPrimary: img.id === id })));
+  };
 
   const remove = (id: string) => {
+    setAviso(null);
     const next = images.filter(img => img.id !== id);
     if (next.length > 0 && !next.some(img => img.isPrimary)) next[0] = { ...next[0], isPrimary: true };
     onChange(next);
@@ -168,36 +183,37 @@ function ImageGallery({ images, onChange }: { images: ProductImage[]; onChange: 
             <div className="absolute inset-0 bg-secondary/20" />
             <img src={img.url} alt="" className="absolute inset-0 w-full h-full object-contain p-1.5" />
             {img.isPrimary && (
-              <span className="absolute bottom-1.5 left-1.5 text-[9px] font-bold bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 leading-none shadow">
-                Capa
+              <span className="absolute bottom-1.5 left-1.5 text-[10px] font-bold bg-primary text-primary-foreground rounded-full px-2 py-1 leading-none shadow">
+                ★ Capa
               </span>
             )}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100">
-              {!img.isPrimary && (
-                <button type="button" onClick={() => setPrimary(img.id)}
-                  title="Definir como capa"
-                  className="w-7 h-7 rounded-full bg-white/90 flex items-center justify-center hover:bg-white shadow transition-transform hover:scale-110">
-                  <Star className="w-3.5 h-3.5 text-amber-500" />
-                </button>
-              )}
-              <button type="button" onClick={() => remove(img.id)}
-                title="Remover"
-                className="w-7 h-7 rounded-full bg-white/90 flex items-center justify-center hover:bg-white shadow transition-transform hover:scale-110">
-                <X className="w-3.5 h-3.5 text-destructive" />
+            <button type="button" onClick={() => remove(img.id)}
+              title="Remover foto" aria-label="Remover foto"
+              className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/95 flex items-center justify-center hover:bg-white shadow">
+              <X className="w-3.5 h-3.5 text-destructive" />
+            </button>
+            {!img.isPrimary && (
+              <button type="button" onClick={() => setPrimary(img.id)}
+                title="Definir como foto principal"
+                className="absolute bottom-1 left-1 right-1 h-6 rounded-full bg-white/95 flex items-center justify-center gap-1 text-[10px] font-semibold text-slate-700 hover:bg-white shadow">
+                <Star className="w-3 h-3 text-amber-500" /> Tornar capa
               </button>
-            </div>
+            )}
           </div>
         ))}
         {/* Add more */}
-        <button type="button" onClick={() => inputRef.current?.click()}
-          className="aspect-square rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-secondary/30 transition-colors flex flex-col items-center justify-center gap-1">
-          <ImagePlus className="w-5 h-5 text-muted-foreground" />
-          <span className="text-[10px] text-muted-foreground">Adicionar</span>
-        </button>
+        {!cheia && (
+          <button type="button" onClick={() => inputRef.current?.click()}
+            className="aspect-square rounded-xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-secondary/30 transition-colors flex flex-col items-center justify-center gap-1">
+            <ImagePlus className="w-5 h-5 text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground">Adicionar</span>
+          </button>
+        )}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        {images.length} foto{images.length !== 1 ? "s" : ""} · Passe o mouse para definir a capa ou remover
+        {images.length}/{MAX_PRODUCT_IMAGES} fotos · A foto com "Capa" é a principal, a que aparece na vitrine
       </p>
+      {aviso && <p className="text-[11px] font-medium text-amber-600">{aviso}</p>}
       <input ref={inputRef} type="file" accept="image/*" multiple className="hidden"
         onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
     </div>
@@ -588,11 +604,9 @@ export default function ProductFormModal({
     if (editing) {
       // Build images array: prefer DB gallery, fall back to legacy imageUrl
       const loadedImages: ProductImage[] = (() => {
-        if (Array.isArray(editing.images) && editing.images.length > 0) {
-          return editing.images.map(img => ({ id: uid(), url: img.url, isPrimary: img.isPrimary }));
-        }
-        if (editing.imageUrl) return [{ id: uid(), url: editing.imageUrl, isPrimary: true }];
-        return [];
+        // Galeria do banco (ou só imageUrl, em produto antigo): capa na frente, até 6 fotos.
+        return normalizarImagensProduto(editing.images, editing.imageUrl)
+          .map(img => ({ id: uid(), url: img.url, isPrimary: img.isPrimary }));
       })();
       setForm({
         name: editing.name,
@@ -809,16 +823,18 @@ export default function ProductFormModal({
         </DialogHeader>
 
         {/* Tabs */}
-        <div className="flex gap-1 px-6 pt-4 border-b border-border/50 overflow-x-auto no-scrollbar">
+        {/* 5 abas dividem a largura por igual — sem rolagem lateral. No celular o
+            ícone fica em cima do texto; de sm pra cima, lado a lado. */}
+        <div className="grid grid-cols-5 gap-0.5 px-3 sm:px-6 pt-4 border-b border-border/50">
           {TABS.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-xl whitespace-nowrap transition-colors border-b-2 -mb-px
+              className={`flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 min-w-0 px-0.5 sm:px-3 py-2 text-[10px] sm:text-xs font-medium leading-tight rounded-t-xl transition-colors border-b-2 -mb-px
                 ${tab === t.id ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
             >
-              <t.icon className="w-3.5 h-3.5" />
-              {t.label}
+              <t.icon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate max-w-full">{t.label}</span>
             </button>
           ))}
         </div>

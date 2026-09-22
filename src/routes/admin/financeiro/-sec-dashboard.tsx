@@ -1,19 +1,85 @@
 import { lazy, Suspense, useState, useMemo, useEffect } from "react";
-import { DollarSign, ArrowUpRight, ArrowDownRight, AlertTriangle, Clock, RefreshCw } from "lucide-react";
+import { DollarSign, ArrowUpRight, ArrowDownRight, Receipt, Undo2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getFinanceiroMovimentacoes, getFinanceiroReceber, getFinanceiroPagar } from "@/services/api";
+import { getFinanceiroMovimentacoes, getFinanceiroPagar } from "@/services/api";
+import { comporSaidas, type ComposicaoSaidas } from "@/lib/financeiro/movimentacoes";
 import {
-  type DateTimeRange, type Movimentacao, type ContaReceber, type ContaPagar, type LancamentoDRE,
+  type DateTimeRange, type Movimentacao, type ContaPagar, type LancamentoDRE,
   DTR_DEFAULT, HISTORICOS, DateTimeRangeFilter, KpiCard, fmt, parseMovData, top5Historicos,
 } from "./-fin-shared";
 
 const CashFlowChart = lazy(() => import("@/components/armazix/CashFlowChart"));
 
+// Cores de cada tipo de saída. Os cards "Pagamentos" e "Estornos" no topo usam
+// as mesmas cores da legenda do card "Composição das saídas", pra ler como um
+// conjunto só.
+const COR_PAGAMENTOS = { ponto: "bg-rose-500",  iconBg: "bg-rose-500/15",  icone: "text-rose-600"  };
+const COR_ESTORNOS   = { ponto: "bg-amber-500", iconBg: "bg-amber-500/15", icone: "text-amber-600" };
+
+// Fatia de um tipo de saída no total, como texto ("45%", "<1%"); vazio sem saídas.
+function pctDasSaidas(valor: number, total: number): string {
+  if (total <= 0) return "";
+  const pct = (valor / total) * 100;
+  return `${valor > 0 && pct < 1 ? "<1" : Math.round(pct)}%`;
+}
+
+// Subtítulo dos cards Pagamentos/Estornos: quantidade e fatia nas saídas. Curto
+// de propósito — no celular o card tem ~120px de texto e o resto seria cortado.
+function detalheSaida(qtd: number, singular: string, plural: string, valor: number, total: number): string {
+  const pct = pctDasSaidas(valor, total);
+  const qtdTxt = `${qtd} ${qtd === 1 ? singular : plural}`;
+  return pct ? `${qtdTxt} · ${pct}` : qtdTxt;
+}
+
+// Saídas do período separadas por tipo: o que foi pagamento de conta, o que foi
+// estorno de venda (dinheiro devolvido ao cliente) e o resto. A soma é o total de
+// saídas que abate do saldo — aqui mostra de onde ele vem.
+function ComposicaoSaidasCard({ c }: { c: ComposicaoSaidas }) {
+  const itens = [
+    { chave: "contas",   label: "Pagamento de contas", valor: c.contasPagas, qtd: c.qtdContasPagas, cor: COR_PAGAMENTOS.ponto },
+    { chave: "estornos", label: "Estornos de venda",   valor: c.estornos,    qtd: c.qtdEstornos,    cor: COR_ESTORNOS.ponto },
+    { chave: "outras",   label: "Outras saídas",       valor: c.outras,      qtd: c.qtdOutras,      cor: "bg-slate-400" },
+  ].filter(i => i.chave !== "outras" || i.valor > 0);
+
+  return (
+    <Card className="rounded-xl border-border/50 shadow-soft">
+      <CardContent className="p-3 space-y-2.5">
+        <div className="flex items-baseline justify-between gap-3">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Composição das saídas</p>
+          <p className="text-sm font-bold tabular-nums">{fmt(c.total)}</p>
+        </div>
+        {c.total > 0 && (
+          <div className="flex h-2 rounded-full overflow-hidden bg-secondary">
+            {itens.map(i => i.valor > 0 && (
+              <div key={i.chave} className={i.cor} style={{ width: `${(i.valor / c.total) * 100}%` }} />
+            ))}
+          </div>
+        )}
+        <div className={`grid grid-cols-1 gap-2 ${itens.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+          {itens.map(i => (
+            <div key={i.chave} className="flex items-center gap-2 min-w-0">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${i.cor}`} />
+              <div className="min-w-0">
+                <p className="text-[11px] text-muted-foreground leading-tight truncate">
+                  {i.label}{i.qtd > 0 ? ` (${i.qtd})` : ""}
+                </p>
+                <p className="text-sm font-bold tabular-nums leading-tight">
+                  {fmt(i.valor)}
+                  {c.total > 0 && <span className="text-[11px] font-medium text-muted-foreground"> · {pctDasSaidas(i.valor, c.total)}</span>}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // 1. DASHBOARD
 export function SecaoDashboard() {
   const [dtr, setDtr] = useState<DateTimeRange>(DTR_DEFAULT);
   const [mov, setMov] = useState<Movimentacao[]>([]);
-  const [rec, setRec] = useState<ContaReceber[]>([]);
   const [pag, setPag] = useState<ContaPagar[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -22,14 +88,12 @@ export function SecaoDashboard() {
     (async () => {
       try {
         setLoading(true);
-        const [m, r, p] = await Promise.all([
+        const [m, p] = await Promise.all([
           getFinanceiroMovimentacoes().catch(() => []),
-          getFinanceiroReceber().catch(() => []),
           getFinanceiroPagar().catch(() => []),
         ]);
         if (!mounted) return;
         setMov(Array.isArray(m) ? (m as unknown as Movimentacao[]) : []);
-        setRec(Array.isArray(r) ? (r as unknown as ContaReceber[]) : []);
         setPag(Array.isArray(p) ? (p as unknown as ContaPagar[]) : []);
       } finally {
         if (mounted) setLoading(false);
@@ -49,8 +113,7 @@ export function SecaoDashboard() {
   const entradas = movFiltradas.filter(m => m.tipo === "entrada").reduce((s, m) => s + (m.valor || 0), 0);
   const saidas   = movFiltradas.filter(m => m.tipo === "saida").reduce((s, m) => s + (m.valor || 0), 0);
   const saldo    = entradas - saidas;
-  const vencidas = useMemo(() => [...rec, ...pag].filter(c => c.status === "vencido").length, [rec, pag]);
-  const aVencer  = useMemo(() => [...rec, ...pag].filter(c => c.status === "pendente").length, [rec, pag]);
+  const composicaoSaidas = useMemo(() => comporSaidas(movFiltradas), [movFiltradas]);
 
   const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
@@ -91,13 +154,22 @@ export function SecaoDashboard() {
         <DateTimeRangeFilter value={dtr} onChange={setDtr} />
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <KpiCard icon={DollarSign}     label="Saldo atual"     value={fmt(saldo)}       iconBg="bg-primary/15"     iconColor="text-primary"    highlight />
-        <KpiCard icon={ArrowUpRight}   label="Entradas do mes" value={fmt(entradas)}    iconBg="bg-emerald-500/15" iconColor="text-emerald-600" />
-        <KpiCard icon={ArrowDownRight} label="Saidas do mes"   value={fmt(saidas)}      iconBg="bg-destructive/15" iconColor="text-destructive" />
-        <KpiCard icon={AlertTriangle}  label="Contas vencidas" value={String(vencidas)} iconBg="bg-amber-500/15"   iconColor="text-amber-600"   sub="titulos em atraso" />
-        <KpiCard icon={Clock}          label="A vencer"        value={String(aVencer)}  iconBg="bg-blue-500/15"    iconColor="text-blue-600"    sub="proximos vencimentos" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard icon={DollarSign}   label="Saldo atual"     value={fmt(saldo)}    iconBg="bg-primary/15"     iconColor="text-primary"    highlight />
+        <KpiCard icon={ArrowUpRight} label="Entradas do mês" value={fmt(entradas)} iconBg="bg-emerald-500/15" iconColor="text-emerald-600" />
+        <KpiCard
+          icon={Receipt} label="Pagamentos" value={fmt(composicaoSaidas.contasPagas)}
+          iconBg={COR_PAGAMENTOS.iconBg} iconColor={COR_PAGAMENTOS.icone}
+          sub={detalheSaida(composicaoSaidas.qtdContasPagas, "conta", "contas", composicaoSaidas.contasPagas, composicaoSaidas.total)}
+        />
+        <KpiCard
+          icon={Undo2} label="Estornos" value={fmt(composicaoSaidas.estornos)}
+          iconBg={COR_ESTORNOS.iconBg} iconColor={COR_ESTORNOS.icone}
+          sub={detalheSaida(composicaoSaidas.qtdEstornos, "venda", "vendas", composicaoSaidas.estornos, composicaoSaidas.total)}
+        />
       </div>
+
+      <ComposicaoSaidasCard c={composicaoSaidas} />
 
       <div className="grid lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2 rounded-2xl border-border/50 shadow-soft">
@@ -174,7 +246,16 @@ export function SecaoDashboard() {
                   </span>
                   <div>
                     <p className="text-sm font-medium">{m.desc}</p>
-                    <p className="text-xs text-muted-foreground">{m.data} - {m.categoria}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                      <span>{m.data} - {m.categoria}</span>
+                      {m.origem && (
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                          m.origemTipo === "estorno" ? "bg-amber-500/15 text-amber-700"
+                            : m.origemTipo === "conta_paga" ? "bg-rose-500/15 text-rose-700"
+                            : "bg-secondary text-muted-foreground"
+                        }`}>{m.origem}</span>
+                      )}
+                    </p>
                   </div>
                 </div>
                 <span className={`text-sm font-bold ${

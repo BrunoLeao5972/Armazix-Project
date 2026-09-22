@@ -11,11 +11,14 @@ import {
   ShieldAlert,
   Truck,
   User,
+  Wallet,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DEFAULT_DELIVERY_MODEL_CONFIG } from "@/components/admin/DeliveryPricingConfig";
 import type { DeliveryModelConfig } from "@/components/admin/DeliveryPricingConfig";
 import type { StoreData } from "@/components/admin/settings/types";
+import { useStoreRole } from "@/hooks/use-store-role";
+import { temPermissao } from "@/lib/reports-permissions";
 
 const GeralTab = lazy(() => import("@/components/admin/settings/GeralTab").then((m) => ({ default: m.GeralTab })));
 const HorariosTab = lazy(() => import("@/components/admin/settings/HorariosTab").then((m) => ({ default: m.HorariosTab })));
@@ -25,6 +28,7 @@ const PerfilTab = lazy(() => import("@/components/admin/settings/PerfilTab").the
 const PlansSection = lazy(() => import("@/components/admin/settings/PlansSection").then((m) => ({ default: m.PlansSection })));
 const AuditoriaSection = lazy(() => import("@/components/admin/settings/AuditoriaSection").then((m) => ({ default: m.AuditoriaSection })));
 const PermissionsTab = lazy(() => import("@/components/admin/PermissionsTab").then((m) => ({ default: m.PermissionsTab })));
+const PosicaoCaixaTab = lazy(() => import("@/components/admin/settings/PosicaoCaixaTab").then((m) => ({ default: m.PosicaoCaixaTab })));
 
 export const Route = createFileRoute("/admin/configuracoes")({
   component: SettingsPage,
@@ -45,7 +49,11 @@ const NAV_ITEMS = [
   { value: "perfil",         label: "Perfil",          icon: User },
   { value: "planos",         label: "Planos",          icon: TrendingUp },
   { value: "auditoria",      label: "Auditoria",       icon: ShieldAlert },
+  // Só admin/gerente (ver PosicaoCaixaTab abaixo) — quem fecha o caixa faz
+  // contagem cega e não deve ver o saldo esperado antes de contar.
+  { value: "posicao-caixa",  label: "Posição do Caixa", icon: Wallet },
 ] as const;
+const RESTRITO_ADMIN_GERENTE = new Set(["posicao-caixa"]);
 
 function TabFallback() {
   return (
@@ -64,6 +72,19 @@ function SettingsPage() {
   const [activeTab, setActiveTab] = useState(
     tabParam && TAB_VALUES.has(tabParam) ? tabParam : "geral",
   );
+  const storeRole = useStoreRole();
+  // Posição do Caixa expõe o saldo esperado por forma de pagamento — quem
+  // fecha o caixa faz contagem cega, então essa aba não pode ficar visível
+  // (nem acessível por ?tab= direto) pra papéis operacionais.
+  const podeVerPosicaoCaixa = temPermissao(storeRole, ["admin", "gerente"]);
+  const navItemsVisiveis = NAV_ITEMS.filter(
+    (n) => !RESTRITO_ADMIN_GERENTE.has(n.value) || podeVerPosicaoCaixa,
+  );
+  useEffect(() => {
+    if (RESTRITO_ADMIN_GERENTE.has(activeTab) && storeRole !== null && !podeVerPosicaoCaixa) {
+      setActiveTab("geral");
+    }
+  }, [activeTab, storeRole, podeVerPosicaoCaixa]);
   const [store, setStore] = useState<StoreData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -71,6 +92,16 @@ function SettingsPage() {
   // Form states
   const [storeName, setStoreName] = useState("");
   const [ownerName, setOwnerName] = useState("");
+  // CNPJ/CPF do titular da loja — opcional pra preencher, mas uma vez
+  // vinculado o servidor trava e nunca mais devolve o valor cru (só o
+  // mascarado — ver src/lib/store/documento-loja.ts e mascararCpfCnpj()).
+  // `documentoTitular` só importa ENQUANTO ainda não está vinculado (é o que
+  // o lojista está digitando); depois disso a tela mostra documentoMascarado
+  // e nunca reenvia nada no save de outros campos.
+  const [documentoTitular, setDocumentoTitular] = useState("");
+  const [documentoTitularVinculado, setDocumentoTitularVinculado] = useState(false);
+  const [documentoTipo, setDocumentoTipo] = useState<"cpf" | "cnpj" | null>(null);
+  const [documentoMascarado, setDocumentoMascarado] = useState("");
   const [description, setDescription] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -157,6 +188,10 @@ function SettingsPage() {
         setStore(data.store);
         setStoreName(data.store.name || "");
         setOwnerName(data.store.ownerName || "");
+        setDocumentoTitularVinculado(!!data.store.documentoTipo);
+        setDocumentoTipo(data.store.documentoTipo ?? null);
+        setDocumentoMascarado(data.store.documentoMascarado || "");
+        setDocumentoTitular("");
         setDescription(data.store.description || "");
         setPhone(data.store.phone || "");
         setEmail(data.store.email || "");
@@ -256,7 +291,7 @@ function SettingsPage() {
           {/* Desktop sidebar nav */}
           <aside className="hidden md:flex flex-col sticky top-20">
             <TabsList className="flex flex-col w-full h-auto gap-0.5 p-1.5 rounded-2xl bg-secondary/80">
-              {NAV_ITEMS.map(({ value, label, icon: Icon }) => (
+              {navItemsVisiveis.map(({ value, label, icon: Icon }) => (
                 <TabsTrigger
                   key={value}
                   value={value}
@@ -276,7 +311,7 @@ function SettingsPage() {
             {/* Mobile horizontal tab scroll */}
             <div className="md:hidden w-full overflow-x-auto [&::-webkit-scrollbar]:hidden mb-4" style={{ scrollbarWidth: "none" }}>
               <div className="flex gap-1 p-1.5 bg-secondary/80 rounded-2xl w-max">
-                {NAV_ITEMS.map(({ value, label, icon: Icon }) => (
+                {navItemsVisiveis.map(({ value, label, icon: Icon }) => (
                   <button
                     key={value}
                     onClick={() => setActiveTab(value)}
@@ -299,6 +334,10 @@ function SettingsPage() {
                   store={store} setStore={setStore}
                   storeName={storeName} setStoreName={setStoreName}
                   ownerName={ownerName} setOwnerName={setOwnerName}
+                  documentoTitular={documentoTitular} setDocumentoTitular={setDocumentoTitular}
+                  documentoTitularVinculado={documentoTitularVinculado} setDocumentoTitularVinculado={setDocumentoTitularVinculado}
+                  documentoTipo={documentoTipo} setDocumentoTipo={setDocumentoTipo}
+                  documentoMascarado={documentoMascarado} setDocumentoMascarado={setDocumentoMascarado}
                   description={description} setDescription={setDescription}
                   phone={phone} setPhone={setPhone}
                   email={email} setEmail={setEmail}
@@ -396,6 +435,17 @@ function SettingsPage() {
                 <PermissionsTab />
               </Suspense>
             </TabsContent>
+
+            {/* Defesa em profundidade: mesmo se activeTab chegar aqui via
+                ?tab= direto antes do useEffect de guarda rodar, o conteúdo só
+                monta (e só então busca /api/pdv/caixa) com a permissão certa. */}
+            {podeVerPosicaoCaixa && (
+              <TabsContent value="posicao-caixa" className="mt-0">
+                <Suspense fallback={<TabFallback />}>
+                  <PosicaoCaixaTab />
+                </Suspense>
+              </TabsContent>
+            )}
 
           </div>{/* /content column */}
         </div>{/* /grid */}

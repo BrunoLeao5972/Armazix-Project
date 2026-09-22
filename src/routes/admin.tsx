@@ -6,6 +6,9 @@ const WhatsAppModal = lazy(() =>
 const PlansSection = lazy(() =>
   import("@/components/admin/settings/PlansSection").then((m) => ({ default: m.PlansSection }))
 );
+const CompleteDocumentoLoja = lazy(() =>
+  import("@/components/admin/settings/CompleteDocumentoLoja").then((m) => ({ default: m.CompleteDocumentoLoja }))
+);
 
 import { createFileRoute, Link, Outlet, useRouterState, useNavigate } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
@@ -442,6 +445,30 @@ function AdminLayout() {
       .catch(() => {});
   }
 
+  // ── Alerta de CNPJ/CPF pendente ───────────────────────────────────────────
+  // registerHandler já exige documento desde sempre — isso só pega contas
+  // criadas antes dessa regra existir (ou seedadas na mão). documentoChecked
+  // só vira true depois da 1ª resposta, mesma cautela do plano: nunca bloqueia
+  // com base num estado inicial que só "parece" pendente.
+  const [documentoPendente, setDocumentoPendente] = useState(false);
+  const [documentoChecked,  setDocumentoChecked]  = useState(false);
+  const documentoBloqueado = documentoChecked && documentoPendente;
+  // Plano vencido cobra antes (é o mais urgente); documento pendente só se
+  // sobrepõe quando o plano está OK. Os dois usam o mesmo visual de bloqueio.
+  const bloqueado = planBlocked || documentoBloqueado;
+
+  function checkDocumentoStatus(storeId: string) {
+    return fetch(`/api/store/get?id=${storeId}`)
+      .then(r => r.json())
+      // O servidor nunca devolve cnpj/cpf cru aqui (LGPD) — só documentoTipo,
+      // presente quando já há algum documento vinculado (ver store-handler.ts).
+      .then((data: { store?: { documentoTipo?: "cpf" | "cnpj" | null } }) => {
+        setDocumentoPendente(!data.store?.documentoTipo);
+        setDocumentoChecked(true);
+      })
+      .catch(() => {});
+  }
+
   useEffect(() => {
     setMounted(true);
 
@@ -488,6 +515,7 @@ function AdminLayout() {
       if (!storeId) storeId = localStorage.getItem("storeId");
       if (storeId) {
         checkPlanStatus(storeId);
+        checkDocumentoStatus(storeId);
       }
     }
     ensureStoreId();
@@ -589,7 +617,7 @@ function AdminLayout() {
 
         <Separator className="opacity-50 shrink-0" />
 
-        <div className={planBlocked ? "flex-1 min-h-0 overflow-hidden blur-[3px] pointer-events-none select-none opacity-60 transition-all" : "contents"}>
+        <div className={bloqueado ? "flex-1 min-h-0 overflow-hidden blur-[3px] pointer-events-none select-none opacity-60 transition-all" : "contents"}>
           <SidebarNav
             pathname={pathname}
             collapsed={collapsed}
@@ -632,7 +660,7 @@ function AdminLayout() {
 
             <Separator className="opacity-50 shrink-0" />
 
-            <div className={planBlocked ? "flex-1 min-h-0 overflow-hidden blur-[3px] pointer-events-none select-none opacity-60 transition-all" : "contents"}>
+            <div className={bloqueado ? "flex-1 min-h-0 overflow-hidden blur-[3px] pointer-events-none select-none opacity-60 transition-all" : "contents"}>
               <SidebarNav
                 pathname={pathname}
                 collapsed={false}
@@ -810,6 +838,25 @@ function AdminLayout() {
               </div>
               <Suspense fallback={<div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}>
                 <PlansSection />
+              </Suspense>
+            </div>
+          ) : documentoBloqueado ? (
+            <div className="max-w-2xl mx-auto space-y-5">
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 flex items-start gap-3">
+                <FileText className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h1 className="font-semibold text-foreground">Falta o CNPJ/CPF da sua conta</h1>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Pra validar sua conta e continuar usando o painel, precisamos do CNPJ ou CPF
+                    do titular. É um dado único por conta e, depois de salvo, só o suporte pode alterar.
+                  </p>
+                </div>
+              </div>
+              <Suspense fallback={<div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}>
+                <CompleteDocumentoLoja
+                  storeId={localStorage.getItem("storeId") || ""}
+                  onResolved={() => setDocumentoPendente(false)}
+                />
               </Suspense>
             </div>
           ) : (

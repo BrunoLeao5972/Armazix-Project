@@ -164,6 +164,18 @@ const SECURITY_TXT = [
 ].join("\n");
 
 export default {
+  // Cron Trigger (wrangler.jsonc → triggers.crons) — encerramento automático
+  // diário do caixa do PDV. Ver src/lib/jobs/caixa-auto-close.ts.
+  async scheduled(_event: unknown, _env: unknown, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    ctx.waitUntil(
+      import("./lib/jobs/caixa-auto-close").then(({ runCaixaAutoClose }) => runCaixaAutoClose())
+        .then(({ slot, closed }) => {
+          if (closed > 0) console.log(`[cron] caixa-auto-close ${slot}: ${closed} sessão(ões) encerrada(s).`);
+        })
+        .catch((error) => console.error("[cron] caixa-auto-close falhou:", error)),
+    );
+  },
+
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
 

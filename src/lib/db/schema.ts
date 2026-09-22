@@ -90,6 +90,12 @@ export const stores = pgTable("stores", {
   mpSubscriptionId: varchar("mp_subscription_id", { length: 100 }),
   paymentMethod: varchar("payment_method", { length: 20 }).default("card_recurring"),
   pdvEnabled: boolean("pdv_enabled").default(false),
+  /** Encerramento automático diário do caixa do PDV — todo dia, no horário
+   *  configurado (HH:mm, fuso de Brasília), qualquer sessão de caixa_sessoes
+   *  ainda "aberta" desta loja é encerrada pelo sistema (ver
+   *  src/lib/jobs/caixa-auto-close.ts, disparado por Cron Trigger). */
+  caixaAutoCloseEnabled: boolean("caixa_auto_close_enabled").notNull().default(true),
+  caixaAutoCloseTime: varchar("caixa_auto_close_time", { length: 5 }).notNull().default("00:00"),
   mpPaymentId: varchar("mp_payment_id", { length: 100 }),
   amountPaid: numeric("amount_paid", { precision: 10, scale: 2 }),
   paymentStatus: varchar("payment_status", { length: 20 }),
@@ -107,6 +113,9 @@ export const stores = pgTable("stores", {
   index("stores_mp_user_idx").on(t.mpUserId),
   // Postgres trata múltiplos NULL como distintos — não bloqueia lojas sem CNPJ.
   uniqueIndex("stores_cnpj_idx").on(t.cnpj),
+  // Alternativa ao CNPJ (MEI/pessoa física) — mesma garantia de unicidade,
+  // uma loja por CPF (ver drizzle/0057_stores_cpf_unique.sql).
+  uniqueIndex("stores_cpf_idx").on(t.cpf),
 ]);
 
 export const storesRelations = relations(stores, ({ many }) => ({
@@ -977,6 +986,10 @@ export const servicePointAdvancesRelations = relations(servicePointAdvances, ({ 
 export const caixaSessoes = pgTable("caixa_sessoes", {
   id:            uuid("id").defaultRandom().primaryKey(),
   storeId:       uuid("store_id").references(() => stores.id, { onDelete: "cascade" }).notNull(),
+  /** Código curto (5 caracteres, sem 0/O/1/I/L pra não confundir na
+   *  leitura) pra identificar a sessão sem precisar do uuid — único por
+   *  loja, gerado em abrirCaixaHandler (ver gerarCodigoSessao). */
+  codigo:        varchar("codigo", { length: 5 }).notNull(),
   saldoInicial:  numeric("saldo_inicial",  { precision: 10, scale: 2 }).notNull().default("0"),
   saldoFinal:    numeric("saldo_final",    { precision: 10, scale: 2 }),
   totalDinheiro: numeric("total_dinheiro", { precision: 10, scale: 2 }).notNull().default("0"),
@@ -993,12 +1006,21 @@ export const caixaSessoes = pgTable("caixa_sessoes", {
   abertoPor:     varchar("aberto_por",    { length: 120 }),
   encerradoPor:  varchar("encerrado_por", { length: 120 }),
   observations:  text("observations"),
+  /** Conferência de fechamento — valor do sistema x valor contado pelo
+   *  operador, por forma de pagamento (dinheiro, pix, cartão...). Só
+   *  preenchido num fechamento manual com conferência (fecharCaixaHandler);
+   *  o encerramento automático (caixa-auto-close.ts) nunca grava isso, já
+   *  que não há ninguém conferindo a gaveta. */
+  conferencia: jsonb("conferencia").$type<
+    Array<{ metodo: string; label: string; sistema: string; informado: string; diferenca: string }>
+  >(),
   openedAt:      timestamp("opened_at").defaultNow().notNull(),
   closedAt:      timestamp("closed_at"),
 }, (t) => [
   index("caixa_sessoes_store_idx").on(t.storeId),
   index("caixa_sessoes_status_idx").on(t.status),
   index("caixa_sessoes_opened_idx").on(t.openedAt),
+  uniqueIndex("caixa_sessoes_store_codigo_idx").on(t.storeId, t.codigo),
 ]);
 
 export const caixaSessoesRelations = relations(caixaSessoes, ({ one, many }) => ({

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { StatCard } from "@/components/ui/stat-card";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Truck, Clock, CheckCircle2, MapPin, Phone, Loader2,
@@ -145,25 +146,10 @@ function DeliveryPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="rounded-2xl border-border/50 shadow-soft">
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-amber-600">{stats.preparing}</div>
-            <div className="text-xs text-muted-foreground">Preparando</div>
-          </CardContent>
-        </Card>
-        <Card className="rounded-2xl border-border/50 shadow-soft">
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-purple-600">{stats.inRoute}</div>
-            <div className="text-xs text-muted-foreground">Em rota</div>
-          </CardContent>
-        </Card>
-        <Card className="rounded-2xl border-border/50 shadow-soft">
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-primary">{stats.delivered}</div>
-            <div className="text-xs text-muted-foreground">Entregues hoje</div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-3 gap-2">
+        <StatCard center label="Preparando" value={stats.preparing} valueClassName="text-amber-600" />
+        <StatCard center label="Em rota" value={stats.inRoute} valueClassName="text-purple-600" />
+        <StatCard center label="Entregues hoje" value={stats.delivered} valueClassName="text-primary" />
       </div>
 
       {/* Lista ativa */}

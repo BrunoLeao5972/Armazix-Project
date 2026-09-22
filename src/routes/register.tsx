@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { isValidCPF, isValidCNPJ } from "@/lib/document-validation";
+import { validarCPF as isValidCPF, validarCNPJ as isValidCNPJ } from "@/lib/customer/cpf-cnpj";
 
 export const Route = createFileRoute("/register")({
   component: RegisterPage,

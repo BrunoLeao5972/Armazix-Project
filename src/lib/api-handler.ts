@@ -11,7 +11,7 @@ import { resetPasswordHandler } from "./api/auth/reset-password-handler";
 import { resendVerificationHandler } from "./api/auth/resend-verification-handler";
 import { changePendingEmailHandler } from "./api/auth/change-pending-email-handler";
 import { impersonateConsumeHandler } from "./api/auth/impersonate-consume-handler";
-import { getStoreHandler, updateStoreHandler, getDashboardStatsHandler, getUserStoreHandler, savePaymentConfigHandler, geocodeStoreAddressHandler } from "./api/store-handler";
+import { getStoreHandler, updateStoreHandler, getDashboardStatsHandler, getUserStoreHandler, savePaymentConfigHandler, geocodeStoreAddressHandler, revealStoreDocumentHandler } from "./api/store-handler";
 import {
   getStockStatsHandler,
   getReportsStatsHandler,
@@ -182,6 +182,7 @@ import {
   finalizarVendaPdvHandler,
   encerrarEncomendaHandler,
   listFinanceiroLancamentosHandler,
+  verificarOperadorHandler,
 } from "./api/pdv-handler";
 import {
   listServicePointsHandler,
@@ -363,6 +364,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
   "/api/pdv/caixa/abrir":       abrirCaixaHandler,
   "/api/pdv/caixa/fechar":      fecharCaixaHandler,
   "/api/pdv/caixa/movimentar":  movimentarCaixaHandler,
+  "/api/pdv/caixa/verificar-operador": verificarOperadorHandler,
   "/api/pdv/mesas/salvar":      salvarMesasHandler,
   "/api/pdv/finalizar-venda":   finalizarVendaPdvHandler,
   "/api/pdv/encerrar-encomenda": encerrarEncomendaHandler,
@@ -405,6 +407,7 @@ const protectedPostRoutes: Record<string, ApiHandler> = {
 
 const protectedGetRoutes: Record<string, ApiHandler> = {
   "/api/store/user": getUserStoreHandler,
+  "/api/store/reveal-document": revealStoreDocumentHandler, // Revela o CNPJ por inteiro sob demanda (nunca o CPF — ver store-handler.ts)
   "/api/products/next-pdv-code": getNextPdvCodeHandler,
   "/api/dashboard/stats": (req, auth) => getDashboardStatsHandler(req, auth),
   "/api/stock/stats": getStockStatsHandler,
@@ -506,6 +509,12 @@ const rateLimitConfigs: Record<string, string> = {
   "/api/auth/check-email": "sensitive",
   // Aceite valida a senha atual de quem já tem conta — trata como auth.
   "/api/store-users/accept-invite": "auth",
+  // (abrir/fechar/verificar-operador de caixa NÃO entram aqui de propósito: o
+  // bucket é por IP + tier, compartilhado com o login — e conta requisições
+  // com sucesso também, então numa loja (um IP, vários operadores) 5/15min
+  // travava a abertura de caixa. A proteção contra força bruta desses três
+  // é por conta-alvo e só conta senha ERRADA — ver verificarSenhaOperador em
+  // pdv-handler.ts.)
   // Dispara e-mail para terceiros: limita spam de convite.
   "/api/store-users/invite": "sensitive",
   // Dispara mensagem de WhatsApp para o telefone informado — mesmo perfil de

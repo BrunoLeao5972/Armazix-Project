@@ -59,7 +59,7 @@ export interface EstornoResult {
 
 export async function estornarVendaConcretizada(
   tx: Tx,
-  { storeId, order, motivoCode, motivoNote, now = new Date() }: EstornarVendaParams,
+  { storeId, order, motivoCode, motivoNote, atorNome, now = new Date() }: EstornarVendaParams,
 ): Promise<EstornoResult> {
   // Guarda de idempotência — só finaliza→estorna. Qualquer outro estado
   // (aberta / cancelada / já estornada) é no-op.
@@ -171,7 +171,7 @@ export async function estornarVendaConcretizada(
   await tx.insert(orderTimeline).values({
     orderId: order.id,
     status:  "cancelled",
-    note:    `Estorno: ${motivoTxt}`,
+    note:    `Estorno: ${motivoTxt}${atorNome ? ` (por ${atorNome})` : ""}`,
   });
 
   return {

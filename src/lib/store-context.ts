@@ -242,7 +242,8 @@ export interface StoreProduct {
   compareAtPrice: string | null;
   costPrice: string | null;
   imageUrl: string | null;
-  images: string[] | null;
+  /** Galeria: [{ url, isPrimary }] (a capa também vem em imageUrl). Use galeriaDoProduto(). */
+  images: Array<{ url: string; isPrimary: boolean }> | null;
   emoji: string | null;
   badge: string | null;
   stock: number | null;

@@ -2,12 +2,12 @@
 // Each section file imports from here — this becomes its own Vite chunk and is
 // cached after the first financial page visit.
 import { type ElementType, type ReactNode, useState, useMemo, useRef, useEffect } from "react";
+import { StatCard } from "@/components/ui/stat-card";
 import {
   Search, ChevronDown, Check, X, AlertTriangle, Clock,
   RefreshCw, Pencil, Trash2, CheckCircle2, CheckCircle, XCircle, PieChart,
   Calendar, MoreVertical, ShieldAlert,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -39,6 +39,8 @@ export interface ContaPagar {
 export interface Movimentacao {
   id: string; tipo: TipoMov; categoria: string;
   valor: number; data: string; origem: string; desc: string; responsavel: string;
+  /** Classificação do servidor (conta_paga, estorno, venda…) — ver src/lib/financeiro/movimentacoes.ts. */
+  origemTipo?: string;
 }
 export interface Categoria {
   id: string; nome: string; tipo: "receita" | "despesa"; cor: string; status: "ativo" | "inativo";
@@ -157,23 +159,16 @@ export function top5Historicos(historicos: HistoricoFinanceiro[], lancamentos: L
 
 // ─── Base UI components ───────────────────────────────────────────────────────
 
-export function KpiCard({ icon: Icon, label, value, sub, iconBg, iconColor, highlight }: {
+export function KpiCard({ icon, label, value, sub, iconBg, iconColor, highlight }: {
   icon: ElementType; label: string; value: string; sub?: string;
   iconBg: string; iconColor: string; highlight?: boolean;
 }) {
   return (
-    <Card className="rounded-2xl border-border/50 shadow-soft">
-      <CardContent className="p-4">
-        <div className="mb-3">
-          <span className={`grid place-items-center w-9 h-9 rounded-xl ${iconBg}`}>
-            <Icon className={`w-4 h-4 ${iconColor}`} />
-          </span>
-        </div>
-        <div className={`text-2xl font-bold tracking-tight ${highlight ? "text-gradient-primary" : ""}`}>{value}</div>
-        <div className="text-xs font-medium text-muted-foreground mt-0.5">{label}</div>
-        {sub && <div className="text-[11px] text-muted-foreground mt-1">{sub}</div>}
-      </CardContent>
-    </Card>
+    <StatCard
+      icon={icon} label={label} value={value} sub={sub}
+      iconBg={iconBg} iconColor={iconColor}
+      valueClassName={highlight ? "text-gradient-primary" : undefined}
+    />
   );
 }
 

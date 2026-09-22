@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { StatCard } from "@/components/ui/stat-card";
 import { RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,7 @@ import { Input } from "@/components/ui/input";
 
 // ── Sessões PDV ──────────────────────────────────────────────────
 interface CaixaSessaoPdv {
-  id: string; saldoInicial: string; saldoFinal: string | null;
+  id: string; codigo: string; saldoInicial: string; saldoFinal: string | null;
   totalDinheiro: string; totalPix: string; totalCartao: string;
   totalDebito: string; totalOutros: string; totalVendas: number;
   status: string; abertoPor: string | null; encerradoPor: string | null;
@@ -78,31 +79,11 @@ export function SecaoCaixaSessoes() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card className="rounded-2xl border-border/50">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Sessões</p>
-            <p className="text-2xl font-bold mt-1">{sessoes.length}</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-2xl border-border/50">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Vendas</p>
-            <p className="text-2xl font-bold mt-1">{totalVendasGeral}</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-2xl border-border/50">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total Vendido</p>
-            <p className="text-xl font-bold text-emerald-600 mt-1">{fmtBRL(totalGeral)}</p>
-          </CardContent>
-        </Card>
-        <Card className="rounded-2xl border-border/50">
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Abertas agora</p>
-            <p className="text-2xl font-bold mt-1">{sessoes.filter(s => s.status === "aberta").length}</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard label="Sessões" value={sessoes.length} />
+        <StatCard label="Vendas" value={totalVendasGeral} />
+        <StatCard label="Total Vendido" value={fmtBRL(totalGeral)} valueClassName="text-emerald-600" />
+        <StatCard label="Abertas agora" value={sessoes.filter(s => s.status === "aberta").length} />
       </div>
 
       {/* Tabela */}
@@ -121,6 +102,7 @@ export function SecaoCaixaSessoes() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/40 text-xs text-muted-foreground font-semibold">
+                  <th className="px-4 py-2.5 text-left">Código</th>
                   <th className="px-4 py-2.5 text-left">Abertura</th>
                   <th className="px-4 py-2.5 text-left">Encerramento</th>
                   <th className="px-4 py-2.5 text-left">Operador</th>
@@ -139,6 +121,7 @@ export function SecaoCaixaSessoes() {
                   const isAberta = s.status === "aberta";
                   return (
                     <tr key={s.id} className="hover:bg-secondary/30 transition-colors">
+                      <td className="px-4 py-3 text-xs font-mono font-semibold tracking-wider whitespace-nowrap">{s.codigo}</td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap">{fmtDate(s.openedAt)}</td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap text-muted-foreground">
                         {s.closedAt ? fmtDate(s.closedAt) : "—"}

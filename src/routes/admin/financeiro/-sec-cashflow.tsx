@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   useFluxoCaixa,
   type NaturezaLancamento,
@@ -7,10 +7,15 @@ import {
   agruparComTotais,
   calcularTotais,
 } from "@/lib/financial/useFluxoCaixa";
-import { ChevronDown, Search, X, RefreshCw, BarChart2 } from "lucide-react";
+import { ChevronDown, Search, X, RefreshCw, BarChart2, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { fmt, EmptyState } from "./-fin-shared";
+import { getFinanceiroPagar, getFinanceiroReceber, getFinanceiroMovimentacoes } from "@/services/api";
+import {
+  montarLancamentosReais,
+  type ContaPagarApi, type ContaReceberApi, type MovimentacaoApi,
+} from "@/lib/financial/fluxo-real";
 
 // ── badge de natureza ──
 function NaturezaBadge({ natureza }: { natureza: NaturezaLancamento }) {
@@ -55,7 +60,30 @@ function PainelTotais({ totais }: { totais: ReturnType<typeof calcularTotais> })
 
 // 4. FLUXO DE CAIXA (unificado com Contas a Pagar / Receber)
 export function SecaoFluxo() {
-  const { filtros, setFiltro, resetFiltros, resultado, chaveAgrupamento, setChaveAgrupamento, opcoesUnicas } = useFluxoCaixa();
+  // Dados reais da loja (contas a pagar/receber + vendas e estornos). Antes esta
+  // tela lia uma lista fictícia fixa no código, igual pra todas as lojas.
+  const [lancamentos, setLancamentos] = useState<LancamentoFinanceiro[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      const [pagar, receber, movimentacoes] = await Promise.all([
+        getFinanceiroPagar().catch(() => []),
+        getFinanceiroReceber().catch(() => []),
+        getFinanceiroMovimentacoes().catch(() => []),
+      ]);
+      if (!vivo) return;
+      setLancamentos(montarLancamentosReais({
+        pagar: (Array.isArray(pagar) ? pagar : []) as ContaPagarApi[],
+        receber: (Array.isArray(receber) ? receber : []) as ContaReceberApi[],
+        movimentacoes: (Array.isArray(movimentacoes) ? movimentacoes : []) as MovimentacaoApi[],
+      }));
+      setCarregando(false);
+    })();
+    return () => { vivo = false; };
+  }, []);
+
+  const { filtros, setFiltro, resetFiltros, resultado, chaveAgrupamento, setChaveAgrupamento, opcoesUnicas } = useFluxoCaixa(lancamentos);
   const [expandidos, setExpandidos] = useState<Record<string, boolean>>({});
   const [filtrosAbertos, setFiltrosAbertos] = useState(true);
 
@@ -357,7 +385,13 @@ export function SecaoFluxo() {
               <thead className="bg-secondary/40 border-b border-border/40"><TabelaHeaders /></thead>
               <tbody className="divide-y divide-border/30">
                 {resultado.registros.length === 0
-                  ? <tr><td colSpan={13}><EmptyState icon={BarChart2} title="Nenhum lançamento encontrado" desc="Ajuste os filtros para ver os lançamentos." /></td></tr>
+                  ? <tr><td colSpan={13}>
+                      {carregando
+                        ? <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+                        : lancamentos.length === 0
+                          ? <EmptyState icon={BarChart2} title="Ainda não há lançamentos" desc="Vendas, estornos, contas a pagar e contas a receber da sua loja aparecem aqui." />
+                          : <EmptyState icon={BarChart2} title="Nenhum lançamento encontrado" desc="Ajuste os filtros para ver os lançamentos." />}
+                    </td></tr>
                   : resultado.registros.map(l => <LancamentoRow key={l.id_lancamento} l={l} />)
                 }
               </tbody>

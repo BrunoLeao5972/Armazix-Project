@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
+import { StatCard } from "@/components/ui/stat-card";
 import {
   ChevronDown, ArrowUpCircle, ArrowDownCircle, Settings2, ClipboardList,
   ArrowLeftRight, AlertTriangle, Activity,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 
@@ -109,20 +109,10 @@ export function MovTypeBadge({ type }: { type: string }) {
   );
 }
 
-export function SummaryCard({ icon: Icon, label, value, color, bg }: {
+export function SummaryCard({ icon, label, value, color, bg }: {
   icon: React.ElementType; label: string; value: string | number; color: string; bg: string;
 }) {
-  return (
-    <Card className="rounded-2xl border-border/50 shadow-soft">
-      <CardContent className="p-4">
-        <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center mb-3`}>
-          <Icon className={`w-4.5 h-4.5 ${color}`} />
-        </div>
-        <div className="text-2xl font-bold">{value}</div>
-        <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
-      </CardContent>
-    </Card>
-  );
+  return <StatCard icon={icon} label={label} value={String(value)} iconBg={bg} iconColor={color} />;
 }
 
 export function EmptyState({ icon: Icon, title, desc }: { icon: React.ElementType; title: string; desc: string }) {

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { api } from "@/lib/api-client";
 import type { StoreData } from "./types";
 
 export type BusinessHour = { day: string; open: string; close: string; closed: boolean };
@@ -85,11 +86,7 @@ export function HorariosTab({
             setHoursSaving(true);
             setHoursSuccess(false);
             try {
-              const res = await fetch("/api/store/update-business-hours", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ storeId: store.id, businessHours }),
-              });
+              const res = await api.post("/api/store/update-business-hours", { storeId: store.id, businessHours });
               const data = await res.json();
               if (res.ok) {
                 setHoursSuccess(true);

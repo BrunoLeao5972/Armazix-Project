@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Receipt, CheckCircle2, XCircle, RotateCcw, Undo2, Loader2, Eye, TrendingDown, Wallet,
+  ShoppingCart, Package, User, Circle, type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { getFinanceiroVendas, getFinanceiroVendaDetalhe, estornarVenda } from "@
 import { useStoreRole } from "@/hooks/use-store-role";
 import { temPermissao } from "@/lib/reports-permissions";
 import { ModalCancelarPedido, type CancelarPedidoAlvo } from "@/routes/admin/-modal-cancelar-pedido";
+import type { EventoHistorico } from "@/lib/orders/historico-venda";
 
 // ── Tipos da API ────────────────────────────────────────────────────────────
 interface VendaRow {
@@ -22,11 +24,25 @@ interface VendaRow {
   motivoLabel: string; valorLancado: number; valorEstornado: number;
 }
 interface VendaDetalhe {
-  venda: VendaRow & { motivo: string; tipo: string; statusPedido: string; paymentStatus: string;
-    subtotal: string; deliveryFee: string; discount: string; refundedAt: string | null; };
-  itens: { nome: string; qtd: number; unit: number; total: number }[];
-  timeline: { status: string; note: string | null; data: string }[];
-  lancamentos: { tipo: string; categoria: string; descricao: string; valor: number; status: string; metodoPagamento: string | null; data: string }[];
+  venda: VendaRow & {
+    motivo: string; tipo: string; statusPedido: string; paymentStatus: string; channel: string;
+    notes: string | null; subtotal: string; deliveryFee: string | null; discount: string | null;
+    installments: number | null; cardFeeAmount: string | null; gatewayPaymentId: string | null;
+    addressSnapshot: { street: string; number: string; neighborhood: string; city: string; state: string; zip: string; complement?: string } | null;
+    estimatedDelivery: string | null; deliveredAt: string | null;
+    clientePhone: string | null; cupom: string | null; valorLiquido: number;
+  };
+  itens: {
+    nome: string; emoji: string | null; qtd: number; unit: number; adicionaisTotal: number;
+    adicionais: { name: string; price: string }[] | null; obs: string | null; total: number;
+  }[];
+  lancamentos: {
+    tipo: string; categoria: string; descricao: string; valor: number; status: string;
+    metodoPagamento: string | null; data: string; sessaoCodigo: string | null;
+  }[];
+  pagamentos: { forma: string; valor: number; data: string }[];
+  caixa: { id: string; codigo: string; abertoPor: string | null; encerradoPor: string | null; status: string; openedAt: string; closedAt: string | null }[];
+  historico: EventoHistorico[];
 }
 
 const STATUS_OPCOES = [
@@ -37,7 +53,7 @@ const STATUS_OPCOES = [
 ];
 
 const FORMA_LABEL: Record<string, string> = {
-  pix: "PIX", cash: "Dinheiro", card: "Crédito", debit: "Débito", mercadopago: "Mercado Pago",
+  pix: "PIX", cash: "Dinheiro", card: "Crédito", debit: "Débito", mercadopago: "Mercado Pago", misto: "Misto",
 };
 
 function StatusVendaBadge({ s }: { s: VendaRow["saleStatus"] }) {
@@ -58,7 +74,39 @@ function fmtData(iso: string) {
   return `${d.toLocaleDateString("pt-BR")} ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-// ── Modal de detalhe (linha do tempo + itens + lançamentos) ─────────────────
+// ── Modal de detalhe — histórico completo da venda + todos os dados ─────────
+const EVENTO_ESTILO: Record<EventoHistorico["tipo"], { Icon: LucideIcon; dot: string }> = {
+  criada:     { Icon: ShoppingCart, dot: "bg-primary/15 text-primary" },
+  status:     { Icon: Circle,       dot: "bg-secondary text-muted-foreground" },
+  pagamento:  { Icon: Wallet,       dot: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+  estoque:    { Icon: Package,      dot: "bg-secondary text-muted-foreground" },
+  finalizada: { Icon: CheckCircle2, dot: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+  cancelada:  { Icon: XCircle,      dot: "bg-secondary text-muted-foreground" },
+  estorno:    { Icon: RotateCcw,    dot: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
+};
+
+const CANAL_LABEL: Record<string, string> = { pdv: "PDV (frente de caixa)", online: "Loja online" };
+const TIPO_LABEL: Record<string, string> = { delivery: "Entrega", pickup: "Retirada" };
+const PAGAMENTO_STATUS: Record<string, string> = { pending: "Pendente", paid: "Pago", refunded: "Estornado" };
+
+function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{titulo}</p>
+      {children}
+    </section>
+  );
+}
+
+function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
+  return (
+    <div className="flex justify-between gap-4 py-1.5 text-[13px]">
+      <span className="text-muted-foreground shrink-0">{rotulo}</span>
+      <span className="text-right min-w-0 break-words">{children}</span>
+    </div>
+  );
+}
+
 function ModalDetalheVenda({ orderId, onClose }: { orderId: string; onClose: () => void }) {
   const [d, setD] = useState<VendaDetalhe | null>(null);
   const [erro, setErro] = useState(false);
@@ -71,86 +119,202 @@ function ModalDetalheVenda({ orderId, onClose }: { orderId: string; onClose: () 
     return () => { vivo = false; };
   }, [orderId]);
 
+  const v = d?.venda;
+  const temFinanceiro = !!v && (v.valorLancado > 0 || v.valorEstornado > 0);
+  const end = v?.addressSnapshot;
+  const num = (s: string | null | undefined) => parseFloat(s ?? "0") || 0;
+
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-lg rounded-2xl max-h-[85vh] overflow-y-auto">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-2xl rounded-2xl max-h-[88vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <Receipt className="w-4 h-4" />
-            Venda #{d?.venda.numero ?? "…"}
+            Venda #{v?.numero ?? "…"}
           </DialogTitle>
         </DialogHeader>
 
         {erro && <p className="text-sm text-muted-foreground py-8 text-center">Não foi possível carregar o detalhe.</p>}
         {!d && !erro && <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>}
 
-        {d && (
-          <div className="space-y-4 text-sm">
+        {d && v && (
+          <div className="space-y-5 text-sm">
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <StatusVendaBadge s={d.venda.saleStatus} />
-              <span className="text-xs text-muted-foreground">{fmtData(d.venda.data)}</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <StatusVendaBadge s={v.saleStatus} />
+                <span className="text-xs text-muted-foreground">
+                  {CANAL_LABEL[v.channel] ?? v.channel} · {TIPO_LABEL[v.tipo] ?? v.tipo}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground">{fmtData(v.data)}</span>
             </div>
 
-            <div className="rounded-xl border border-border/50 p-3 space-y-1">
-              <div className="flex justify-between"><span className="text-muted-foreground">Cliente</span><span className="font-medium">{d.venda.cliente}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Forma</span><span>{FORMA_LABEL[d.venda.formaPagamento] || d.venda.formaPagamento || "—"}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Total</span><span className="font-semibold">{fmt(d.venda.total)}</span></div>
-              {d.venda.saleStatus === "estornada" && (
-                <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                  <span>Estornado</span><span className="font-semibold">− {fmt(d.venda.valorEstornado)}</span>
-                </div>
-              )}
-              {d.venda.motivoLabel && (
-                <div className="flex justify-between gap-4"><span className="text-muted-foreground shrink-0">Motivo</span><span className="text-right">{d.venda.motivoLabel}</span></div>
+            {/* Resumo financeiro */}
+            <div className={`grid gap-2 ${temFinanceiro ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-1"}`}>
+              <div className="rounded-xl border border-border/50 p-3">
+                <p className="text-[11px] text-muted-foreground">Total da venda</p>
+                <p className="text-base font-bold tabular-nums">{fmt(v.total)}</p>
+              </div>
+              {temFinanceiro && (
+                <>
+                  <div className="rounded-xl border border-border/50 p-3">
+                    <p className="text-[11px] text-muted-foreground">Recebido</p>
+                    <p className="text-base font-bold tabular-nums text-emerald-700 dark:text-emerald-400">{fmt(v.valorLancado)}</p>
+                  </div>
+                  <div className="rounded-xl border border-border/50 p-3">
+                    <p className="text-[11px] text-muted-foreground">Estornado</p>
+                    <p className={`text-base font-bold tabular-nums ${v.valorEstornado > 0 ? "text-amber-700 dark:text-amber-400" : ""}`}>
+                      {v.valorEstornado > 0 ? "− " : ""}{fmt(v.valorEstornado)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/50 p-3">
+                    <p className="text-[11px] text-muted-foreground">Líquido</p>
+                    <p className="text-base font-bold tabular-nums">{fmt(v.valorLiquido)}</p>
+                  </div>
+                </>
               )}
             </div>
 
+            {/* Histórico: do início ao pagamento e a um possível estorno */}
+            <Secao titulo="Histórico da venda">
+              <ol>
+                {d.historico.map((e, i) => {
+                  const { Icon, dot } = EVENTO_ESTILO[e.tipo];
+                  const ultimo = i === d.historico.length - 1;
+                  return (
+                    <li key={i} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <span className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${dot}`}>
+                          <Icon className="w-3.5 h-3.5" />
+                        </span>
+                        {!ultimo && <span className="w-px flex-1 bg-border my-1" />}
+                      </div>
+                      <div className={`min-w-0 flex-1 ${ultimo ? "" : "pb-4"}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <p className={`text-[13px] font-semibold leading-snug ${e.tom === "alerta" ? "text-amber-700 dark:text-amber-400" : ""}`}>
+                            {e.titulo}
+                          </p>
+                          <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0">{fmtData(e.data)}</span>
+                        </div>
+                        {e.detalhes.map((linha, j) => (
+                          <p key={j} className="text-[12px] text-muted-foreground leading-snug mt-0.5">{linha}</p>
+                        ))}
+                        {e.ator && (
+                          <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+                            <User className="w-3 h-3" />{e.ator}
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </Secao>
+
+            {/* Todos os dados da venda */}
+            <Secao titulo="Detalhes da venda">
+              <div className="rounded-xl border border-border/50 px-3 divide-y divide-border/40">
+                <Campo rotulo="Cliente">
+                  {v.cliente}{v.clientePhone ? <span className="block text-xs text-muted-foreground">{v.clientePhone}</span> : null}
+                </Campo>
+                <Campo rotulo="Canal">{CANAL_LABEL[v.channel] ?? v.channel}</Campo>
+                <Campo rotulo="Tipo">{TIPO_LABEL[v.tipo] ?? v.tipo}</Campo>
+                {v.notes?.trim() && <Campo rotulo="Origem / observação">{v.notes.trim()}</Campo>}
+                <Campo rotulo="Forma de pagamento">{FORMA_LABEL[v.formaPagamento] || v.formaPagamento || "—"}</Campo>
+                <Campo rotulo="Situação do pagamento">{PAGAMENTO_STATUS[v.paymentStatus] ?? v.paymentStatus}</Campo>
+                {(v.installments ?? 1) > 1 && <Campo rotulo="Parcelas">{v.installments}x</Campo>}
+                {num(v.cardFeeAmount) > 0 && <Campo rotulo="Taxa da maquineta">{fmt(num(v.cardFeeAmount))}</Campo>}
+                {v.cupom && <Campo rotulo="Cupom"><span className="font-mono">{v.cupom}</span></Campo>}
+                {d.caixa.map((c) => (
+                  <Campo key={c.id} rotulo="Sessão de caixa">
+                    <span className="font-mono font-semibold">{c.codigo}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {c.abertoPor ? `Aberta por ${c.abertoPor}` : "Sessão sem responsável registrado"}
+                      {c.status === "encerrada" ? (c.encerradoPor ? ` · encerrada por ${c.encerradoPor}` : " · encerrada") : " · em andamento"}
+                    </span>
+                  </Campo>
+                ))}
+                {v.gatewayPaymentId && <Campo rotulo="ID no gateway"><span className="font-mono text-xs">{v.gatewayPaymentId}</span></Campo>}
+                {end && (
+                  <Campo rotulo="Endereço de entrega">
+                    {end.street}, {end.number}{end.complement ? ` (${end.complement})` : ""}
+                    <span className="block text-xs text-muted-foreground">{end.neighborhood} · {end.city}/{end.state} · CEP {end.zip}</span>
+                  </Campo>
+                )}
+                {v.estimatedDelivery && <Campo rotulo="Previsão de entrega">{fmtData(v.estimatedDelivery)}</Campo>}
+                {v.deliveredAt && <Campo rotulo="Entregue em">{fmtData(v.deliveredAt)}</Campo>}
+                {v.motivoLabel && <Campo rotulo="Motivo (cancelamento/estorno)">{v.motivoLabel}</Campo>}
+                <Campo rotulo="ID da venda"><span className="font-mono text-xs">{v.id}</span></Campo>
+              </div>
+            </Secao>
+
+            {/* Itens + composição do total */}
             {d.itens.length > 0 && (
-              <div>
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Itens</p>
-                <div className="space-y-1">
+              <Secao titulo="Itens">
+                <div className="rounded-xl border border-border/50 px-3 divide-y divide-border/40">
                   {d.itens.map((it, i) => (
-                    <div key={i} className="flex justify-between text-[13px]">
-                      <span>{it.qtd}× {it.nome}</span>
-                      <span className="text-muted-foreground">{fmt(it.total)}</span>
+                    <div key={i} className="py-2 text-[13px]">
+                      <div className="flex justify-between gap-3">
+                        <span>{it.emoji ? `${it.emoji} ` : ""}{it.qtd}× {it.nome}</span>
+                        <span className="tabular-nums shrink-0">{fmt(it.total)}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{fmt(it.unit)} cada</p>
+                      {it.adicionais?.map((a, j) => (
+                        <p key={j} className="text-xs text-muted-foreground">+ {a.name} ({fmt(parseFloat(a.price) || 0)})</p>
+                      ))}
+                      {it.obs && <p className="text-xs text-muted-foreground italic">Obs.: {it.obs}</p>}
                     </div>
                   ))}
+                  <div className="py-2 space-y-1 text-[13px]">
+                    <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="tabular-nums">{fmt(num(v.subtotal))}</span></div>
+                    {num(v.deliveryFee) > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Taxa de entrega</span><span className="tabular-nums">{fmt(num(v.deliveryFee))}</span></div>}
+                    {num(v.discount) > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Desconto</span><span className="tabular-nums text-emerald-700 dark:text-emerald-400">− {fmt(num(v.discount))}</span></div>}
+                    <div className="flex justify-between font-semibold pt-1 border-t border-border/40"><span>Total</span><span className="tabular-nums">{fmt(v.total)}</span></div>
+                  </div>
                 </div>
-              </div>
+              </Secao>
             )}
 
-            <div>
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Linha do tempo</p>
-              <div className="space-y-2">
-                {d.timeline.map((t, i) => (
-                  <div key={i} className="flex gap-2.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-[13px] leading-snug">{t.note || t.status}</p>
-                      <p className="text-[11px] text-muted-foreground">{fmtData(t.data)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {d.lancamentos.length > 0 && (
-              <div>
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Financeiro</p>
-                <div className="space-y-1">
-                  {d.lancamentos.map((l, i) => (
-                    <div key={i} className="flex justify-between text-[13px]">
-                      <span className={l.tipo === "saida" || l.status === "estornado" ? "text-amber-700 dark:text-amber-400" : ""}>
-                        {l.descricao}
-                        {l.status === "estornado" && " (estornado)"}
-                      </span>
-                      <span className={`shrink-0 ml-3 ${l.tipo === "entrada" && l.status === "liquidado" ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
-                        {l.tipo === "entrada" && l.status === "liquidado" ? "" : "− "}{fmt(l.valor)}
-                      </span>
+            {d.pagamentos.length > 0 && (
+              <Secao titulo="Pagamentos registrados">
+                <div className="rounded-xl border border-border/50 px-3 divide-y divide-border/40">
+                  {d.pagamentos.map((p, i) => (
+                    <div key={i} className="flex justify-between gap-3 py-2 text-[13px]">
+                      <span>{FORMA_LABEL[p.forma] || p.forma}<span className="text-xs text-muted-foreground"> · {fmtData(p.data)}</span></span>
+                      <span className="tabular-nums">{fmt(p.valor)}</span>
                     </div>
                   ))}
                 </div>
-              </div>
+              </Secao>
+            )}
+
+            {d.lancamentos.length > 0 && (
+              <Secao titulo="Lançamentos financeiros">
+                <div className="rounded-xl border border-border/50 px-3 divide-y divide-border/40">
+                  {d.lancamentos.map((l, i) => {
+                    const entradaOk = l.tipo === "entrada" && l.status === "liquidado";
+                    return (
+                      <div key={i} className="flex justify-between gap-3 py-2 text-[13px]">
+                        <span className={l.tipo === "saida" || l.status === "estornado" ? "text-amber-700 dark:text-amber-400" : ""}>
+                          {l.descricao}{l.status === "estornado" && " (estornado)"}
+                          <span className="block text-xs text-muted-foreground">
+                            {fmtData(l.data)}
+                            {l.metodoPagamento ? ` · ${FORMA_LABEL[l.metodoPagamento] || l.metodoPagamento}` : ""}
+                            {l.sessaoCodigo ? ` · sessão ${l.sessaoCodigo}` : ""}
+                          </span>
+                        </span>
+                        <span className={`shrink-0 tabular-nums ${
+                          entradaOk ? "text-emerald-700 dark:text-emerald-400"
+                            : l.tipo === "entrada" ? "text-muted-foreground line-through"
+                            : "text-amber-700 dark:text-amber-400"
+                        }`}>
+                          {l.tipo === "saida" ? "− " : ""}{fmt(l.valor)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Secao>
             )}
           </div>
         )}

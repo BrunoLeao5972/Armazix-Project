@@ -117,25 +117,25 @@ export function SecaoDre() {
       </div>
 
       {/* KPIs de resultado */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="rounded-2xl border-emerald-200 bg-emerald-50/50 shadow-soft">
-          <CardContent className="p-4">
-            <p className="text-xs text-emerald-700 font-semibold uppercase tracking-wider">Total Receitas</p>
-            <p className="text-xl font-bold text-emerald-700 mt-1">{fmt(totalReceitas)}</p>
+      <div className="grid grid-cols-3 gap-2">
+        <Card className="rounded-xl border-emerald-200 bg-emerald-50/50 shadow-soft">
+          <CardContent className="p-2.5">
+            <p className="text-[11px] text-emerald-700 font-semibold uppercase tracking-wider">Total Receitas</p>
+            <p className="text-base font-bold text-emerald-700 mt-0.5">{fmt(totalReceitas)}</p>
           </CardContent>
         </Card>
-        <Card className="rounded-2xl border-rose-200 bg-rose-50/50 shadow-soft">
-          <CardContent className="p-4">
-            <p className="text-xs text-rose-700 font-semibold uppercase tracking-wider">Total Despesas</p>
-            <p className="text-xl font-bold text-rose-700 mt-1">{fmt(totalDespesas)}</p>
+        <Card className="rounded-xl border-rose-200 bg-rose-50/50 shadow-soft">
+          <CardContent className="p-2.5">
+            <p className="text-[11px] text-rose-700 font-semibold uppercase tracking-wider">Total Despesas</p>
+            <p className="text-base font-bold text-rose-700 mt-0.5">{fmt(totalDespesas)}</p>
           </CardContent>
         </Card>
-        <Card className={`rounded-2xl shadow-soft ${resultado >= 0 ? "border-primary/30 bg-primary/5" : "border-rose-300 bg-rose-50/50"}`}>
-          <CardContent className="p-4">
-            <p className={`text-xs font-semibold uppercase tracking-wider ${resultado >= 0 ? "text-primary" : "text-rose-700"}`}>
+        <Card className={`rounded-xl shadow-soft ${resultado >= 0 ? "border-primary/30 bg-primary/5" : "border-rose-300 bg-rose-50/50"}`}>
+          <CardContent className="p-2.5">
+            <p className={`text-[11px] font-semibold uppercase tracking-wider ${resultado >= 0 ? "text-primary" : "text-rose-700"}`}>
               {resultado >= 0 ? "Lucro Líquido" : "Prejuízo"}
             </p>
-            <p className={`text-xl font-bold mt-1 ${resultado >= 0 ? "text-primary" : "text-rose-700"}`}>{fmt(Math.abs(resultado))}</p>
+            <p className={`text-base font-bold mt-1 ${resultado >= 0 ? "text-primary" : "text-rose-700"}`}>{fmt(Math.abs(resultado))}</p>
           </CardContent>
         </Card>
       </div>

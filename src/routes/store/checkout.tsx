@@ -192,9 +192,26 @@ function CheckoutPage() {
   const [editingContact, setEditingContact] = useState(false);
 
   // ── Modalidade de entrega ─────────────────────────────────────────────────
+  // A loja pode aceitar as 3 combinações configuradas em Configurações →
+  // Entrega → Modalidade: Todas, Apenas Delivery ou Apenas Retirada. Só faz
+  // sentido perguntar "Como deseja receber?" na primeira — nas outras duas
+  // não há escolha nenhuma, e mostrar um toggle de 1 botão só ficava
+  // parecendo quebrado. "Ambas desativadas" é config inválida (nunca deveria
+  // acontecer) — cai no toggle normal em vez de travar o checkout.
+  const soDelivery = store?.deliveryEnabled !== false && store?.pickupEnabled === false;
+  const soRetirada = store?.pickupEnabled !== false && store?.deliveryEnabled === false;
+  const modalidadeUnica: "delivery" | "pickup" | null = soDelivery ? "delivery" : soRetirada ? "pickup" : null;
+
   const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">(
     store?.pickupEnabled === true && store?.deliveryEnabled === false ? "pickup" : "delivery"
   );
+
+  // Loja com uma única modalidade — trava nela assim que a config da loja
+  // carrega (cobre também o caso de a página abrir direto no checkout, antes
+  // do contexto da loja resolver e o useState acima já ter "adivinhado" certo).
+  useEffect(() => {
+    if (modalidadeUnica) setDeliveryType(modalidadeUnica);
+  }, [modalidadeUnica]);
 
   // ── Endereço ──────────────────────────────────────────────────────────────
   const [address, setAddress] = useState({
@@ -873,20 +890,25 @@ function CheckoutPage() {
           <div>
             <h2 className="text-base font-bold flex items-center gap-2 mb-3">
               <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center"><Truck className="w-3.5 h-3.5 text-primary" /></div>
-              Como deseja receber?
+              {modalidadeUnica ? "Como você vai receber" : "Como deseja receber?"}
             </h2>
-            <div className="flex gap-2 bg-secondary/60 p-1 rounded-2xl">
-              {store?.deliveryEnabled !== false && (
+            {modalidadeUnica ? (
+              // Só uma modalidade habilitada — informativo, não pergunta (não
+              // há nada pra escolher, um toggle de 1 botão só ficava estranho).
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-secondary/60 text-sm font-semibold">
+                {modalidadeUnica === "delivery" ? <Truck className="w-4 h-4 text-primary shrink-0" /> : <Package className="w-4 h-4 text-primary shrink-0" />}
+                {modalidadeUnica === "delivery" ? "Delivery — esta loja não faz retirada no local" : "Retirada no local — esta loja não faz entrega"}
+              </div>
+            ) : (
+              <div className="flex gap-2 bg-secondary/60 p-1 rounded-2xl">
                 <button onClick={() => setDeliveryType("delivery")} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${deliveryType === "delivery" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"}`}>
                   <Truck className="w-4 h-4" /> Delivery
                 </button>
-              )}
-              {store?.pickupEnabled !== false && (
                 <button onClick={() => setDeliveryType("pickup")} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${deliveryType === "pickup" ? "bg-white shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"}`}>
                   <Package className="w-4 h-4" /> Retirada
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* ── Endereço (Delivery) ────────────────────────────────── */}

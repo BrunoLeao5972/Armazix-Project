@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { X, ShoppingBag, Star, Clock, MessageCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, ShoppingBag, Star, Clock, MessageCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { galeriaDoProduto } from "@/lib/product-images";
 import { type StoreProduct, formatPrice, getMadeToOrderMessage, buildProductInquiryWhatsAppUrl } from "@/lib/store-context";
 
 interface ProductDetailModalProps {
@@ -24,8 +25,22 @@ export function ProductDetailModal({
   whatsappPhone,
 }: ProductDetailModalProps) {
   const [obs, setObs] = useState("");
+  const [imgIdx, setImgIdx] = useState(0);
+  const [toqueX, setToqueX] = useState<number | null>(null);
+
+  // Cada produto abre na capa.
+  useEffect(() => { setImgIdx(0); }, [product?.id, open]);
 
   if (!open || !product) return null;
+
+  // Capa primeiro, até 6 fotos.
+  const fotos = galeriaDoProduto(product);
+  const idx = Math.min(imgIdx, Math.max(0, fotos.length - 1));
+  const irPara = (i: number) => setImgIdx((i + fotos.length) % fotos.length);
+  const fimDoToque = (x: number) => {
+    if (toqueX !== null && Math.abs(x - toqueX) > 40) irPara(idx + (x < toqueX ? 1 : -1));
+    setToqueX(null);
+  };
 
   const whatsappUrl = !showPrice ? buildProductInquiryWhatsAppUrl(whatsappPhone || "", product.name) : null;
 
@@ -72,10 +87,15 @@ export function ProductDetailModal({
              pro tamanho intrínseco durante o scroll) ── */}
         <div className="relative shrink-0 w-full sm:w-72">
           <div className="relative w-full" style={{ paddingTop: "100%" }}>
-            <div className="absolute inset-0 bg-slate-50 sm:rounded-l-2xl overflow-hidden">
-              {product.imageUrl ? (
+            <div
+              className="absolute inset-0 bg-slate-50 sm:rounded-l-2xl overflow-hidden"
+              onTouchStart={fotos.length > 1 ? (e) => setToqueX(e.touches[0].clientX) : undefined}
+              onTouchEnd={fotos.length > 1 ? (e) => fimDoToque(e.changedTouches[0].clientX) : undefined}
+            >
+              {fotos.length > 0 ? (
                 <img
-                  src={product.imageUrl}
+                  key={fotos[idx]}
+                  src={fotos[idx]}
                   alt={product.name}
                   className="w-full h-full object-contain"
                 />
@@ -101,8 +121,43 @@ export function ProductDetailModal({
                   Sob Encomenda
                 </div>
               )}
+
+              {fotos.length > 1 && (
+                <>
+                  <button
+                    type="button" onClick={() => irPara(idx - 1)} aria-label="Foto anterior"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/85 shadow flex items-center justify-center hover:bg-white transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4 text-slate-700" />
+                  </button>
+                  <button
+                    type="button" onClick={() => irPara(idx + 1)} aria-label="Próxima foto"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/85 shadow flex items-center justify-center hover:bg-white transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4 text-slate-700" />
+                  </button>
+                </>
+              )}
             </div>
           </div>
+
+          {/* Miniaturas — só com mais de 1 foto */}
+          {fotos.length > 1 && (
+            <div className="flex gap-2 px-3 py-2 overflow-x-auto no-scrollbar">
+              {fotos.map((url, i) => (
+                <button
+                  key={`${url.slice(-24)}-${i}`} type="button" onClick={() => setImgIdx(i)}
+                  aria-label={`Foto ${i + 1} de ${fotos.length}`}
+                  style={i === idx ? { borderColor: primaryColor } : undefined}
+                  className={`shrink-0 w-11 h-11 rounded-lg overflow-hidden border-2 bg-slate-50 transition-colors ${
+                    i === idx ? "" : "border-slate-200 hover:border-slate-400"
+                  }`}
+                >
+                  <img src={url} alt="" className="w-full h-full object-contain p-0.5" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ── Conteúdo ── */}
@@ -150,7 +205,7 @@ export function ProductDetailModal({
             <div className="px-5 pb-3 space-y-0.5">
               {hasPromo && (
                 <p className="text-xs text-slate-400 line-through">
-                  R$ {formatPrice(product.compareAtPrice)}
+                  R$ {formatPrice(product.compareAtPrice || "0")}
                 </p>
               )}
               <p className="text-2xl font-bold" style={{ color: primaryColor }}>

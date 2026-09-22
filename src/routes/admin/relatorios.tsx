@@ -442,9 +442,6 @@ function ReportCard({ report, isFavorito, onToggleFavorito, onVisualizar, isLock
   return (<div className="group relative p-4 rounded-2xl border border-border/50 bg-card hover:border-primary/30 hover:shadow-soft transition-all"><div className="flex items-start gap-3"><div className={`w-10 h-10 rounded-xl ${moduloStyle.cor} flex items-center justify-center shrink-0`}><Icon className="w-4 h-4" /></div><div className="flex-1 min-w-0"><div className="flex items-center gap-2"><h4 className="font-semibold text-sm text-foreground truncate">{report.nome}</h4>{report.destaque && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />}</div><p className="text-xs text-muted-foreground mt-1 line-clamp-2">{report.descricao}</p><div className="flex items-center gap-1.5 mt-2"><Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-md">{moduloStyle.label}</Badge><Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-md">{report.uso}</Badge></div></div><button onClick={onToggleFavorito} className={`p-1.5 rounded-lg transition-colors ${isFavorito ? "text-amber-400" : "text-muted-foreground hover:text-amber-400"}`}><Star className={`w-4 h-4 ${isFavorito ? "fill-amber-400" : ""}`} /></button></div><div className="flex items-center gap-1 mt-3 pt-3 border-t border-border/30 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={onVisualizar} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-secondary"><Eye className="w-3.5 h-3.5" /> Ver</button><button onClick={() => alert(`Exportando ${report.nome} em PDF...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50"><FileText className="w-3.5 h-3.5" /> PDF</button><button onClick={() => alert(`Exportando ${report.nome} em Excel...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50"><FileSpreadsheet className="w-3.5 h-3.5" /> Excel</button><button onClick={() => alert(`Imprimindo ${report.nome}...`)} className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:bg-secondary"><Printer className="w-3.5 h-3.5" /> Print</button></div></div>);
 }
 
-// Mock de emissões nas últimas 24h (simulado - virá do backend)
-const EMISSOES_24H = 12;
-
 function ReportsPage() {
   const { storeRole, storeName } = useStoreInfo();
   const [busca, setBusca] = useState("");
@@ -587,54 +584,41 @@ function ReportsPage() {
         )}
 
         {/* KPI Cards - Indicadores Rápidos */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           {/* Card 1: Total de relatórios disponíveis */}
-          <Card className="rounded-2xl border-border/50 bg-card hover:shadow-md transition-shadow">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center"><FileText className="w-5 h-5 text-emerald-600" /></div>
+          <Card className="rounded-xl border-border/50 bg-card hover:shadow-md transition-shadow">
+            <CardContent className="p-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg shrink-0 bg-emerald-500/10 flex items-center justify-center"><FileText className="w-4 h-4 text-emerald-600" /></div>
                 <div>
-                  <p className="text-2xl font-bold">{relatoriosPermitidos.length}</p>
-                  <p className="text-xs text-muted-foreground">Relatórios Disponíveis</p>
+                  <p className="text-base font-bold leading-tight">{relatoriosPermitidos.length}</p>
+                  <p className="text-[11px] text-muted-foreground leading-tight">Relatórios Disponíveis</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Card 2: Último relatório gerado */}
-          <Card className="rounded-2xl border-border/50 bg-card hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToUltimo}>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center"><History className="w-5 h-5 text-blue-600" /></div>
+          <Card className="rounded-xl border-border/50 bg-card hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToUltimo}>
+            <CardContent className="p-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg shrink-0 bg-blue-500/10 flex items-center justify-center"><History className="w-4 h-4 text-blue-600" /></div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">{ultimoRelatorio ? ultimoRelatorio.nome : "Nenhum ainda"}</p>
-                  <p className="text-xs text-muted-foreground">{ultimoRelatorio ? "Clique para reabrir" : "Último Relatório Gerado"}</p>
+                  <p className="text-[13px] font-semibold text-foreground truncate leading-tight">{ultimoRelatorio ? ultimoRelatorio.nome : "Nenhum ainda"}</p>
+                  <p className="text-[11px] text-muted-foreground leading-tight">{ultimoRelatorio ? "Clique para reabrir" : "Último Relatório Gerado"}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
           {/* Card 3: Atalho para favoritos */}
-          <Card className="rounded-2xl border-border/50 bg-card hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToFavoritos}>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center"><Star className="w-5 h-5 text-amber-600" /></div>
+          <Card className="col-span-2 md:col-span-1 rounded-xl border-border/50 bg-card hover:shadow-md transition-shadow cursor-pointer" onClick={scrollToFavoritos}>
+            <CardContent className="p-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg shrink-0 bg-amber-500/10 flex items-center justify-center"><Star className="w-4 h-4 text-amber-600" /></div>
                 <div>
-                  <p className="text-2xl font-bold">{favoritosList.length}</p>
-                  <p className="text-xs text-muted-foreground">⭐ Relatórios Favoritos</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Card 4: Emissões nas últimas 24h */}
-          <Card className="rounded-2xl border-border/50 bg-card hover:shadow-md transition-shadow">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center"><Shield className="w-5 h-5 text-violet-600" /></div>
-                <div>
-                  <p className="text-2xl font-bold">{EMISSOES_24H}</p>
-                  <p className="text-xs text-muted-foreground">Emissões (24h)</p>
+                  <p className="text-base font-bold leading-tight">{favoritosList.length}</p>
+                  <p className="text-[11px] text-muted-foreground leading-tight">⭐ Relatórios Favoritos</p>
                 </div>
               </div>
             </CardContent>

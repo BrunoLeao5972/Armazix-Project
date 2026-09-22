@@ -12,6 +12,12 @@
   "vars": {
     "NODE_ENV": "production"
   },
+  "triggers": {
+    // Encerramento automático diário do caixa do PDV (src/lib/jobs/caixa-auto-close.ts).
+    // A cada 15min pra casar exatamente com os slots de horário que a tela
+    // de Configurações do PDV oferece (00:00, 00:15, 00:30...).
+    "crons": ["*/15 * * * *"]
+  },
   // Secrets (set via `wrangler secret put`):
   //   DATABASE_URL              — Neon PostgreSQL connection string
   //   JWT_SECRET                — Auth signing key

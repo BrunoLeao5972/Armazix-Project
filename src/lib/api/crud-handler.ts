@@ -8,6 +8,7 @@ import { notifyOwnerNewOrder, notifyCustomerStatus, normalizePhone, DEFAULT_WPP_
 import { getCached, invalidateStoreCache, productsCacheKey, categoriesCacheKey, customersCacheKey, deleteKey } from "@/lib/cache/redis";
 import { waitUntil } from "@/lib/execution-context";
 import { canCreateProduct } from "@/lib/api/plan-limits";
+import { normalizarImagensProduto } from "@/lib/product-images";
 import { priceOrder, isPricingFailure } from "@/lib/pricing/order-pricing";
 import { reserveStock, releaseReservation, concretizeReservation, StockReservationError } from "@/lib/inventory/stock-reservation";
 import { MAX_ADDRESSES } from "@/lib/api/customer-handler";
@@ -15,6 +16,7 @@ import { estornarVendaConcretizada, motivoLabel } from "@/lib/orders/estorno";
 import type { EstornoResult } from "@/lib/orders/estorno";
 import { temPermissao, type StoreRole } from "@/lib/reports-permissions";
 import { logFinanceiro, AuditActions, AuditModulos, ResourceTypes } from "@/lib/audit";
+import { validarCpfCnpj } from "@/lib/customer/cpf-cnpj";
 
 const { products, categories, orders, orderItems, orderPayments, coupons, customers, stores, productAdditions, stockMovements, addresses, financeiroLancamentos, orderTimeline } = schema;
 
@@ -70,9 +72,10 @@ export async function createProductHandler(request: Request, auth?: AuthContext)
   const dbUrl = process.env.DATABASE_URL!;
   const db = await createUnscopedDb(dbUrl, storeId);
 
-  // Derive imageUrl from gallery primary, or fall back to explicit imageUrl
-  const imagesArr: ProductImageEntry[] = body.images || [];
-  const primaryUrl = imagesArr.find(i => i.isPrimary)?.url ?? imagesArr[0]?.url ?? body.imageUrl ?? null;
+  // Galeria: no máximo 6 fotos e exatamente 1 capa (ver src/lib/product-images.ts).
+  // imageUrl é sempre a capa; só cai no imageUrl do corpo se veio sem galeria.
+  const imagesArr: ProductImageEntry[] = normalizarImagensProduto(body.images, body.images?.length ? undefined : body.imageUrl);
+  const primaryUrl = imagesArr[0]?.url ?? null;
 
   try {
     // Valida limite de produtos do plano atual antes de qualquer outra coisa
@@ -453,9 +456,10 @@ export async function updateProductHandler(request: Request, auth?: AuthContext)
     if (body.unit        !== undefined) updates.unit        = body.unit;
     if (body.emoji       !== undefined) updates.emoji       = body.emoji       || null;
     if (body.images !== undefined) {
-      updates.images = body.images;
-      const primary = body.images.find(i => i.isPrimary) ?? body.images[0];
-      updates.imageUrl = primary?.url ?? null;
+      // Mesma regra do cadastro: máx. 6 fotos, 1 capa, e imageUrl = capa.
+      const galeria = normalizarImagensProduto(body.images);
+      updates.images = galeria;
+      updates.imageUrl = galeria[0]?.url ?? null;
     } else if (body.imageUrl !== undefined) {
       updates.imageUrl = body.imageUrl || null;
     }
@@ -2015,6 +2019,12 @@ export async function createCustomerHandler(request: Request, auth?: AuthContext
     address?: AddressInput;
   };
   if (!body.name) return new Response(JSON.stringify({ error: "name obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
+  // Canal de suporte (tela de Clientes do lojista) — pode gravar/corrigir o
+  // documento livremente, mas continua tendo que ser um CPF/CNPJ válido de
+  // verdade (dígitos verificadores), não só uma string qualquer.
+  if (body.cpf && !validarCpfCnpj(body.cpf)) {
+    return new Response(JSON.stringify({ error: "CPF/CNPJ inválido" }), { status: 400, headers: { "content-type": "application/json" } });
+  }
 
   const dbUrl = process.env.DATABASE_URL!;
   const db = await createUnscopedDb(dbUrl, storeId);
@@ -2076,6 +2086,11 @@ export async function updateCustomerHandler(request: Request, auth?: AuthContext
 
   if (!body.customerId) {
     return new Response(JSON.stringify({ error: "customerId obrigatório" }), { status: 400, headers: { "content-type": "application/json" } });
+  }
+  // A tela de Clientes pode corrigir o documento do contato à vontade — é
+  // opcional, mas quando informado continua tendo que ser um CPF/CNPJ válido.
+  if (body.cpf && !validarCpfCnpj(body.cpf)) {
+    return new Response(JSON.stringify({ error: "CPF/CNPJ inválido" }), { status: 400, headers: { "content-type": "application/json" } });
   }
 
   const dbUrl = process.env.DATABASE_URL!;

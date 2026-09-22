@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { StatCard } from "@/components/ui/stat-card";
 import { Tag, Check, X, Plus, Pencil, Trash2, MoreVertical, Search, ChevronDown, ShieldAlert, CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -459,15 +460,7 @@ function SecaoAuditoria() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card className="rounded-2xl border-border/50 shadow-soft">
-          <CardContent className="p-3">
-            <div className="w-8 h-8 rounded-xl bg-slate-100 grid place-items-center mb-2">
-              <CheckCircle2 className="w-4 h-4 text-slate-600" />
-            </div>
-            <div className="text-xl font-bold tracking-tight">{kpis.total}</div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">Total de Eventos</div>
-          </CardContent>
-        </Card>
+        <StatCard icon={CheckCircle2} label="Total de Eventos" value={kpis.total} iconBg="bg-slate-100" iconColor="text-slate-600" />
       </div>
 
       {/* FILTROS */}

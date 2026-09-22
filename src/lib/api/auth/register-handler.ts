@@ -3,7 +3,7 @@ import { schema } from "@/lib/db";
 import { hashPassword, findUserByEmail, createVerificationCode, validatePasswordPolicy, signJWT } from "@/lib/auth";
 import { sendVerificationEmail } from "@/lib/auth/email";
 import { sanitizeString } from "@/lib/validation/schemas";
-import { isValidCPF, isValidCNPJ } from "@/lib/document-validation";
+import { validarCPF as isValidCPF, validarCNPJ as isValidCNPJ } from "@/lib/customer/cpf-cnpj";
 import { logAudit, AuditActions } from "@/lib/audit";
 import { generateCsrfToken, createCsrfCookie } from "@/lib/middleware/csrf";
 import { eq, sql } from "drizzle-orm";

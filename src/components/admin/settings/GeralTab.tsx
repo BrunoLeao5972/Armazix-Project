@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Store, Globe, Link2, ExternalLink, Fingerprint, Pencil, Check, Loader2,
-  MapPin, Mail, X,
+  MapPin, Mail, X, Lock, Eye,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,12 +10,22 @@ import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api-client";
 import { CopyStoreUrlButton } from "./CopyStoreUrlButton";
 import type { StoreData } from "./types";
+import { maskCpfCnpjDigitado, validarCpfCnpj, formatarCpfCnpj } from "@/lib/customer/cpf-cnpj";
 
 interface GeralTabProps {
   store: StoreData | null;
   setStore: (store: StoreData) => void;
   storeName: string; setStoreName: (v: string) => void;
   ownerName: string; setOwnerName: (v: string) => void;
+  /** CNPJ/CPF da loja — opcional; travado (documentoTitularVinculado) depois do 1º save com valor.
+   *  documentoTitular só é usado ENQUANTO ainda não está vinculado (o que o
+   *  lojista está digitando). Depois de vinculado, o servidor nunca mais
+   *  devolve o valor cru — só documentoMascarado (LGPD: CPF nunca aparece
+   *  por inteiro; CNPJ pode ser revelado sob demanda, ver botão "olho"). */
+  documentoTitular: string; setDocumentoTitular: (v: string) => void;
+  documentoTitularVinculado: boolean; setDocumentoTitularVinculado: (v: boolean) => void;
+  documentoTipo: "cpf" | "cnpj" | null; setDocumentoTipo: (v: "cpf" | "cnpj" | null) => void;
+  documentoMascarado: string; setDocumentoMascarado: (v: string) => void;
   description: string; setDescription: (v: string) => void;
   phone: string; setPhone: (v: string) => void;
   email: string; setEmail: (v: string) => void;
@@ -34,6 +44,8 @@ interface GeralTabProps {
 
 export function GeralTab({
   store, setStore, storeName, setStoreName, ownerName, setOwnerName,
+  documentoTitular, setDocumentoTitular, documentoTitularVinculado, setDocumentoTitularVinculado,
+  documentoTipo, setDocumentoTipo, documentoMascarado, setDocumentoMascarado,
   description, setDescription, phone, setPhone, email, setEmail, primaryColor, setError,
   addressCep, setAddressCep, addressStreet, setAddressStreet, addressNumber, setAddressNumber,
   addressNeighborhood, setAddressNeighborhood, addressCity, setAddressCity, addressState, setAddressState,
@@ -41,8 +53,27 @@ export function GeralTab({
 }: GeralTabProps) {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [cepLoading, setCepLoading] = useState(false);
   const [cepError, setCepError] = useState("");
+  const documentoPreenchido = documentoTitular.trim() !== "";
+  const documentoInvalido = !documentoTitularVinculado && documentoPreenchido && !validarCpfCnpj(documentoTitular);
+
+  // CNPJ é registro público (Receita Federal) — pode revelar sob demanda.
+  // CPF é sensível (LGPD) e fica mascarado pra sempre, sem essa opção.
+  const [documentoRevelado, setDocumentoRevelado] = useState<string | null>(null);
+  const [revelando, setRevelando] = useState(false);
+  const handleRevelarDocumento = async () => {
+    if (documentoTipo !== "cnpj" || revelando) return;
+    setRevelando(true);
+    try {
+      const res = await api.get("/api/store/reveal-document");
+      const data = await res.json();
+      if (res.ok && data.cnpj) setDocumentoRevelado(formatarCpfCnpj(data.cnpj));
+    } finally {
+      setRevelando(false);
+    }
+  };
 
   // Email edit states — sempre bloqueado (emailLocked=true): a única forma de
   // trocar o email é pelo modal com verificação por código.
@@ -57,13 +88,20 @@ export function GeralTab({
 
   const handleSave = async () => {
     if (!store) return;
+    if (documentoInvalido) return;
     setSaving(true);
     setSuccess(false);
+    setSaveError("");
     try {
       const res = await api.post("/api/store/update", {
         storeId: store.id,
         name: storeName,
         ownerName,
+        // Só manda o documento enquanto ainda não está vinculado — depois
+        // disso o servidor não devolve mais o valor cru (só o mascarado), e
+        // reenviar aqui o texto mascarado ("50.***.***/****-95") faria o
+        // servidor comparar dígitos errados e barrar o save como "divergente".
+        ...(documentoTitularVinculado ? {} : { documentoTitular }),
         description,
         phone,
         email,
@@ -73,11 +111,20 @@ export function GeralTab({
       if (res.ok) {
         setSuccess(true);
         setStore(data.store);
+        if (data.store?.documentoTipo && !documentoTitularVinculado) {
+          // Acabou de vincular pela primeira vez — já sabemos o que foi
+          // digitado, não precisa esperar o servidor ecoar nada sensível.
+          setDocumentoTipo(data.store.documentoTipo);
+          setDocumentoMascarado(data.store.documentoMascarado || "");
+          setDocumentoTitularVinculado(true);
+        }
       } else {
         setError(data.error || "Erro ao salvar");
+        setSaveError(data.error || "Erro ao salvar");
       }
     } catch (err) {
       setError("Erro de conexão");
+      setSaveError("Erro de conexão");
     } finally {
       setSaving(false);
     }
@@ -158,14 +205,56 @@ export function GeralTab({
               <Input value={store?.slug || ""} disabled className="h-11 rounded-xl bg-muted" />
             </div>
           </div>
-          <div className="space-y-2">
-            <Label>Nome do titular</Label>
-            <Input
-              value={ownerName}
-              onChange={(e) => setOwnerName(e.target.value)}
-              placeholder="Nome completo do responsável pela conta"
-              className="h-11 rounded-xl"
-            />
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Nome do titular</Label>
+              <Input
+                value={ownerName}
+                onChange={(e) => setOwnerName(e.target.value)}
+                placeholder="Nome completo do responsável pela conta"
+                className="h-11 rounded-xl"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                CNPJ ou CPF do titular
+                <span className="text-[11px] font-normal text-muted-foreground">(opcional)</span>
+              </Label>
+              <div className="relative">
+                <Input
+                  value={documentoTitularVinculado ? (documentoRevelado ?? documentoMascarado) : documentoTitular}
+                  onChange={(e) => setDocumentoTitular(maskCpfCnpjDigitado(e.target.value))}
+                  placeholder="000.000.000-00"
+                  inputMode="numeric"
+                  readOnly={documentoTitularVinculado}
+                  className={`h-11 rounded-xl ${documentoTitularVinculado ? `bg-muted ${documentoTipo === "cnpj" ? "pr-16" : "pr-9"}` : ""} ${documentoInvalido ? "border-destructive focus-visible:ring-destructive/30" : ""}`}
+                />
+                {documentoTitularVinculado && documentoTipo === "cnpj" && (
+                  <button
+                    type="button"
+                    onClick={handleRevelarDocumento}
+                    disabled={revelando}
+                    title={documentoRevelado ? "CNPJ revelado" : "Visualizar CNPJ completo"}
+                    className="absolute right-8 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  >
+                    {revelando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+                {documentoTitularVinculado && (
+                  <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                )}
+              </div>
+              {documentoTitularVinculado ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Vinculado — para alterar, contate o suporte.
+                  {documentoTipo === "cpf" && " CPF fica sempre oculto (dado sensível)."}
+                </p>
+              ) : documentoInvalido ? (
+                <p className="text-[11px] text-destructive">CPF/CNPJ inválido. Confira os números digitados.</p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground">Depois de salvo, só o suporte pode alterar.</p>
+              )}
+            </div>
           </div>
 
           {/* Store Link */}
@@ -265,9 +354,10 @@ export function GeralTab({
               Alterações salvas com sucesso!
             </div>
           )}
+          {saveError && <p className="text-sm text-destructive">{saveError}</p>}
           <Button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || documentoInvalido}
             className="h-10 rounded-xl bg-gradient-primary text-primary-foreground font-semibold shadow-glow"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar alterações"}
@@ -442,11 +532,7 @@ export function GeralTab({
                       setEmailError("");
                       try {
                         const userId = localStorage.getItem("userId");
-                        const res = await fetch("/api/user/send-email-code", {
-                          method: "POST",
-                          headers: { "content-type": "application/json" },
-                          body: JSON.stringify({ userId, newEmail: newEmail }),
-                        });
+                        const res = await api.post("/api/user/send-email-code", { userId, newEmail: newEmail });
                         const data = await res.json();
                         if (res.ok) {
                           setEmailStep("code");
@@ -503,11 +589,7 @@ export function GeralTab({
                       setEmailError("");
                       try {
                         const userId = localStorage.getItem("userId");
-                        const res = await fetch("/api/user/verify-email-change", {
-                          method: "POST",
-                          headers: { "content-type": "application/json" },
-                          body: JSON.stringify({ userId, newEmail, code: verificationCode }),
-                        });
+                        const res = await api.post("/api/user/verify-email-change", { userId, newEmail, code: verificationCode });
                         const data = await res.json();
                         if (res.ok) {
                           setEmail(newEmail);
